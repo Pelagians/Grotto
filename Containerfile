@@ -7,7 +7,10 @@ USER root
 ARG HOMEBREW_VERSION=5.1.6
 ENV HOMEBREW_PREFIX=/home/linuxbrew/.linuxbrew \
     HOMEBREW_CELLAR=/home/linuxbrew/.linuxbrew/Cellar \
-    HOMEBREW_REPOSITORY=/home/linuxbrew/.linuxbrew/Homebrew
+    HOMEBREW_REPOSITORY=/home/linuxbrew/.linuxbrew/Homebrew \
+    HOMEBREW_NO_ANALYTICS=1 \
+    HOMEBREW_NO_AUTO_UPDATE=1 \
+    HOMEBREW_NO_ENV_HINTS=1
 
 ENV OPENCLAW_STATE_DIR=/home/node/.openclaw \
     OPENCLAW_CONFIG_PATH=/home/node/.openclaw/openclaw.json \
@@ -53,6 +56,7 @@ RUN set -eux; \
 
 COPY files/profile.d/linuxbrew.sh /etc/profile.d/linuxbrew.sh
 COPY defaults/openclaw.base.json5 /usr/share/openquad/defaults/openclaw.base.json5
+COPY Brewfile /usr/share/openquad/defaults/Brewfile
 
 ENV PATH="${HOMEBREW_PREFIX}/bin:${HOMEBREW_PREFIX}/sbin:${PATH}"
 
@@ -61,4 +65,8 @@ WORKDIR /home/node
 
 RUN set -eux; \
     brew --version; \
+    brew bundle --file=/usr/share/openquad/defaults/Brewfile; \
+    gh --version; \
+    himalaya --version; \
+    test -r /usr/share/openquad/defaults/Brewfile; \
     test -r /usr/share/openquad/defaults/openclaw.base.json5

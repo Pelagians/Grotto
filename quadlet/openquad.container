@@ -38,7 +38,9 @@ Environment=NPM_CONFIG_CACHE=/home/node/.openclaw/.npm
 Environment=XDG_CACHE_HOME=/home/node/.openclaw/.cache
 Environment=CODEX_HOME=/home/node/.openclaw/.codex
 Environment=CODEX_SQLITE_HOME=/home/node/.openclaw/.codex/sqlite
+Environment=HOMEBREW_CACHE=/home/node/.openclaw/.cache/Homebrew
 Volume=openquad-state:/home/node/.openclaw:rw,Z
+Volume=openquad-linuxbrew:/home/linuxbrew/.linuxbrew:rw,Z
 Volume=openquad-npm:/home/node/.npm:rw,Z
 Volume=openquad-cache:/home/node/.cache:rw,Z
 Volume=openquad-logs:/tmp/openclaw:rw,Z

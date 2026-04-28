@@ -30,11 +30,13 @@ podman build -t openquad:dev -f Containerfile .
 ```bash
 podman run --rm openquad:dev brew --version
 podman run --rm openquad:dev sh -lc "command -v brew && brew --version"
+podman run --rm openquad:dev gh --version
+podman run --rm openquad:dev himalaya --version
 ```
 
 ## Runtime Layout
 
-OpenQuad follows the live rootless OpenClaw layout: `/home/node/.openclaw` is the writable state boundary, `OPENCLAW_CONFIG_PATH` defaults to `/home/node/.openclaw/openclaw.json`, and caches for npm, XDG, and Codex are pointed under that state tree. The starter config is also packaged in the image at `/usr/share/openquad/defaults/openclaw.base.json5`.
+OpenQuad follows the live rootless OpenClaw layout: `/home/node/.openclaw` is the writable state boundary, `OPENCLAW_CONFIG_PATH` defaults to `/home/node/.openclaw/openclaw.json`, and caches for npm, XDG, and Codex are pointed under that state tree. The starter config is also packaged in the image at `/usr/share/openquad/defaults/openclaw.base.json5`. The default Quadlet also mounts a dedicated writable volume at `/home/linuxbrew/.linuxbrew` and points `HOMEBREW_CACHE` into OpenClaw state so live Homebrew-backed skill installs can work without making the whole container rootfs writable.
 
 The example runtime starts the gateway explicitly:
 
@@ -50,7 +52,9 @@ podman run --rm -it \
   --name openquad \
   --network openquad \
   -p 127.0.0.1:18789:18789 \
+  -e HOMEBREW_CACHE=/home/node/.openclaw/.cache/Homebrew \
   -v openquad-state:/home/node/.openclaw \
+  -v openquad-linuxbrew:/home/linuxbrew/.linuxbrew \
   -v openquad-npm:/home/node/.npm \
   -v openquad-cache:/home/node/.cache \
   openquad:dev \
@@ -130,6 +134,8 @@ quadlet/openquad.container
 
 Install them under `~/.config/containers/systemd/`, then run `systemctl --user daemon-reload` and start the generated services.
 
+The example container unit keeps `ReadOnly=true` for the root filesystem but adds a writable named volume for `/home/linuxbrew/.linuxbrew`. On first use, Podman copies the image's existing Homebrew tree into that volume. After that, the volume persists independently of later image updates, so if you change the image-layered Brewfile and want a fresh copy from the image, recreate the `openquad-linuxbrew` volume.
+
 ## Brewfile
 
-`Brewfile` is included as the future image-layering entry point. It is intentionally empty in this milestone because the only goal here is a clean Homebrew bootstrap.
+`Brewfile` is the image-layering entry point for Homebrew formulas that should exist at runtime. OpenQuad now bakes in `gh` and `himalaya` so the bundled GitHub and Himalaya skills do not need live Homebrew installs inside the read-only container.
