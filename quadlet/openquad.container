@@ -1,0 +1,20 @@
+[Unit]
+Description=OpenQuad example container
+
+[Container]
+ContainerName=openquad
+Image=localhost/openquad:dev
+Network=openquad.network
+PublishPort=127.0.0.1:18789:18789
+Volume=openquad-state:/home/node/.openclaw
+
+# Optional overrides for defaults/openclaw.base.json5 or ~/.openclaw/.env:
+# Environment=OLLAMA_BASE_URL=http://ollama:11434
+# Environment=SEARXNG_BASE_URL=http://searxng:8080
+
+[Service]
+Restart=on-failure
+TimeoutStartSec=900
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,9 @@
+[Unit]
+Description=OpenQuad local service network
+
+[Network]
+NetworkName=openquad
+Driver=bridge
+
+[Install]
+WantedBy=default.target

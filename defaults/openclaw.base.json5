@@ -1,0 +1,72 @@
+// OpenQuad starter config for a local Podman service network.
+// Copy or merge this into ~/.openclaw/openclaw.json when bootstrapping state.
+{
+  // Bridge-network container deployments need the gateway to listen beyond
+  // container loopback when publishing the gateway port to the host.
+  gateway: {
+    mode: "local",
+    bind: "lan",
+    controlUi: {
+      allowedOrigins: [
+        "http://localhost:18789",
+        "http://127.0.0.1:18789",
+      ],
+    },
+  },
+
+  // These are defaults only. Process env, ~/.openclaw/.env, or Quadlet
+  // Environment= entries can provide different values for another topology.
+  env: {
+    vars: {
+      OLLAMA_BASE_URL: "http://ollama:11434",
+      SEARXNG_BASE_URL: "http://searxng:8080",
+    },
+  },
+
+  // Local search endpoint. SearXNG is key-free, but its JSON API must be enabled
+  // in the SearXNG service settings.
+  tools: {
+    web: {
+      search: {
+        provider: "searxng",
+      },
+    },
+  },
+  plugins: {
+    entries: {
+      searxng: {
+        config: {
+          webSearch: {
+            baseUrl: "${SEARXNG_BASE_URL}",
+            categories: "general",
+            language: "en",
+          },
+        },
+      },
+    },
+  },
+
+  // Local LLM endpoint placeholder. OpenClaw's implicit Ollama discovery uses
+  // 127.0.0.1, so container-to-container Ollama should be configured explicitly
+  // after choosing model IDs that exist in your Ollama service.
+  // models: {
+  //   providers: {
+  //     ollama: {
+  //       baseUrl: "${OLLAMA_BASE_URL}",
+  //       apiKey: "ollama-local",
+  //       api: "ollama",
+  //       models: [
+  //         {
+  //           id: "gpt-oss:20b",
+  //           name: "GPT-OSS 20B",
+  //           reasoning: false,
+  //           input: ["text"],
+  //           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  //           contextWindow: 8192,
+  //           maxTokens: 8192,
+  //         },
+  //       ],
+  //     },
+  //   },
+  // },
+}
