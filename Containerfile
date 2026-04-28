@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-ARG OPENCLAW_BASE_IMAGE="ghcr.io/openclaw/openclaw:2026.4.19-beta.2-slim@sha256:806e0945352eb232a847dc944339d0a2d0be06084ada945e11471d24ea428086"
+ARG OPENCLAW_BASE_IMAGE="ghcr.io/openclaw/openclaw:slim"
 FROM ${OPENCLAW_BASE_IMAGE}
 
 USER root
@@ -8,6 +8,13 @@ ARG HOMEBREW_VERSION=5.1.6
 ENV HOMEBREW_PREFIX=/home/linuxbrew/.linuxbrew \
     HOMEBREW_CELLAR=/home/linuxbrew/.linuxbrew/Cellar \
     HOMEBREW_REPOSITORY=/home/linuxbrew/.linuxbrew/Homebrew
+
+ENV OPENCLAW_STATE_DIR=/home/node/.openclaw \
+    OPENCLAW_CONFIG_PATH=/home/node/.openclaw/openclaw.json \
+    NPM_CONFIG_CACHE=/home/node/.openclaw/.npm \
+    XDG_CACHE_HOME=/home/node/.openclaw/.cache \
+    CODEX_HOME=/home/node/.openclaw/.codex \
+    CODEX_SQLITE_HOME=/home/node/.openclaw/.codex/sqlite
 
 # OpenClaw slim already includes curl, git, and procps. Homebrew on Debian
 # still needs certificates, build tools, and the `file` utility to bootstrap.
@@ -32,6 +39,15 @@ RUN set -eux; \
         "${HOMEBREW_CELLAR}" \
         /home/linuxbrew/.cache/Homebrew \
         /usr/share/openquad/defaults; \
+    install -d -o node -g node -m 0755 \
+        /home/node/.cache \
+        /home/node/.npm \
+        /home/node/.openclaw \
+        /home/node/.openclaw/.cache \
+        /home/node/.openclaw/.codex \
+        /home/node/.openclaw/.codex/sqlite \
+        /home/node/.openclaw/.npm \
+        /home/node/.openclaw/workspace; \
     ln -s "${HOMEBREW_REPOSITORY}/bin/brew" "${HOMEBREW_PREFIX}/bin/brew"; \
     chown -R node:node /home/linuxbrew
 
@@ -41,7 +57,8 @@ COPY defaults/openclaw.base.json5 /usr/share/openquad/defaults/openclaw.base.jso
 ENV PATH="${HOMEBREW_PREFIX}/bin:${HOMEBREW_PREFIX}/sbin:${PATH}"
 
 USER node
-WORKDIR /app
+WORKDIR /home/node
 
 RUN set -eux; \
-    brew --version
+    brew --version; \
+    test -r /usr/share/openquad/defaults/openclaw.base.json5

@@ -1,21 +1,33 @@
-// OpenQuad starter config for a local Podman service network.
-// Copy or merge this into ~/.openclaw/openclaw.json when bootstrapping state.
+// OpenQuad starter config for local Podman service integration.
+// Copy or merge this into /home/node/.openclaw/openclaw.json when bootstrapping state.
 {
-  // Bridge-network container deployments need the gateway to listen beyond
-  // container loopback when publishing the gateway port to the host.
+  agents: {
+    defaults: {
+      workspace: "/home/node/.openclaw/workspace",
+    },
+  },
+
+  // The gateway listens inside the container and is usually published as
+  // 127.0.0.1:18789:18789 by rootless Podman or Quadlet.
   gateway: {
     mode: "local",
     bind: "lan",
+    port: 18789,
     controlUi: {
       allowedOrigins: [
+        "http://localhost",
         "http://localhost:18789",
+        "http://127.0.0.1",
         "http://127.0.0.1:18789",
       ],
     },
   },
 
-  // These are defaults only. Process env, ~/.openclaw/.env, or Quadlet
-  // Environment= entries can provide different values for another topology.
+  // Shared-network defaults. They work when OpenQuad, Ollama, and SearXNG are
+  // attached to the same user-defined Podman network with stable container
+  // names. For host-published services, override these with:
+  // OLLAMA_BASE_URL=http://host.containers.internal:11434
+  // SEARXNG_BASE_URL=http://host.containers.internal:8888
   env: {
     vars: {
       OLLAMA_BASE_URL: "http://ollama:11434",
@@ -28,13 +40,18 @@
   tools: {
     web: {
       search: {
+        enabled: true,
         provider: "searxng",
+      },
+      fetch: {
+        enabled: true,
       },
     },
   },
   plugins: {
     entries: {
       searxng: {
+        enabled: true,
         config: {
           webSearch: {
             baseUrl: "${SEARXNG_BASE_URL}",

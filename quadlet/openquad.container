@@ -1,20 +1,53 @@
 [Unit]
-Description=OpenQuad example container
+Description=OpenQuad Default Setup
 
 [Container]
 ContainerName=openquad
-Image=localhost/openquad:dev
-Network=openquad.network
-PublishPort=127.0.0.1:18789:18789
-Volume=openquad-state:/home/node/.openclaw
+Image=ghcr.io/myos-dev/openquad:latest
+Pull=missing
 
-# Optional overrides for defaults/openclaw.base.json5 or ~/.openclaw/.env:
-# Environment=OLLAMA_BASE_URL=http://ollama:11434
-# Environment=SEARXNG_BASE_URL=http://searxng:8080
+# Default example: shared user-defined Podman network.
+# With sibling containers on this network, use http://ollama:11434 and
+# http://searxng:8080 for service discovery.
+Network=openquad.network
+
+# Host-published fallback: replace the Network= line above with this when
+# using host.containers.internal against host-published services.
+# Network=slirp4netns:allow_host_loopback=true
+
+PublishPort=127.0.0.1:18789:18789
+UserNS=keep-id
+NoNewPrivileges=true
+DropCapability=ALL
+ReadOnly=true
+Tmpfs=/tmp:size=512M,mode=1777
+WorkingDir=/home/node
+Environment=HOME=/home/node
+Environment=OPENCLAW_STATE_DIR=/home/node/.openclaw
+Environment=OPENCLAW_CONFIG_PATH=/home/node/.openclaw/openclaw.json
+
+# Shared-network defaults.
+Environment=OLLAMA_BASE_URL=http://ollama:11434
+Environment=SEARXNG_BASE_URL=http://searxng:8080
+
+# Host-published sibling services fallback.
+# Environment=OLLAMA_BASE_URL=http://host.containers.internal:11434
+# Environment=SEARXNG_BASE_URL=http://host.containers.internal:8888
+
+Environment=NPM_CONFIG_CACHE=/home/node/.openclaw/.npm
+Environment=XDG_CACHE_HOME=/home/node/.openclaw/.cache
+Environment=CODEX_HOME=/home/node/.openclaw/.codex
+Environment=CODEX_SQLITE_HOME=/home/node/.openclaw/.codex/sqlite
+Volume=openquad-state:/home/node/.openclaw:rw,Z
+Volume=openquad-npm:/home/node/.npm:rw,Z
+Volume=openquad-cache:/home/node/.cache:rw,Z
+Volume=openquad-logs:/tmp/openclaw:rw,Z
+Exec=openclaw gateway --allow-unconfigured
 
 [Service]
 Restart=on-failure
-TimeoutStartSec=900
+RestartSec=5s
+TimeoutStartSec=15min
 
 [Install]
 WantedBy=default.target
