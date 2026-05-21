@@ -65,6 +65,7 @@ WORKDIR /home/node
 
 RUN set -eux; \
     brew --version; \
+    HOMEBREW_NO_AUTO_UPDATE=0 brew update --force --quiet; \
     brew bundle --file=/usr/share/openquad/defaults/Brewfile; \
     gh --version; \
     himalaya --version; \
