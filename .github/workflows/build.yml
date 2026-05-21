@@ -1,14 +1,20 @@
 name: Build OpenQuad
 
 on:
+  schedule:
+    - cron: '17 3 * * *'
+      timezone: "America/Vancouver"
+
   push:
     branches:
       - main
     tags:
       - "v*"
+
   pull_request:
     branches:
       - main
+
   workflow_dispatch:
 
 permissions:
