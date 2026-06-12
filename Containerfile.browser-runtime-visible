@@ -18,6 +18,9 @@ ENV OPENQUAD_IMAGE_NAME=${OPENQUAD_IMAGE_NAME} \
     NOVNC_PORT=6080 \
     CHROMIUM_CDP_HOST=0.0.0.0 \
     CHROMIUM_CDP_PORT=9222 \
+    CHROMIUM_POLICY_DIR=/etc/chromium/policies/managed \
+    VISIBLE_BROWSER_MODE=locked \
+    CHROMIUM_START_URL=about:blank \
     BROWSER_PROFILE_DIR=/home/pwuser/browser-profile \
     BROWSER_DOWNLOAD_DIR=/home/pwuser/downloads
 
@@ -38,14 +41,20 @@ RUN set -eux; \
         /home/pwuser/browser-profile \
         /home/pwuser/downloads \
         /home/pwuser/.vnc \
-        /opt/openquad/browser-runtime; \
+        /opt/openquad/browser-runtime \
+        /usr/share/openquad/templates/browser-runtime-visible/policies; \
+    install -d -m 0755 \
+        /etc/chromium/policies/managed \
+        /etc/chromium/policies/recommended; \
     chown -R pwuser:pwuser /opt/openquad/browser-runtime /home/pwuser
 
 COPY runtimes/browser/visible/start-visible.sh /usr/local/bin/openquad-browser-runtime-visible
 COPY templates/browser-runtime-visible/Brewfile /usr/share/openquad/templates/browser-runtime-visible/Brewfile
+COPY templates/browser-runtime-visible/policies/vic-managed-policy.example.json /usr/share/openquad/templates/browser-runtime-visible/policies/vic-managed-policy.example.json
 RUN set -eux; \
     chmod 0755 /usr/local/bin/openquad-browser-runtime-visible; \
-    test -r /usr/share/openquad/templates/browser-runtime-visible/Brewfile
+    test -r /usr/share/openquad/templates/browser-runtime-visible/Brewfile; \
+    test -r /usr/share/openquad/templates/browser-runtime-visible/policies/vic-managed-policy.example.json
 
 EXPOSE 9222 5900 6080
 USER pwuser

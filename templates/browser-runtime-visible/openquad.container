@@ -13,12 +13,18 @@ Network=openquad.network
 NoNewPrivileges=true
 ReadOnly=false
 ShmSize=1g
+Environment=VISIBLE_BROWSER_MODE=locked
 Environment=CHROMIUM_CDP_HOST=0.0.0.0
 Environment=CHROMIUM_CDP_PORT=9222
+Environment=CHROMIUM_START_URL=about:blank
+Environment=CHROMIUM_POLICY_DIR=/etc/chromium/policies/managed
 Environment=VNC_PORT=5900
 Environment=NOVNC_PORT=6080
 Environment=BROWSER_PROFILE_DIR=/home/pwuser/browser-profile
 Environment=BROWSER_DOWNLOAD_DIR=/home/pwuser/downloads
+# Optional managed Chromium policy mount. In Kubernetes, prefer a ConfigMap
+# mounted at /etc/chromium/policies/managed instead.
+# Volume=/path/to/openquad-visible-policies:/etc/chromium/policies/managed:ro,Z
 Volume=openquad-browser-visible-profile:/home/pwuser/browser-profile:rw,Z
 Volume=openquad-browser-visible-downloads:/home/pwuser/downloads:rw,Z
 
