@@ -1,6 +1,4 @@
-# Root Brewfile for local/default OpenQuad development builds.
-# CI uses templates/<template>/Brewfile for each image matrix entry.
-# This root default mirrors openquad-comms for convenience.
+# openquad-comms dependencies.
 brew "himalaya"     # IMAP/SMTP email CLI
 brew "gcalcli"      # Google Calendar CLI
 brew "vdirsyncer"   # CalDAV/CardDAV sync for calendars and contacts

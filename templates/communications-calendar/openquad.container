@@ -5,11 +5,7 @@ Description=OpenQuad Communications Agent
 ContainerName=openquad-comms
 Image=ghcr.io/myos-dev/openquad-comms:latest
 Pull=missing
-
-# Default example: shared user-defined Podman network.
 Network=openquad.network
-# Host-published fallback for sibling services:
-# Network=slirp4netns:allow_host_loopback=true
 
 PublishPort=127.0.0.1:18789:18789
 UserNS=keep-id

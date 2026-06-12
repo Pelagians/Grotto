@@ -2,8 +2,8 @@ name: Build OpenQuad
 
 on:
   schedule:
-    - cron: '17 3 * * *'
-      timezone: "America/Vancouver"
+    # GitHub Actions cron is UTC.
+    - cron: '17 11 * * *'
 
   push:
     branches:
@@ -27,12 +27,70 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE: ghcr.io/myos-dev/openquad
+  PLAYWRIGHT_VERSION: "1.60.0"
 
 jobs:
   image:
-    name: Build container image
+    name: Build ${{ matrix.name }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: openquad-comms
+            image: ghcr.io/myos-dev/openquad-comms
+            title: OpenQuad Communications
+            description: Focused OpenClaw communications/calendar agent for email, messaging, calendar, reminders, and contacts
+            file: ./Containerfile
+            template: communications-calendar
+            verify_tools: himalaya gcalcli vdirsyncer khal khard jq
+            link_formulae: ""
+            npm_packages: ""
+          - name: openquad-records
+            image: ghcr.io/myos-dev/openquad-records
+            title: OpenQuad Records
+            description: Focused OpenClaw records agent for VIC, Postgres, SQLite, JSON, CSV, and evidence-backed record writes
+            file: ./Containerfile
+            template: records
+            verify_tools: sqlite3 duckdb jq yq psql
+            link_formulae: sqlite libpq
+            npm_packages: ""
+          - name: openquad-documents
+            image: ghcr.io/myos-dev/openquad-documents
+            title: OpenQuad Documents
+            description: Focused OpenClaw documents agent for OCR, extraction, conversion, classification, and managed document organization
+            file: ./Containerfile
+            template: documents
+            verify_tools: pandoc pdfinfo pdftotext qpdf tesseract ocrmypdf python3 jq
+            link_formulae: ""
+            npm_packages: ""
+          - name: openquad-browser-agent
+            image: ghcr.io/myos-dev/openquad-browser-agent
+            title: OpenQuad Browser Agent
+            description: Focused OpenClaw browser workflow agent that controls separate internal browser runtime containers
+            file: ./Containerfile
+            template: browser-agent
+            verify_tools: jq node npm playwright
+            link_formulae: ""
+            npm_packages: playwright@1.60.0
+          - name: openquad-browser-runtime-headless
+            image: ghcr.io/myos-dev/openquad-browser-runtime-headless
+            title: OpenQuad Headless Browser Runtime
+            description: Runtime-only Playwright Chromium WebSocket endpoint for repeatable headless browser workflows
+            file: ./Containerfile.browser-runtime-headless
+            template: browser-runtime-headless
+            verify_tools: ""
+            link_formulae: ""
+            npm_packages: ""
+          - name: openquad-browser-runtime-visible
+            image: ghcr.io/myos-dev/openquad-browser-runtime-visible
+            title: OpenQuad Visible Browser Runtime
+            description: Runtime-only visible Chromium with CDP, VNC, noVNC, and persistent browser profile support
+            file: ./Containerfile.browser-runtime-visible
+            template: browser-runtime-visible
+            verify_tools: ""
+            link_formulae: ""
+            npm_packages: ""
 
     steps:
       - name: Check out repository
@@ -53,23 +111,31 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.IMAGE }}
+          images: ${{ matrix.image }}
           tags: |
             type=ref,event=branch
             type=ref,event=tag
             type=sha,prefix=sha-
             type=raw,value=latest,enable={{is_default_branch}}
           labels: |
-            org.opencontainers.image.title=OpenQuad
-            org.opencontainers.image.description=OpenClaw slim image with Linux Homebrew and rootless Podman integration defaults
+            org.opencontainers.image.title=${{ matrix.title }}
+            org.opencontainers.image.description=${{ matrix.description }}
+            org.opencontainers.image.source=https://github.com/myos-dev/OpenQuad
 
       - name: Build and publish image
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: ./Containerfile
+          file: ${{ matrix.file }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          build-args: |
+            OPENQUAD_TEMPLATE=${{ matrix.template }}
+            OPENQUAD_IMAGE_NAME=${{ matrix.name }}
+            OPENQUAD_LINK_FORMULAE=${{ matrix.link_formulae }}
+            OPENQUAD_NPM_PACKAGES=${{ matrix.npm_packages }}
+            OPENQUAD_VERIFY_TOOLS=${{ matrix.verify_tools }}
+            PLAYWRIGHT_VERSION=${{ env.PLAYWRIGHT_VERSION }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}

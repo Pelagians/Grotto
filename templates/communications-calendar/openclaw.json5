@@ -1,0 +1,95 @@
+// openquad-comms starter config.
+{
+  agents: {
+    defaults: {
+      workspace: "/home/node/.openclaw/workspace",
+    },
+  },
+
+  openquad: {
+    product: "OpenQuad",
+    image: "openquad-comms",
+    template: "communications-calendar",
+    primaryJob: "Email, messaging, calendar, reminders, contact coordination, drafting replies, scheduling, and follow-up.",
+    dataSurfaces: ["email", "messaging connectors", "calendars", "contacts", "reminders"],
+    mutationPermissions: {
+      autonomous: ["draft replies", "prepare scheduling options", "organize low-risk mailbox/calendar metadata when policy allows"],
+      requiresApproval: ["send external messages", "create or modify meetings with attendees", "delete communications data"],
+      blockedByDefault: ["payments", "purchases", "security-sensitive account changes", "irreversible deletes"],
+    },
+    allowedTools: ["himalaya", "gcalcli", "vdirsyncer", "khal", "khard", "jq"],
+    outOfScope: ["business record mutation", "document OCR pipelines", "browser automation", "software development", "infrastructure administration"],
+    outputContract: {
+      type: "communications_action_or_draft",
+      requiredFields: ["action", "target", "draft_or_result", "policy_decision", "evidence", "provenance"],
+    },
+  },
+
+  gateway: {
+    mode: "local",
+    bind: "lan",
+    port: 18789,
+    controlUi: {
+      allowedOrigins: [
+        "http://localhost",
+        "http://localhost:18789",
+        "http://127.0.0.1",
+        "http://127.0.0.1:18789",
+      ],
+    },
+  },
+
+  env: {
+    vars: {
+      OLLAMA_BASE_URL: "http://ollama:11434",
+      SEARXNG_BASE_URL: "http://searxng:8080",
+      XDG_CONFIG_HOME: "/home/node/.openclaw/.config",
+      XDG_DATA_HOME: "/home/node/.openclaw/.local/share",
+      XDG_CACHE_HOME: "/home/node/.openclaw/.cache",
+    },
+  },
+
+  tools: {
+    web: {
+      search: { enabled: true, provider: "searxng" },
+      fetch: { enabled: true },
+    },
+  },
+  plugins: {
+    entries: {
+      searxng: {
+        enabled: true,
+        config: {
+          webSearch: {
+            baseUrl: "${SEARXNG_BASE_URL}",
+            categories: "general",
+            language: "en",
+          },
+        },
+      },
+    },
+  },
+
+  // Enable only after pulling the model into the sibling Ollama service.
+  // Suggested class: 3B-8B instruct models for short communications tasks.
+  // models: {
+  //   providers: {
+  //     ollama: {
+  //       baseUrl: "${OLLAMA_BASE_URL}",
+  //       apiKey: "ollama-local",
+  //       api: "ollama",
+  //       models: [
+  //         {
+  //           id: "qwen3:4b",
+  //           name: "Qwen3 4B Local",
+  //           reasoning: false,
+  //           input: ["text"],
+  //           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  //           contextWindow: 32768,
+  //           maxTokens: 8192,
+  //         },
+  //       ],
+  //     },
+  //   },
+  // },
+}

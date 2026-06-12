@@ -1,0 +1,31 @@
+[Unit]
+Description=OpenQuad Visible Browser Runtime
+
+[Container]
+ContainerName=openquad-browser-runtime-visible
+Image=ghcr.io/myos-dev/openquad-browser-runtime-visible:latest
+Pull=missing
+Network=openquad.network
+
+# Do not publish CDP, VNC, or noVNC publicly. They are privileged
+# browser-control access and should be reachable only by trusted agents
+# and user-assistance paths inside the trusted network boundary.
+NoNewPrivileges=true
+ReadOnly=false
+ShmSize=1g
+Environment=CHROMIUM_CDP_HOST=0.0.0.0
+Environment=CHROMIUM_CDP_PORT=9222
+Environment=VNC_PORT=5900
+Environment=NOVNC_PORT=6080
+Environment=BROWSER_PROFILE_DIR=/home/pwuser/browser-profile
+Environment=BROWSER_DOWNLOAD_DIR=/home/pwuser/downloads
+Volume=openquad-browser-visible-profile:/home/pwuser/browser-profile:rw,Z
+Volume=openquad-browser-visible-downloads:/home/pwuser/downloads:rw,Z
+
+[Service]
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=5min
+
+[Install]
+WantedBy=default.target

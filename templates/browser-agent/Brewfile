@@ -1,0 +1,4 @@
+# openquad-browser-agent dependencies.
+# Playwright client tooling is installed by npm with browser downloads disabled.
+# Browser runtimes live in separate openquad-browser-runtime-* images.
+brew "jq"           # JSON policy/evidence/artifact shaping
