@@ -95,4 +95,6 @@ RUN set -eux; \
     done; \
     test -r /usr/share/openquad/defaults/openclaw.base.json5; \
     test -r "/usr/share/openquad/templates/${OPENQUAD_TEMPLATE}/Brewfile"; \
-    test -r "/usr/share/openquad/templates/${OPENQUAD_TEMPLATE}/openclaw.json5"
+    test -r "/usr/share/openquad/templates/${OPENQUAD_TEMPLATE}/openclaw.json5"; \
+    brew cleanup --prune=all -s || true; \
+    rm -rf "$(brew --cache)" /home/linuxbrew/.cache/Homebrew "${NPM_CONFIG_CACHE}"/_cacache 2>/dev/null || true

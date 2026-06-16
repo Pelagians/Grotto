@@ -61,7 +61,7 @@ jobs:
             description: Focused OpenClaw documents agent for OCR, extraction, conversion, classification, and managed document organization
             file: ./Containerfile
             template: documents
-            verify_tools: pandoc pdfinfo pdftotext qpdf tesseract ocrmypdf python3 jq
+            verify_tools: pandoc pdfinfo pdftotext qpdf tesseract ocrmypdf python3.13 jq
             link_formulae: ""
             npm_packages: ""
           - name: openquad-browser-agent
