@@ -1,0 +1,25 @@
+# Build-context excludes shared by every OpenQuad image build.
+# Nothing listed here is COPYed by any Containerfile, so excluding it keeps the
+# upload to the builder small and prevents .git churn from busting build caches.
+
+# Version control and CI definitions
+.git
+.gitignore
+.github/
+.dockerignore
+
+# Human-facing docs (never copied into an image)
+docs/
+LICENSE
+*.md
+**/README.md
+
+# Quadlet / systemd unit examples are runtime deployment artifacts, not build inputs
+quadlet/
+**/openquad.container
+
+# Editor / OS cruft
+.DS_Store
+*.log
+*.swp
+*~

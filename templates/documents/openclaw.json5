@@ -18,7 +18,7 @@
       requiresApproval: ["edit existing authoritative documents", "overwrite source files", "move files outside managed workspaces"],
       blockedByDefault: ["sensitive deletion", "irreversible deletion", "external communications", "browser automation"],
     },
-    allowedTools: ["pandoc", "pdftotext", "pdfinfo", "qpdf", "tesseract", "ocrmypdf", "python3", "jq"],
+    allowedTools: ["pandoc", "pdftotext", "pdfinfo", "qpdf", "tesseract", "ocrmypdf", "python3.13", "jq"],
     outOfScope: ["email/messaging", "calendar scheduling", "business record mutation", "browser automation", "destructive deletion"],
     outputContract: {
       type: "document_processing_result",

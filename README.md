@@ -73,7 +73,7 @@ podman build -t openquad-records:dev -f Containerfile \
 podman build -t openquad-documents:dev -f Containerfile \
   --build-arg OPENQUAD_TEMPLATE=documents \
   --build-arg OPENQUAD_IMAGE_NAME=openquad-documents \
-  --build-arg OPENQUAD_VERIFY_TOOLS="pandoc pdfinfo pdftotext qpdf tesseract ocrmypdf python3 jq" .
+  --build-arg OPENQUAD_VERIFY_TOOLS="pandoc pdfinfo pdftotext qpdf tesseract ocrmypdf python3.13 jq" .
 
 podman build -t openquad-browser-agent:dev -f Containerfile \
   --build-arg OPENQUAD_TEMPLATE=browser-agent \
