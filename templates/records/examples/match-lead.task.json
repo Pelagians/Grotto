@@ -1,0 +1,24 @@
+{
+  "task_id": "example-records-match-lead",
+  "idempotency_key": "idem-example-records-match-lead",
+  "capability": "records.match",
+  "task_type": "match_record",
+  "input": {
+    "email": "buyer@example.com",
+    "phone": "555-0100"
+  },
+  "constraints": {
+    "max_runtime_seconds": 300,
+    "network_policy": "restricted",
+    "allowed_domains": [],
+    "write_scope": "task"
+  },
+  "policy": {
+    "decision": "allowed",
+    "reason": "example policy decision",
+    "policy_version": "v0.1"
+  },
+  "provenance": {
+    "example": true
+  }
+}

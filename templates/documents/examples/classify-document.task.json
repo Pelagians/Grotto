@@ -1,0 +1,23 @@
+{
+  "task_id": "example-docs-classify",
+  "idempotency_key": "idem-example-docs-classify",
+  "capability": "documents.classify",
+  "task_type": "classify_document",
+  "input": {
+    "source_uri": "file:///workspace/inquiry.pdf"
+  },
+  "constraints": {
+    "max_runtime_seconds": 300,
+    "network_policy": "restricted",
+    "allowed_domains": [],
+    "write_scope": "task"
+  },
+  "policy": {
+    "decision": "allowed",
+    "reason": "example policy decision",
+    "policy_version": "v0.1"
+  },
+  "provenance": {
+    "example": true
+  }
+}

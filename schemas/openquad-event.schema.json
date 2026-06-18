@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openquad.dev/schemas/openquad-event.schema.json",
+  "title": "OpenQuad Event",
+  "type": "object",
+  "required": [
+    "event_type",
+    "task_id",
+    "created_at"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "minLength": 1
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "created_at": {
+      "type": "string"
+    },
+    "event_json": {
+      "type": "object"
+    }
+  }
+}

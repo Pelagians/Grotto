@@ -91,6 +91,37 @@ podman build -t openquad-browser-runtime-headless:dev -f Containerfile.browser-r
 podman build -t openquad-browser-runtime-visible:dev -f Containerfile.browser-runtime-visible .
 ```
 
+
+
+## Worker Contract v0.1
+
+OpenQuad worker images expose a generic worker contract that VIC and other orchestrators can consume. OpenQuad remains a worker/runtime family: it does not own tenants, workflows, approvals, durable records, or canonical audit.
+
+Contract docs:
+
+- [`docs/worker-contract.md`](docs/worker-contract.md)
+- [`docs/capability-model.md`](docs/capability-model.md)
+- [`docs/orchestrator-integration.md`](docs/orchestrator-integration.md)
+- [`docs/vic-integration.md`](docs/vic-integration.md)
+
+Validation and local daemon checks:
+
+```bash
+make validate-schemas
+make validate-manifests
+make test
+```
+
+Run a local worker daemon for one template:
+
+```bash
+OPENQUAD_MANIFEST_PATH=templates/documents/openquad.manifest.json \
+OPENQUAD_WORKSPACE_DIR=/tmp/openquad-workspace \
+uv run --project workerd openquad-workerd
+```
+
+The first daemon validates tasks, writes task/result/events/artifact-manifest files, and returns `failed` with `not_implemented` for task types that are declared but do not yet have concrete connector/browser runners. It must not fake successful execution.
+
 ## Runtime Layout
 
 OpenQuad agent images follow the live rootless OpenClaw layout:

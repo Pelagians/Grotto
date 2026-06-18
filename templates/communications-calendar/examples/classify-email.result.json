@@ -1,0 +1,26 @@
+{
+  "task_id": "example-comms-classify-email",
+  "status": "failed",
+  "worker": "openquad-comms",
+  "capability": "comms.classify",
+  "task_type": "classify_email",
+  "result": {
+    "message": "Example result shape; current stub runner returns not_implemented."
+  },
+  "policy_decision": {
+    "decision": "allowed",
+    "reason": "example policy decision",
+    "policy_version": "v0.1"
+  },
+  "evidence": [],
+  "provenance": {
+    "example": true
+  },
+  "artifacts": [],
+  "errors": [
+    {
+      "code": "not_implemented",
+      "message": "No real connector runner is implemented in v0.1."
+    }
+  ]
+}

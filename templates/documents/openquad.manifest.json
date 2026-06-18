@@ -1,0 +1,155 @@
+{
+  "contract_version": "openquad.worker.v0.1",
+  "worker": {
+    "name": "openquad-documents",
+    "description": "Generic OpenQuad documents worker"
+  },
+  "image": "ghcr.io/myos-dev/openquad-documents:latest",
+  "template": "documents",
+  "capabilities": [
+    {
+      "name": "documents.read",
+      "description": "Read document metadata or text from a mounted source.",
+      "task_types": [
+        "read_document"
+      ],
+      "side_effect_classes": [
+        "read_only"
+      ],
+      "artifact_types": [
+        "text",
+        "json"
+      ]
+    },
+    {
+      "name": "documents.ocr",
+      "description": "OCR image or scanned PDF documents.",
+      "task_types": [
+        "ocr_document"
+      ],
+      "side_effect_classes": [
+        "read_only",
+        "local_artifact_write"
+      ],
+      "artifact_types": [
+        "text",
+        "json",
+        "pdf"
+      ]
+    },
+    {
+      "name": "documents.convert",
+      "description": "Convert documents into normalized text or other safe artifacts.",
+      "task_types": [
+        "convert_pdf_to_text",
+        "convert_document"
+      ],
+      "side_effect_classes": [
+        "read_only",
+        "local_artifact_write"
+      ],
+      "artifact_types": [
+        "text",
+        "json",
+        "pdf"
+      ]
+    },
+    {
+      "name": "documents.extract_tables",
+      "description": "Extract tabular data from documents.",
+      "task_types": [
+        "extract_tables"
+      ],
+      "side_effect_classes": [
+        "read_only",
+        "local_artifact_write"
+      ],
+      "artifact_types": [
+        "csv",
+        "json"
+      ]
+    },
+    {
+      "name": "documents.classify",
+      "description": "Classify document type or routing.",
+      "task_types": [
+        "classify_document"
+      ],
+      "side_effect_classes": [
+        "read_only",
+        "local_artifact_write"
+      ],
+      "artifact_types": [
+        "json"
+      ]
+    },
+    {
+      "name": "documents.summarize",
+      "description": "Summarize document contents.",
+      "task_types": [
+        "summarize_document"
+      ],
+      "side_effect_classes": [
+        "read_only",
+        "local_artifact_write"
+      ],
+      "artifact_types": [
+        "text",
+        "json"
+      ]
+    },
+    {
+      "name": "documents.normalize",
+      "description": "Normalize extracted document fields.",
+      "task_types": [
+        "normalize_document"
+      ],
+      "side_effect_classes": [
+        "read_only",
+        "local_artifact_write"
+      ],
+      "artifact_types": [
+        "json"
+      ]
+    }
+  ],
+  "supported_task_types": [
+    "read_document",
+    "ocr_document",
+    "convert_pdf_to_text",
+    "convert_document",
+    "extract_tables",
+    "classify_document",
+    "summarize_document",
+    "normalize_document"
+  ],
+  "side_effect_classes": [
+    "read_only",
+    "local_artifact_write"
+  ],
+  "required_env": [],
+  "optional_env": [
+    "DOCUMENT_INPUT_ROOT",
+    "DOCUMENT_OUTPUT_ROOT",
+    "OCR_LANGUAGE"
+  ],
+  "artifact_types": [
+    "text",
+    "json",
+    "csv",
+    "pdf",
+    "png"
+  ],
+  "policy_hints": {
+    "external_mutation_requires_approval": true,
+    "external_message_requires_approval": true,
+    "credential_or_secret_access_rejected_by_default": true,
+    "policy_authority": "external_orchestrator"
+  },
+  "out_of_scope": [
+    "owning source documents",
+    "overwriting authoritative documents without approval",
+    "storing document repository credentials in the image",
+    "making legal classification claims without review"
+  ]
+}

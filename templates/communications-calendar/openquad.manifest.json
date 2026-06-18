@@ -1,0 +1,180 @@
+{
+  "contract_version": "openquad.worker.v0.1",
+  "worker": {
+    "name": "openquad-comms",
+    "description": "Generic OpenQuad communications-calendar worker"
+  },
+  "image": "ghcr.io/myos-dev/openquad-comms:latest",
+  "template": "communications-calendar",
+  "capabilities": [
+    {
+      "name": "comms.read",
+      "description": "Read messages, inbox metadata, calendars, contacts, or reminders.",
+      "task_types": [
+        "read_inbox",
+        "read_message",
+        "list_calendar_events"
+      ],
+      "side_effect_classes": [
+        "read_only"
+      ],
+      "artifact_types": [
+        "json",
+        "text"
+      ]
+    },
+    {
+      "name": "comms.classify",
+      "description": "Classify email/message content.",
+      "task_types": [
+        "classify_email",
+        "classify_message"
+      ],
+      "side_effect_classes": [
+        "read_only",
+        "local_artifact_write"
+      ],
+      "artifact_types": [
+        "json"
+      ]
+    },
+    {
+      "name": "comms.draft_reply",
+      "description": "Draft a reply without sending it.",
+      "task_types": [
+        "draft_reply"
+      ],
+      "side_effect_classes": [
+        "local_artifact_write"
+      ],
+      "artifact_types": [
+        "text",
+        "json"
+      ]
+    },
+    {
+      "name": "comms.organize_mailbox",
+      "description": "Prepare or apply mailbox organization actions.",
+      "task_types": [
+        "organize_mailbox"
+      ],
+      "side_effect_classes": [
+        "external_mutation"
+      ],
+      "artifact_types": [
+        "json"
+      ]
+    },
+    {
+      "name": "comms.apply_label",
+      "description": "Apply a mailbox label.",
+      "task_types": [
+        "apply_label"
+      ],
+      "side_effect_classes": [
+        "external_mutation"
+      ],
+      "artifact_types": [
+        "json"
+      ]
+    },
+    {
+      "name": "comms.archive",
+      "description": "Archive a message.",
+      "task_types": [
+        "archive_message"
+      ],
+      "side_effect_classes": [
+        "external_mutation"
+      ],
+      "artifact_types": [
+        "json"
+      ]
+    },
+    {
+      "name": "comms.send_message",
+      "description": "Send an external message after orchestrator approval.",
+      "task_types": [
+        "send_message"
+      ],
+      "side_effect_classes": [
+        "external_message",
+        "external_mutation"
+      ],
+      "artifact_types": [
+        "json"
+      ]
+    },
+    {
+      "name": "comms.calendar.propose",
+      "description": "Propose meeting times without creating an event.",
+      "task_types": [
+        "propose_calendar_times"
+      ],
+      "side_effect_classes": [
+        "read_only",
+        "local_artifact_write"
+      ],
+      "artifact_types": [
+        "json"
+      ]
+    },
+    {
+      "name": "comms.calendar.create_event",
+      "description": "Create or update a calendar event after approval.",
+      "task_types": [
+        "create_calendar_event"
+      ],
+      "side_effect_classes": [
+        "external_mutation",
+        "external_message"
+      ],
+      "artifact_types": [
+        "json"
+      ]
+    }
+  ],
+  "supported_task_types": [
+    "read_inbox",
+    "read_message",
+    "list_calendar_events",
+    "classify_email",
+    "classify_message",
+    "draft_reply",
+    "organize_mailbox",
+    "apply_label",
+    "archive_message",
+    "send_message",
+    "propose_calendar_times",
+    "create_calendar_event"
+  ],
+  "side_effect_classes": [
+    "read_only",
+    "local_artifact_write",
+    "external_mutation",
+    "external_message"
+  ],
+  "required_env": [],
+  "optional_env": [
+    "IMAP_ACCOUNT_REF",
+    "SMTP_ACCOUNT_REF",
+    "CALENDAR_ACCOUNT_REF",
+    "CONTACTS_ACCOUNT_REF"
+  ],
+  "artifact_types": [
+    "json",
+    "text"
+  ],
+  "policy_hints": {
+    "external_mutation_requires_approval": true,
+    "external_message_requires_approval": true,
+    "credential_or_secret_access_rejected_by_default": true,
+    "policy_authority": "external_orchestrator"
+  },
+  "out_of_scope": [
+    "owning inbox policy",
+    "sending external messages without orchestrator approval",
+    "storing email credentials in the image or manifest",
+    "owning customer records"
+  ]
+}

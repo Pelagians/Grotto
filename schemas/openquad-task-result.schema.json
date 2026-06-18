@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openquad.dev/schemas/openquad-task-result.schema.json",
+  "title": "OpenQuad Task Result",
+  "type": "object",
+  "required": [
+    "task_id",
+    "status",
+    "worker",
+    "capability",
+    "task_type",
+    "result",
+    "policy_decision",
+    "evidence",
+    "provenance",
+    "artifacts",
+    "errors"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "queued",
+        "running",
+        "succeeded",
+        "failed",
+        "cancelled",
+        "requires_approval",
+        "rejected"
+      ]
+    },
+    "worker": {
+      "type": "string"
+    },
+    "capability": {
+      "type": "string"
+    },
+    "task_type": {
+      "type": "string"
+    },
+    "result": {
+      "type": "object"
+    },
+    "policy_decision": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "https://openquad.dev/schemas/openquad-policy-decision.schema.json",
+      "title": "OpenQuad Policy Decision Hint",
+      "type": "object",
+      "required": [
+        "decision",
+        "reason",
+        "policy_version"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "decision": {
+          "type": "string",
+          "enum": [
+            "allowed",
+            "requires_approval",
+            "rejected"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        },
+        "policy_version": {
+          "type": "string"
+        },
+        "hints": {
+          "type": "object"
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "provenance": {
+      "type": "object"
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "kind",
+          "uri",
+          "sha256",
+          "size_bytes",
+          "content_type"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "text",
+              "json",
+              "csv",
+              "pdf",
+              "png",
+              "html",
+              "trace",
+              "screenshot",
+              "other"
+            ]
+          },
+          "uri": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-fA-F0-9]{64}$"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "details": {
+            "type": "object"
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  }
+}
