@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openquad.dev/schemas/openquad-task.schema.json",
+  "title": "OpenQuad Task Envelope",
+  "type": "object",
+  "required": [
+    "task_id",
+    "idempotency_key",
+    "capability",
+    "task_type",
+    "input",
+    "constraints",
+    "policy",
+    "provenance"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "capability": {
+      "type": "string",
+      "minLength": 1
+    },
+    "task_type": {
+      "type": "string",
+      "minLength": 1
+    },
+    "input": {
+      "type": "object"
+    },
+    "constraints": {
+      "type": "object",
+      "required": [
+        "max_runtime_seconds",
+        "network_policy",
+        "allowed_domains",
+        "write_scope"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "max_runtime_seconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "network_policy": {
+          "type": "string",
+          "enum": [
+            "none",
+            "restricted",
+            "allowed"
+          ]
+        },
+        "allowed_domains": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "write_scope": {
+          "type": "string"
+        }
+      }
+    },
+    "policy": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "https://openquad.dev/schemas/openquad-policy-decision.schema.json",
+      "title": "OpenQuad Policy Decision Hint",
+      "type": "object",
+      "required": [
+        "decision",
+        "reason",
+        "policy_version"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "decision": {
+          "type": "string",
+          "enum": [
+            "allowed",
+            "requires_approval",
+            "rejected"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        },
+        "policy_version": {
+          "type": "string"
+        },
+        "hints": {
+          "type": "object"
+        }
+      }
+    },
+    "provenance": {
+      "type": "object"
+    }
+  }
+}

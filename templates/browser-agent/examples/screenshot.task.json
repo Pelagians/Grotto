@@ -1,0 +1,23 @@
+{
+  "task_id": "example-browser-screenshot",
+  "idempotency_key": "idem-example-browser-screenshot",
+  "capability": "browser.screenshot",
+  "task_type": "screenshot",
+  "input": {
+    "url": "https://example.com"
+  },
+  "constraints": {
+    "max_runtime_seconds": 300,
+    "network_policy": "restricted",
+    "allowed_domains": [],
+    "write_scope": "task"
+  },
+  "policy": {
+    "decision": "allowed",
+    "reason": "allowed domain screenshot",
+    "policy_version": "v0.1"
+  },
+  "provenance": {
+    "example": true
+  }
+}

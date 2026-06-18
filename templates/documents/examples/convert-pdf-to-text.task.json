@@ -1,0 +1,23 @@
+{
+  "task_id": "example-docs-convert-pdf",
+  "idempotency_key": "idem-example-docs-convert-pdf",
+  "capability": "documents.convert",
+  "task_type": "convert_pdf_to_text",
+  "input": {
+    "source_uri": "file:///workspace/inquiry.pdf"
+  },
+  "constraints": {
+    "max_runtime_seconds": 300,
+    "network_policy": "restricted",
+    "allowed_domains": [],
+    "write_scope": "task"
+  },
+  "policy": {
+    "decision": "allowed",
+    "reason": "example policy decision",
+    "policy_version": "v0.1"
+  },
+  "provenance": {
+    "example": true
+  }
+}

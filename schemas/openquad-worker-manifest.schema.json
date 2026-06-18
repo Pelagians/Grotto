@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openquad.dev/schemas/openquad-worker-manifest.schema.json",
+  "title": "OpenQuad Worker Manifest",
+  "type": "object",
+  "required": [
+    "contract_version",
+    "worker",
+    "image",
+    "template",
+    "capabilities",
+    "supported_task_types",
+    "side_effect_classes",
+    "required_env",
+    "optional_env",
+    "artifact_types",
+    "policy_hints",
+    "out_of_scope"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "contract_version": {
+      "type": "string",
+      "const": "openquad.worker.v0.1"
+    },
+    "worker": {
+      "type": "object",
+      "required": [
+        "name",
+        "description"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "image": {
+      "type": "string"
+    },
+    "template": {
+      "type": "string"
+    },
+    "capabilities": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "task_types",
+          "side_effect_classes"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "task_types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          },
+          "side_effect_classes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "artifact_types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "policy_hints": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "supported_task_types": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "side_effect_classes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "required_env": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "optional_env": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "artifact_types": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "policy_hints": {
+      "type": "object"
+    },
+    "out_of_scope": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

@@ -2,3 +2,8 @@
 *.log
 *.swp
 *~
+__pycache__/
+*.py[cod]
+.venv/
+workerd/.venv/
+.pytest_cache/

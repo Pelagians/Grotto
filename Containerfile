@@ -30,7 +30,12 @@ ENV OPENQUAD_TEMPLATE=${OPENQUAD_TEMPLATE} \
     XDG_CACHE_HOME=/home/node/.openclaw/.cache \
     CODEX_HOME=/home/node/.openclaw/.codex \
     CODEX_SQLITE_HOME=/home/node/.openclaw/.codex/sqlite \
-    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
+    OPENQUAD_WORKERD_ENABLED=true \
+    OPENQUAD_WORKERD_HOST=0.0.0.0 \
+    OPENQUAD_WORKERD_PORT=18789 \
+    OPENQUAD_WORKSPACE_DIR=/home/node/.openclaw/workspace \
+    OPENQUAD_MANIFEST_PATH=/usr/share/openquad/templates/${OPENQUAD_TEMPLATE}/openquad.manifest.json
 
 # OpenClaw slim already includes curl, git, and procps. Homebrew on Debian
 # still needs certificates, build tools, and the `file` utility to bootstrap.
@@ -39,7 +44,9 @@ RUN set -eux; \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         build-essential \
         ca-certificates \
-        file; \
+        file \
+        python3 \
+        python3-venv; \
     rm -rf /var/lib/apt/lists/*; \
     install -d -m 0755 "${HOMEBREW_REPOSITORY}"; \
     git clone --branch "${HOMEBREW_VERSION}" --depth 1 https://github.com/Homebrew/brew "${HOMEBREW_REPOSITORY}"; \
@@ -66,14 +73,26 @@ RUN set -eux; \
         /home/node/.openclaw/.config \
         /home/node/.openclaw/.local/share \
         /home/node/.openclaw/.npm \
-        /home/node/.openclaw/workspace; \
+        /home/node/.openclaw/workspace \
+        /usr/share/openquad/schemas \
+        /opt/openquad/workerd; \
     ln -s "${HOMEBREW_REPOSITORY}/bin/brew" "${HOMEBREW_PREFIX}/bin/brew"; \
     chown -R node:node /home/linuxbrew /home/node/.local
 
 COPY files/profile.d/linuxbrew.sh /etc/profile.d/linuxbrew.sh
 COPY defaults/openclaw.base.json5 /usr/share/openquad/defaults/openclaw.base.json5
+COPY schemas /usr/share/openquad/schemas
+COPY workerd /opt/openquad/workerd
 COPY templates/${OPENQUAD_TEMPLATE}/Brewfile /usr/share/openquad/templates/${OPENQUAD_TEMPLATE}/Brewfile
 COPY templates/${OPENQUAD_TEMPLATE}/openclaw.json5 /usr/share/openquad/templates/${OPENQUAD_TEMPLATE}/openclaw.json5
+COPY templates/${OPENQUAD_TEMPLATE}/openquad.manifest.json /usr/share/openquad/templates/${OPENQUAD_TEMPLATE}/openquad.manifest.json
+
+RUN set -eux; \
+    python3 -m venv /opt/openquad/workerd/.venv; \
+    /opt/openquad/workerd/.venv/bin/pip install --no-cache-dir /opt/openquad/workerd; \
+    ln -sf /opt/openquad/workerd/.venv/bin/openquad-workerd /usr/local/bin/openquad-workerd; \
+    test -r /usr/share/openquad/schemas/openquad-task.schema.json; \
+    test -r "/usr/share/openquad/templates/${OPENQUAD_TEMPLATE}/openquad.manifest.json"
 
 ENV PATH="/home/node/.local/bin:${HOMEBREW_PREFIX}/bin:${HOMEBREW_PREFIX}/sbin:${PATH}"
 
@@ -98,3 +117,7 @@ RUN set -eux; \
     test -r "/usr/share/openquad/templates/${OPENQUAD_TEMPLATE}/openclaw.json5"; \
     brew cleanup --prune=all -s || true; \
     rm -rf "$(brew --cache)" /home/linuxbrew/.cache/Homebrew "${NPM_CONFIG_CACHE}"/_cacache 2>/dev/null || true
+
+EXPOSE 18789
+
+CMD ["sh", "-lc", "if [ \"${OPENQUAD_WORKERD_ENABLED:-true}\" = \"true\" ]; then exec openquad-workerd; else exec sleep infinity; fi"]

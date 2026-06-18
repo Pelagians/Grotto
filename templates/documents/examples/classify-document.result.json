@@ -1,0 +1,26 @@
+{
+  "task_id": "example-docs-classify",
+  "status": "failed",
+  "worker": "openquad-documents",
+  "capability": "documents.classify",
+  "task_type": "classify_document",
+  "result": {
+    "message": "Example result shape; current stub runner returns not_implemented."
+  },
+  "policy_decision": {
+    "decision": "allowed",
+    "reason": "example policy decision",
+    "policy_version": "v0.1"
+  },
+  "evidence": [],
+  "provenance": {
+    "example": true
+  },
+  "artifacts": [],
+  "errors": [
+    {
+      "code": "not_implemented",
+      "message": "No real connector runner is implemented in v0.1."
+    }
+  ]
+}

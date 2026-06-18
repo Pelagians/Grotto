@@ -1,0 +1,23 @@
+{
+  "task_id": "example-comms-classify-email",
+  "idempotency_key": "idem-example-comms-classify-email",
+  "capability": "comms.classify",
+  "task_type": "classify_email",
+  "input": {
+    "message_uri": "imap://inbox/123"
+  },
+  "constraints": {
+    "max_runtime_seconds": 300,
+    "network_policy": "restricted",
+    "allowed_domains": [],
+    "write_scope": "task"
+  },
+  "policy": {
+    "decision": "allowed",
+    "reason": "example policy decision",
+    "policy_version": "v0.1"
+  },
+  "provenance": {
+    "example": true
+  }
+}
