@@ -91,6 +91,7 @@ RUN set -eux; \
     python3 -m venv /opt/openquad/workerd/.venv; \
     /opt/openquad/workerd/.venv/bin/pip install --no-cache-dir /opt/openquad/workerd; \
     ln -sf /opt/openquad/workerd/.venv/bin/openquad-workerd /usr/local/bin/openquad-workerd; \
+    chmod -R a+rX /usr/share/openquad /opt/openquad/workerd; \
     test -r /usr/share/openquad/schemas/openquad-task.schema.json; \
     test -r "/usr/share/openquad/templates/${OPENQUAD_TEMPLATE}/openquad.manifest.json"
 
