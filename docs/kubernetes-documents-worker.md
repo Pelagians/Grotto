@@ -147,7 +147,7 @@ curl -fsS \
   "${VIC_URL}/tenants/${TENANT_ID}/tasks"
 ```
 
-Staged-source MVP example, where VIC can read the source path from the shared PVC and copies it into a tenant/task-scoped input directory:
+Staged-source MVP example, where VIC can read the source path from the VIC backend pod filesystem and copies it into a tenant/task-scoped input directory on the shared workspace. Keep the source outside `VIC_TASK_WORKSPACE_ROOT`; sources already inside the shared workspace are rejected unless they are already inside the same tenant/task workspace.
 
 ```bash
 curl -fsS \
@@ -157,7 +157,7 @@ curl -fsS \
     "input_json":{
       "capability":"documents.convert",
       "stage_source":true,
-      "source_file_path":"/home/node/.openclaw/workspace/incoming/inquiry.pdf",
+      "source_file_path":"/tmp/vic-openquad-inputs/inquiry.pdf",
       "filename":"inquiry.pdf"
     }
   }' \
