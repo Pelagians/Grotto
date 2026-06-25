@@ -10,109 +10,278 @@
     {
       "name": "documents.read",
       "description": "Read document metadata or text from a mounted source.",
-      "task_types": [
-        "read_document"
-      ],
-      "side_effect_classes": [
-        "read_only"
-      ],
-      "artifact_types": [
-        "text",
-        "json"
-      ]
+      "task_types": ["read_document"],
+      "side_effect_classes": ["read_only"],
+      "artifact_types": ["text", "json"],
+      "context_profiles": {
+        "small_task": {
+          "description": "Short document or metadata read. Fits in a single prompt.",
+          "max_single_prompt_tokens": 8000,
+          "max_total_task_tokens": 16000,
+          "max_model_calls_per_task": 1,
+          "max_tool_calls_per_task": 8,
+          "artifact_first": false,
+          "chunking_required": false,
+          "preferred_model_class": "fast",
+          "deterministic_tools_first": true
+        },
+        "normal_task": {
+          "description": "Standard multi-page document read.",
+          "max_single_prompt_tokens": 32000,
+          "max_total_task_tokens": 64000,
+          "max_model_calls_per_task": 2,
+          "max_tool_calls_per_task": 16,
+          "artifact_first": true,
+          "chunking_required": false,
+          "preferred_model_class": "balanced",
+          "deterministic_tools_first": true
+        }
+      }
     },
     {
       "name": "documents.ocr",
       "description": "OCR image or scanned PDF documents.",
-      "task_types": [
-        "ocr_document"
-      ],
-      "side_effect_classes": [
-        "read_only",
-        "local_artifact_write"
-      ],
-      "artifact_types": [
-        "text",
-        "json",
-        "pdf"
-      ]
+      "task_types": ["ocr_document"],
+      "side_effect_classes": ["read_only", "local_artifact_write"],
+      "artifact_types": ["text", "json", "pdf"],
+      "context_profiles": {
+        "normal_task": {
+          "description": "Standard scan or image-based PDF.",
+          "max_single_prompt_tokens": 16000,
+          "max_total_task_tokens": 32000,
+          "max_model_calls_per_task": 0,
+          "max_tool_calls_per_task": 16,
+          "artifact_first": true,
+          "chunking_required": false,
+          "preferred_model_class": "none",
+          "deterministic_tools_first": true
+        },
+        "large_context_task": {
+          "description": "Multi-page scanned document or attachment bundle.",
+          "max_single_prompt_tokens": 32000,
+          "max_total_task_tokens": 128000,
+          "max_model_calls_per_task": 0,
+          "max_tool_calls_per_task": 64,
+          "artifact_first": true,
+          "chunking_required": true,
+          "preferred_model_class": "none",
+          "deterministic_tools_first": true
+        }
+      }
     },
     {
       "name": "documents.convert",
       "description": "Convert documents into normalized text or other safe artifacts.",
-      "task_types": [
-        "convert_pdf_to_text",
-        "convert_document"
-      ],
-      "side_effect_classes": [
-        "read_only",
-        "local_artifact_write"
-      ],
-      "artifact_types": [
-        "text",
-        "json",
-        "pdf"
-      ]
+      "task_types": ["convert_pdf_to_text", "convert_document"],
+      "side_effect_classes": ["read_only", "local_artifact_write"],
+      "artifact_types": ["text", "json", "pdf"],
+      "context_profiles": {
+        "small_task": {
+          "description": "Short PDF (1-10 pages, text-selectable). Deterministic extraction only.",
+          "max_single_prompt_tokens": 0,
+          "max_total_task_tokens": 0,
+          "max_model_calls_per_task": 0,
+          "max_tool_calls_per_task": 8,
+          "artifact_first": true,
+          "chunking_required": false,
+          "preferred_model_class": "none",
+          "deterministic_tools_first": true
+        },
+        "normal_task": {
+          "description": "Standard PDF (10-100 pages). pdftotext first, OCR fallback. Full text stored as artifact.",
+          "max_single_prompt_tokens": 0,
+          "max_total_task_tokens": 0,
+          "max_model_calls_per_task": 0,
+          "max_tool_calls_per_task": 32,
+          "artifact_first": true,
+          "chunking_required": false,
+          "preferred_model_class": "none",
+          "deterministic_tools_first": true
+        },
+        "large_context_task": {
+          "description": "Large PDF (100+ pages) or scan bundle. Full artifact store, chunked for any downstream model use.",
+          "max_single_prompt_tokens": 32000,
+          "max_total_task_tokens": 256000,
+          "max_model_calls_per_task": 0,
+          "max_tool_calls_per_task": 128,
+          "artifact_first": true,
+          "chunking_required": true,
+          "preferred_model_class": "none",
+          "deterministic_tools_first": true
+        },
+        "deep_document_task": {
+          "description": "Complex structured document (financial, legal, technical). Deterministic extraction then optional model extraction for structured fields.",
+          "max_single_prompt_tokens": 32000,
+          "max_total_task_tokens": 128000,
+          "max_model_calls_per_task": 4,
+          "max_tool_calls_per_task": 32,
+          "artifact_first": true,
+          "chunking_required": true,
+          "preferred_model_class": "capable",
+          "deterministic_tools_first": true
+        }
+      }
     },
     {
       "name": "documents.extract_tables",
       "description": "Extract tabular data from documents.",
-      "task_types": [
-        "extract_tables"
-      ],
-      "side_effect_classes": [
-        "read_only",
-        "local_artifact_write"
-      ],
-      "artifact_types": [
-        "csv",
-        "json"
-      ]
+      "task_types": ["extract_tables"],
+      "side_effect_classes": ["read_only", "local_artifact_write"],
+      "artifact_types": ["csv", "json"],
+      "context_profiles": {
+        "normal_task": {
+          "description": "Single document with tabular data.",
+          "max_single_prompt_tokens": 16000,
+          "max_total_task_tokens": 32000,
+          "max_model_calls_per_task": 2,
+          "max_tool_calls_per_task": 16,
+          "artifact_first": true,
+          "chunking_required": false,
+          "preferred_model_class": "balanced",
+          "deterministic_tools_first": true
+        }
+      }
     },
     {
       "name": "documents.classify",
       "description": "Classify document type or routing.",
-      "task_types": [
-        "classify_document"
-      ],
-      "side_effect_classes": [
-        "read_only",
-        "local_artifact_write"
-      ],
-      "artifact_types": [
-        "json"
-      ]
+      "task_types": ["classify_document"],
+      "side_effect_classes": ["read_only", "local_artifact_write"],
+      "artifact_types": ["json"],
+      "context_profiles": {
+        "small_task": {
+          "description": "Quick classification from metadata or short excerpt.",
+          "max_single_prompt_tokens": 8000,
+          "max_total_task_tokens": 16000,
+          "max_model_calls_per_task": 1,
+          "max_tool_calls_per_task": 8,
+          "artifact_first": false,
+          "chunking_required": false,
+          "preferred_model_class": "fast",
+          "deterministic_tools_first": true
+        },
+        "normal_task": {
+          "description": "Full document classification.",
+          "max_single_prompt_tokens": 32000,
+          "max_total_task_tokens": 64000,
+          "max_model_calls_per_task": 2,
+          "max_tool_calls_per_task": 16,
+          "artifact_first": true,
+          "chunking_required": false,
+          "preferred_model_class": "balanced",
+          "deterministic_tools_first": true
+        }
+      }
     },
     {
       "name": "documents.summarize",
       "description": "Summarize document contents.",
-      "task_types": [
-        "summarize_document"
-      ],
-      "side_effect_classes": [
-        "read_only",
-        "local_artifact_write"
-      ],
-      "artifact_types": [
-        "text",
-        "json"
-      ]
+      "task_types": ["summarize_document"],
+      "side_effect_classes": ["read_only", "local_artifact_write"],
+      "artifact_types": ["text", "json"],
+      "context_profiles": {
+        "normal_task": {
+          "description": "Single document summarization.",
+          "max_single_prompt_tokens": 32000,
+          "max_total_task_tokens": 64000,
+          "max_model_calls_per_task": 3,
+          "max_tool_calls_per_task": 16,
+          "artifact_first": true,
+          "chunking_required": false,
+          "preferred_model_class": "capable",
+          "deterministic_tools_first": true
+        },
+        "large_context_task": {
+          "description": "Long document or multi-document summarization requiring chunked processing.",
+          "max_single_prompt_tokens": 32000,
+          "max_total_task_tokens": 256000,
+          "max_model_calls_per_task": 16,
+          "max_tool_calls_per_task": 32,
+          "artifact_first": true,
+          "chunking_required": true,
+          "preferred_model_class": "capable",
+          "deterministic_tools_first": true
+        }
+      }
     },
     {
       "name": "documents.normalize",
       "description": "Normalize extracted document fields.",
-      "task_types": [
-        "normalize_document"
-      ],
-      "side_effect_classes": [
-        "read_only",
-        "local_artifact_write"
-      ],
-      "artifact_types": [
-        "json"
-      ]
+      "task_types": ["normalize_document"],
+      "side_effect_classes": ["read_only", "local_artifact_write"],
+      "artifact_types": ["json"],
+      "context_profiles": {
+        "normal_task": {
+          "description": "Field normalization from extracted document text.",
+          "max_single_prompt_tokens": 16000,
+          "max_total_task_tokens": 32000,
+          "max_model_calls_per_task": 2,
+          "max_tool_calls_per_task": 16,
+          "artifact_first": true,
+          "chunking_required": false,
+          "preferred_model_class": "balanced",
+          "deterministic_tools_first": true
+        }
+      }
     }
   ],
+  "context_profiles": {
+    "small_task": {
+      "description": "Short single-page or metadata-only document tasks. No chunking, minimal tool calls.",
+      "max_single_prompt_tokens": 8000,
+      "max_total_task_tokens": 16000,
+      "max_model_calls_per_task": 1,
+      "max_tool_calls_per_task": 8,
+      "artifact_first": false,
+      "chunking_required": false,
+      "preferred_model_class": "fast",
+      "deterministic_tools_first": true
+    },
+    "normal_task": {
+      "description": "Standard document task: full PDF, email with attachments, or typical business document.",
+      "max_single_prompt_tokens": 32000,
+      "max_total_task_tokens": 64000,
+      "max_model_calls_per_task": 2,
+      "max_tool_calls_per_task": 32,
+      "artifact_first": true,
+      "chunking_required": false,
+      "preferred_model_class": "balanced",
+      "deterministic_tools_first": true
+    },
+    "large_context_task": {
+      "description": "Large documents, scan bundles, long emails with many attachments. Full content stored as artifacts. Chunking required before model use.",
+      "max_single_prompt_tokens": 32000,
+      "max_total_task_tokens": 256000,
+      "max_model_calls_per_task": 8,
+      "max_tool_calls_per_task": 128,
+      "artifact_first": true,
+      "chunking_required": true,
+      "preferred_model_class": "capable",
+      "deterministic_tools_first": true
+    },
+    "deep_document_task": {
+      "description": "Complex structured documents (legal, financial, technical specifications). Artifact-first, deterministic extraction, then careful model processing per chunk.",
+      "max_single_prompt_tokens": 32000,
+      "max_total_task_tokens": 128000,
+      "max_model_calls_per_task": 4,
+      "max_tool_calls_per_task": 32,
+      "artifact_first": true,
+      "chunking_required": true,
+      "preferred_model_class": "capable",
+      "deterministic_tools_first": true
+    },
+    "browser_recovery_task": {
+      "description": "Document recovery from browser trace, screenshot, or page capture. Includes tool-based reconstruction before model interpretation.",
+      "max_single_prompt_tokens": 16000,
+      "max_total_task_tokens": 64000,
+      "max_model_calls_per_task": 4,
+      "max_tool_calls_per_task": 16,
+      "artifact_first": true,
+      "chunking_required": false,
+      "preferred_model_class": "capable",
+      "deterministic_tools_first": true
+    }
+  },
   "supported_task_types": [
     "read_document",
     "ocr_document",

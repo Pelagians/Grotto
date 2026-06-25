@@ -1,23 +1,30 @@
 {
-  "task_id": "example-docs-convert-pdf",
-  "idempotency_key": "idem-example-docs-convert-pdf",
+  "task_id": "vic-task-doc-convert-example-001",
+  "idempotency_key": "vic-idem-doc-convert-example-001",
   "capability": "documents.convert",
   "task_type": "convert_pdf_to_text",
   "input": {
-    "source_uri": "file:///workspace/inquiry.pdf"
+    "source_uri": "file:///home/node/.openclaw/workspace/inputs/inquiry.pdf",
+    "context_profile": "normal_task"
   },
   "constraints": {
     "max_runtime_seconds": 300,
-    "network_policy": "restricted",
+    "network_policy": "none",
     "allowed_domains": [],
     "write_scope": "task"
   },
   "policy": {
     "decision": "allowed",
-    "reason": "example policy decision",
-    "policy_version": "v0.1"
+    "reason": "Read-only deterministic document conversion. No external network, no secrets.",
+    "policy_version": "v0.1",
+    "hints": {
+      "side_effect_classes": ["read_only", "local_artifact_write"]
+    }
   },
   "provenance": {
-    "example": true
+    "orchestrator": "vic",
+    "tenant_id": "demo-tenant",
+    "workflow_id": null,
+    "submitted_by": "vic-control-plane"
   }
 }
