@@ -110,6 +110,7 @@ Validation and local daemon checks:
 make validate-schemas
 make validate-manifests
 make test
+make test-browser-runtime
 ```
 
 Run a local worker daemon for one template:
@@ -142,7 +143,7 @@ Browser-control endpoints are privileged browser access:
 
 Do not publish these ports publicly. In Kubernetes, expose them only through internal Service DNS and lock them down with NetworkPolicy so only `openquad-browser-agent` and trusted control-plane components can reach them.
 
-For k3s/VIC deployment guidance, profile PVC notes, managed Chromium policy, and validation commands, see [`docs/kubernetes-vic-browser-runtime.md`](docs/kubernetes-vic-browser-runtime.md).
+For the browser runtime env/endpoint contract, see [`docs/browser-runtime-contract.md`](docs/browser-runtime-contract.md). For k3s/VIC deployment guidance, profile PVC notes, managed Chromium policy, and validation commands, see [`docs/kubernetes-vic-browser-runtime.md`](docs/kubernetes-vic-browser-runtime.md).
 
 ## Local Service Topologies
 

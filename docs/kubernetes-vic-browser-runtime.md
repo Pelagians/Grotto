@@ -25,6 +25,15 @@ This guide documents the OpenQuad browser runtime shape for VIC teaching/governa
 4. Support managed Chromium policy by mounting JSON into `/etc/chromium/policies/managed/`.
 5. Document UID/GID, PVC, cache, Service, NetworkPolicy, and validation requirements for VIC per-user/per-session pods.
 
+## Runtime env contract
+
+OpenQuad still documents the Chromium-specific environment names used by the original runtime, but the launchers now also accept browser-family-agnostic aliases for downstream images:
+
+- headless: `BROWSER_WS_HOST` / `BROWSER_WS_PORT`, `BROWSER_HEADLESS`, `BROWSER_EXECUTABLE_PATH`, `PLAYWRIGHT_BROWSER_CHANNEL`, and `BROWSER_EXTRA_ARGS`;
+- visible: `BROWSER_CDP_HOST` / `BROWSER_CDP_PORT`, `BROWSER_EXECUTABLE_PATH`, `BROWSER_START_URL`, `BROWSER_POLICY_DIR`, and `BROWSER_EXTRA_ARGS`.
+
+Legacy `PLAYWRIGHT_*` and `CHROMIUM_*` names remain supported so existing OpenQuad images and manifests keep working. See [`browser-runtime-contract.md`](browser-runtime-contract.md) for the full contract.
+
 ## Security model
 
 Browser-control endpoints are privileged. A caller with CDP, Playwright WebSocket, VNC, or noVNC access can control the browser session.
