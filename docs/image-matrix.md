@@ -31,6 +31,8 @@ Browser stacks live in runtime-only images:
 - `openquad-browser-runtime-headless` exposes a Playwright WebSocket endpoint for repeatable headless workflows.
 - `openquad-browser-runtime-visible` exposes Chromium CDP plus VNC/noVNC for login, teaching, debugging, and user-assisted workflows with a persistent browser profile.
 
+Both runtimes keep the default bundled Playwright Chromium path but accept browser-family-agnostic aliases such as `BROWSER_EXECUTABLE_PATH`, `PLAYWRIGHT_BROWSER_CHANNEL`, `BROWSER_CDP_HOST`, and `BROWSER_EXTRA_ARGS`. See [`browser-runtime-contract.md`](browser-runtime-contract.md).
+
 Browser-control endpoints are privileged. They must not be publicly exposed. In Kubernetes, expose them only inside the cluster via Service DNS and restrict access with NetworkPolicy so only `openquad-browser-agent` and trusted control-plane components can connect.
 
 ## Output contracts

@@ -4,6 +4,8 @@ Browser runtime only. No OpenClaw model, no reasoning agent, and no Homebrew app
 
 This image runs visible Chromium under Xvfb with VNC/noVNC support and a Chromium CDP endpoint. It is intended for login, teaching, debugging, governance, and user-assisted workflows, with one browser profile/session per pod.
 
+The launcher accepts browser-family-agnostic aliases for downstream runtime images: `BROWSER_CDP_HOST`, `BROWSER_CDP_PORT`, `BROWSER_EXECUTABLE_PATH`, `BROWSER_START_URL`, `BROWSER_POLICY_DIR`, and `BROWSER_EXTRA_ARGS`. Legacy `CHROMIUM_*` names remain supported.
+
 ## Locked mode
 
 `VISIBLE_BROWSER_MODE=locked` is the default. Locked mode:

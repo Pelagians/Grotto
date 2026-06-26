@@ -1,40 +1,28 @@
 const { chromium } = require('playwright');
 const fs = require('fs');
-
-function boolFromEnv(name, defaultValue) {
-  const raw = process.env[name];
-  if (raw === undefined || raw === '') return defaultValue;
-  return !['0', 'false', 'no', 'off'].includes(raw.toLowerCase());
-}
+const { resolveHeadlessServerConfig } = require('../shared/launch-options');
 
 function ensureDir(path) {
   if (path) fs.mkdirSync(path, { recursive: true });
 }
 
 (async () => {
-  const host = process.env.PLAYWRIGHT_WS_HOST || '0.0.0.0';
-  const port = Number(process.env.PLAYWRIGHT_WS_PORT || '3000');
-  const headless = boolFromEnv('PLAYWRIGHT_HEADLESS', true);
-  const downloadsPath = process.env.BROWSER_DOWNLOAD_DIR || '/home/pwuser/downloads';
-  const artifactsDir = process.env.BROWSER_ARTIFACTS_DIR || '/home/pwuser/artifacts';
-  const extraArgs = (process.env.CHROMIUM_ARGS || '')
-    .split(/\s+/)
-    .map((arg) => arg.trim())
-    .filter(Boolean);
+  const config = resolveHeadlessServerConfig(process.env);
 
-  ensureDir(downloadsPath);
-  ensureDir(artifactsDir);
+  ensureDir(config.downloadsPath);
+  ensureDir(config.artifactsDir);
 
   const browserServer = await chromium.launchServer({
-    host,
-    port,
-    headless,
-    downloadsPath,
-    artifactsDir,
+    host: config.host,
+    port: config.port,
+    headless: config.headless,
+    downloadsPath: config.downloadsPath,
+    artifactsDir: config.artifactsDir,
     args: [
       '--disable-dev-shm-usage',
-      ...extraArgs,
+      ...config.extraArgs,
     ],
+    ...config.browserLaunchOptions,
   });
 
   const endpoint = browserServer.wsEndpoint();
@@ -42,6 +30,7 @@ function ensureDir(path) {
     status: 'ready',
     runtime: process.env.OPENQUAD_RUNTIME || 'browser-runtime-headless',
     endpoint,
+    browserLaunchOptions: config.browserLaunchOptions,
     warning: 'Treat this WebSocket as privileged browser-control access. Expose it only inside the cluster/network policy boundary.',
   }));
 

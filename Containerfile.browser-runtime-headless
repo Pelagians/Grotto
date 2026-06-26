@@ -24,13 +24,14 @@ RUN set -eux; \
     install -d -o pwuser -g pwuser /home/pwuser/downloads /home/pwuser/artifacts; \
     chown -R pwuser:pwuser /opt/openquad/browser-runtime /home/pwuser
 
-COPY runtimes/browser/headless/launch-server.js /opt/openquad/browser-runtime/launch-server.js
+COPY runtimes/browser/headless/launch-server.js /opt/openquad/browser-runtime/headless/launch-server.js
+COPY runtimes/browser/shared/launch-options.js /opt/openquad/browser-runtime/shared/launch-options.js
 COPY templates/browser-runtime-headless/Brewfile /usr/share/openquad/templates/browser-runtime-headless/Brewfile
 RUN set -eux; \
-    chown pwuser:pwuser /opt/openquad/browser-runtime/launch-server.js; \
+    chown -R pwuser:pwuser /opt/openquad/browser-runtime/headless /opt/openquad/browser-runtime/shared; \
     test -r /usr/share/openquad/templates/browser-runtime-headless/Brewfile
 
 EXPOSE 3000
 USER pwuser
 WORKDIR /opt/openquad/browser-runtime
-CMD ["node", "/opt/openquad/browser-runtime/launch-server.js"]
+CMD ["node", "/opt/openquad/browser-runtime/headless/launch-server.js"]
