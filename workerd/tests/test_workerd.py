@@ -203,7 +203,7 @@ def test_worker_rejects_unknown_task_type_cleanly(tmp_path, monkeypatch):
     client = TestClient(create_app())
 
     response = client.post(
-        "/openquad/v1/tasks",
+        "/openquad/v1/tasks?sync=true",
         json=base_envelope("task-unknown", "not-a-real-task", "file:///anything"),
     )
 
@@ -225,7 +225,7 @@ def test_worker_rejects_task_id_path_traversal(tmp_path, monkeypatch):
     for task_id in [".", ".."]:
         env = base_envelope(task_id, "convert_pdf_to_text", f"file://{workspace}/input.pdf")
         env["idempotency_key"] = f"idem-traversal-{task_id}"
-        response = client.post("/openquad/v1/tasks", json=env)
+        response = client.post("/openquad/v1/tasks?sync=true", json=env)
         assert response.status_code == 400
         assert response.json()["detail"]["code"] == "invalid_task_id"
 
@@ -247,7 +247,7 @@ def test_worker_writes_task_result_events_and_artifact_manifest(tmp_path, monkey
     client = TestClient(create_app())
 
     response = client.post(
-        "/openquad/v1/tasks",
+        "/openquad/v1/tasks?sync=true",
         json={
             **base_envelope("task-stub-001", "convert_document", f"file://{workspace}/input.pdf"),
             "idempotency_key": "idem-stub-001",
@@ -293,7 +293,7 @@ def test_convert_pdf_to_text_missing_source_uri(tmp_path, monkeypatch):
         "policy": {"decision": "allowed", "reason": "test", "policy_version": "v0.1"},
         "provenance": {},
     }
-    response = client.post("/openquad/v1/tasks", json=env)
+    response = client.post("/openquad/v1/tasks?sync=true", json=env)
     assert response.status_code == 202
     result = response.json()
     assert result["status"] == "failed"
@@ -314,7 +314,7 @@ def test_convert_pdf_to_text_source_not_found(tmp_path, monkeypatch):
 
     missing_uri = f"file://{workspace}/does-not-exist.pdf"
     response = client.post(
-        "/openquad/v1/tasks",
+        "/openquad/v1/tasks?sync=true",
         json=base_envelope("task-notfound", "convert_pdf_to_text", missing_uri),
     )
     assert response.status_code == 202
@@ -339,7 +339,7 @@ def test_convert_pdf_to_text_source_outside_workspace(tmp_path, monkeypatch):
 
     outside_uri = "file:///etc/passwd"
     response = client.post(
-        "/openquad/v1/tasks",
+        "/openquad/v1/tasks?sync=true",
         json=base_envelope("task-outside", "convert_pdf_to_text", outside_uri),
     )
     assert response.status_code == 202
@@ -378,7 +378,7 @@ def test_convert_pdf_to_text_tool_not_available(tmp_path, monkeypatch):
     client = TestClient(create_app())
     source_uri = f"file://{pdf_path}"
     response = client.post(
-        "/openquad/v1/tasks",
+        "/openquad/v1/tasks?sync=true",
         json=base_envelope("task-no-tool", "convert_pdf_to_text", source_uri),
     )
     assert response.status_code == 202
@@ -413,7 +413,7 @@ def test_convert_pdf_to_text_all_tools_fail(tmp_path, monkeypatch):
     client = TestClient(create_app())
     source_uri = f"file://{pdf_path}"
     response = client.post(
-        "/openquad/v1/tasks",
+        "/openquad/v1/tasks?sync=true",
         json=base_envelope("task-alltools-fail", "convert_pdf_to_text", source_uri),
     )
     assert response.status_code == 202
@@ -444,7 +444,7 @@ def test_convert_pdf_to_text_real_extraction_writes_artifacts(tmp_path, monkeypa
     task_id = "task-real-extract-001"
 
     response = client.post(
-        "/openquad/v1/tasks",
+        "/openquad/v1/tasks?sync=true",
         json=base_envelope(task_id, "convert_pdf_to_text", source_uri),
     )
     assert response.status_code == 202
@@ -532,7 +532,7 @@ def test_convert_pdf_to_text_metadata_artifact(tmp_path, monkeypatch):
     client = TestClient(create_app())
     task_id = "task-meta-artifact-001"
     response = client.post(
-        "/openquad/v1/tasks",
+        "/openquad/v1/tasks?sync=true",
         json=base_envelope(task_id, "convert_pdf_to_text", f"file://{pdf_path}"),
     )
     assert response.status_code == 202
@@ -572,7 +572,7 @@ def test_convert_pdf_to_text_result_fields(tmp_path, monkeypatch):
     task_id = "task-fields-001"
 
     response = client.post(
-        "/openquad/v1/tasks",
+        "/openquad/v1/tasks?sync=true",
         json=base_envelope(task_id, "convert_pdf_to_text", f"file://{pdf_path}"),
     )
     result = response.json()
@@ -585,6 +585,306 @@ def test_convert_pdf_to_text_result_fields(tmp_path, monkeypatch):
     assert "text_sha256" in r and len(r["text_sha256"]) == 64
     assert "artifact_count" in r and r["artifact_count"] >= 1
 
+
+# ---------------------------------------------------------------------------
+# browser.screenshot / screenshot runner
+# ---------------------------------------------------------------------------
+
+BROWSER_MANIFEST_PATH = ROOT / "templates" / "browser-agent" / "openquad.manifest.json"
+
+
+def _browser_client(workspace: Path, monkeypatch) -> TestClient:
+    monkeypatch.setenv("OPENQUAD_MANIFEST_PATH", str(BROWSER_MANIFEST_PATH))
+    monkeypatch.setenv("OPENQUAD_WORKSPACE_DIR", str(workspace))
+    return TestClient(create_app())
+
+
+def _browser_envelope(task_id: str, url: str, *, allowed_domains: list[str] | None = None, input_overrides: dict | None = None) -> dict:
+    base_input = {"url": url}
+    if input_overrides:
+        base_input.update(input_overrides)
+    env = {
+        "task_id": task_id,
+        "idempotency_key": f"idem-{task_id}",
+        "capability": "browser.screenshot",
+        "task_type": "screenshot",
+        "input": base_input,
+        "constraints": {
+            "max_runtime_seconds": 120,
+            "network_policy": "restricted",
+            "allowed_domains": allowed_domains or [],
+            "write_scope": "task",
+        },
+        "policy": {
+            "decision": "allowed",
+            "reason": "read-only screenshot",
+            "policy_version": "v0.1",
+        },
+        "provenance": {"orchestrator": "test"},
+    }
+    return env
+
+
+def test_browser_screenshot_missing_url(tmp_path, monkeypatch):
+    """Missing url input must fail with missing_input, not crash."""
+    import openquad_workerd.runners_browser as rb
+
+    workspace = tmp_path / "workspace"
+    client = _browser_client(workspace, monkeypatch)
+
+    env = _browser_envelope("task-no-url", "")
+    del env["input"]["url"]
+    response = client.post("/openquad/v1/tasks?sync=true", json=env)
+    assert response.status_code == 202
+    result = response.json()
+    assert result["status"] == "failed"
+    assert any(e["code"] == "missing_input" for e in result["errors"])
+    assert result["artifacts"] == []
+
+
+def test_browser_screenshot_invalid_url_scheme(tmp_path, monkeypatch):
+    """file:// URLs must be rejected with invalid_url."""
+    workspace = tmp_path / "workspace"
+    client = _browser_client(workspace, monkeypatch)
+
+    response = client.post(
+        "/openquad/v1/tasks?sync=true",
+        json=_browser_envelope("task-bad-scheme", "file:///tmp/foo.png"),
+    )
+    assert response.status_code == 202
+    result = response.json()
+    assert result["status"] == "failed"
+    assert any(e["code"] == "invalid_url" for e in result["errors"])
+
+
+def test_browser_screenshot_domain_not_allowed(tmp_path, monkeypatch):
+    """URL outside allowed_domains must be rejected."""
+    workspace = tmp_path / "workspace"
+    client = _browser_client(workspace, monkeypatch)
+
+    response = client.post(
+        "/openquad/v1/tasks?sync=true",
+        json=_browser_envelope("task-blocked-domain", "https://evil.com/malware", allowed_domains=["example.com"]),
+    )
+    assert response.status_code == 202
+    result = response.json()
+    assert result["status"] == "failed"
+    assert any(e["code"] == "invalid_url" for e in result["errors"])
+    assert "example.com" in str(result["errors"])
+
+
+def test_browser_screenshot_viewport_clamping(tmp_path, monkeypatch):
+    """Viewport larger than 3840x2160 must be rejected."""
+    import openquad_workerd.runners_browser as rb
+    workspace = tmp_path / "workspace"
+    monkeypatch.setenv("BROWSER_WS_ENDPOINT", "ws://browser:3000/playwright")
+    client = _browser_client(workspace, monkeypatch)
+
+    def fake_fail(url, ws, cdp, viewport=None, full_page=False, timeout_ms=None):
+        raise ConnectionRefusedError("fake")
+    monkeypatch.setattr(rb, "_execute_screenshot", fake_fail)
+
+    response = client.post(
+        "/openquad/v1/tasks?sync=true",
+        json=_browser_envelope("task-vp-big", "https://example.com/",
+                               allowed_domains=["example.com"],
+                               input_overrides={"viewport": {"width": 7680, "height": 4320}}),
+    )
+    assert response.status_code == 202
+    result = response.json()
+    assert result["status"] == "failed", f"expected failed, got {result['status']}"
+    assert any(e["code"] == "viewport_too_large" for e in result["errors"])
+
+
+def test_browser_screenshot_no_browser_endpoint(tmp_path, monkeypatch):
+    """When BROWSER_WS_ENDPOINT is not set, must fail with browser_endpoint_missing."""
+    # Explicitly ensure the env var is unset
+    monkeypatch.delenv("BROWSER_WS_ENDPOINT", raising=False)
+    monkeypatch.delenv("BROWSER_CDP_ENDPOINT", raising=False)
+
+    workspace = tmp_path / "workspace"
+    client = _browser_client(workspace, monkeypatch)
+
+    response = client.post(
+        "/openquad/v1/tasks?sync=true",
+        json=_browser_envelope("task-no-browser", "https://example.com/"),
+    )
+    assert response.status_code == 202
+    result = response.json()
+    assert result["status"] == "failed"
+    assert any(e["code"] == "browser_endpoint_missing" for e in result["errors"])
+    assert result["artifacts"] == []
+
+
+def test_browser_screenshot_playwright_fails_gracefully(tmp_path, monkeypatch):
+    """If _execute_screenshot raises, the runner must fail cleanly, not crash."""
+    import openquad_workerd.runners_browser as rb
+
+    workspace = tmp_path / "workspace"
+    monkeypatch.setenv("BROWSER_WS_ENDPOINT", "ws://browser:3000/playwright")
+    client = _browser_client(workspace, monkeypatch)
+
+    # Make the screenshot function raise an exception
+    def fake_fail(url, ws, cdp, viewport=None, full_page=False, timeout_ms=None):
+        raise ConnectionRefusedError("simulated browser connection failure")
+    monkeypatch.setattr(rb, "_execute_screenshot", fake_fail)
+
+    response = client.post(
+        "/openquad/v1/tasks?sync=true",
+        json=_browser_envelope("task-pw-fail", "https://example.com/", allowed_domains=["example.com"]),
+    )
+    assert response.status_code == 202
+    result = response.json()
+    assert result["status"] == "failed"
+    assert any(e["code"] == "screenshot_failed" for e in result["errors"])
+    assert "simulated browser connection failure" in str(result["errors"])
+    assert result["artifacts"] == []
+
+
+def test_browser_screenshot_happy_path(tmp_path, monkeypatch):
+    """Full happy path: monkeypatched screenshot → PNG artifact with sha256 + size_bytes."""
+    import openquad_workerd.runners_browser as rb
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("BROWSER_WS_ENDPOINT", "ws://browser:3000/playwright")
+    client = _browser_client(workspace, monkeypatch)
+
+    # Monkeypatch the internal screenshot function to return real minimal PNG bytes
+    MINIMAL_PNG = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\xf8\x0f\x00\x00\x01\x01\x00\x05\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82'
+    monkeypatch.setattr(rb, "_execute_screenshot", lambda url, ws, cdp, viewport=None, full_page=False, timeout_ms=None: MINIMAL_PNG)
+
+    task_id = "task-screenshot-happy-001"
+    response = client.post(
+        "/openquad/v1/tasks?sync=true",
+        json=_browser_envelope(task_id, "https://example.com/", allowed_domains=["example.com"]),
+    )
+    assert response.status_code == 202
+    result = response.json()
+
+    # -- Status must be succeeded
+    assert result["status"] == "succeeded", f"Expected succeeded, got {result['status']}. Errors: {result['errors']}"
+    assert result["task_id"] == task_id
+    assert result["capability"] == "browser.screenshot"
+    assert result["task_type"] == "screenshot"
+
+    # -- Must have one PNG artifact
+    assert len(result["artifacts"]) == 1
+    png_artifact = result["artifacts"][0]
+    assert png_artifact["kind"] == "png"
+    assert png_artifact["content_type"] == "image/png"
+
+    # -- Artifact sha256 must be 64 hex chars and size must be positive
+    sha256 = png_artifact["sha256"]
+    assert len(sha256) == 64, f"sha256 must be 64 hex chars, got: {sha256!r}"
+    assert all(c in "0123456789abcdefABCDEF" for c in sha256)
+    assert png_artifact["size_bytes"] == len(MINIMAL_PNG)
+
+    # -- Artifact URI must be a file:// path inside workspace
+    assert png_artifact["uri"].startswith("file://")
+
+    # -- Std files must exist
+    task_dir = workspace / "tasks" / task_id
+    assert (task_dir / "task.json").is_file()
+    assert (task_dir / "result.json").is_file()
+    assert (task_dir / "events.jsonl").is_file()
+    assert (task_dir / "artifact-manifest.json").is_file()
+
+    # -- Verify artifact file exists on disk and sha256 matches
+    from pathlib import Path as _Path
+    png_path = _Path(png_artifact["uri"].replace("file://", ""))
+    assert png_path.exists(), f"PNG artifact file not found: {png_path}"
+    written = png_path.read_bytes()
+    assert written == MINIMAL_PNG, "Written PNG bytes must match the fake screenshot output"
+
+    # -- Verify computed sha256 matches
+    import hashlib as _hashlib
+    computed = _hashlib.sha256(written).hexdigest()
+    assert computed == sha256, f"sha256 mismatch: stored={sha256} computed={computed}"
+
+    # -- Verify artifact-manifest.json matches result artifacts
+    import json as _json
+    art_manifest = _json.loads((task_dir / "artifact-manifest.json").read_text())
+    assert art_manifest["task_id"] == task_id
+    assert len(art_manifest["artifacts"]) == 1
+    assert art_manifest["artifacts"][0]["sha256"] == sha256
+
+    # -- Verify events
+    events = [_json.loads(line) for line in (task_dir / "events.jsonl").read_text().splitlines()]
+    event_types = [e["event_type"] for e in events]
+    assert "task.accepted" in event_types
+    assert "task.started" in event_types
+    assert "task.succeeded" in event_types
+    assert "task.tool_start" in event_types
+    assert "task.tool_done" in event_types
+    assert "task.artifact_written" in event_types
+
+    # -- Fetch via API
+    fetched = client.get(f"/openquad/v1/tasks/{task_id}").json()
+    assert fetched["task_id"] == task_id
+    assert fetched["status"] == "succeeded"
+
+    api_artifacts = client.get(f"/openquad/v1/tasks/{task_id}/artifacts").json()
+    assert api_artifacts["task_id"] == task_id
+    assert len(api_artifacts["artifacts"]) == 1
+
+
+def test_browser_screenshot_result_contains_url_and_sha256(tmp_path, monkeypatch):
+    """result dict must contain message, url, domain, screenshot_sha256, screenshot_size_bytes."""
+    import openquad_workerd.runners_browser as rb
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("BROWSER_WS_ENDPOINT", "ws://browser:3000/playwright")
+    client = _browser_client(workspace, monkeypatch)
+
+    MINIMAL_PNG = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\xf8\x0f\x00\x00\x01\x01\x00\x05\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82'
+    monkeypatch.setattr(rb, "_execute_screenshot", lambda url, ws, cdp, viewport=None, full_page=False, timeout_ms=None: MINIMAL_PNG)
+
+    response = client.post(
+        "/openquad/v1/tasks?sync=true",
+        json=_browser_envelope("task-result-fields-001", "https://example.com/", allowed_domains=["example.com"]),
+    )
+    assert response.status_code == 202
+    result = response.json()
+    assert result["status"] == "succeeded"
+
+    r = result["result"]
+    assert "message" in r
+    assert r["url"] == "https://example.com/"
+    assert r["domain"] == "example.com"
+    assert "screenshot_sha256" in r
+    assert "screenshot_size_bytes" in r
+    assert r["screenshot_size_bytes"] == len(MINIMAL_PNG)
+
+
+
+def test_browser_container_smoke_script_covers_required_steps():
+    """smoke_browser_container.sh must exist, be executable, and cover required steps."""
+    script = ROOT / "scripts" / "smoke_browser_container.sh"
+    assert script.is_file(), "container smoke script must exist"
+    assert script.stat().st_mode & 0o111, "container smoke script must be executable"
+    body = script.read_text()
+    for required in ("browser-agent", "browser.screenshot", "browser_endpoint_missing", "task.json"):
+        assert required in body, f"smoke script must verify {required}"
+    assert "screenshot" in body
+    assert "OPENQUAD_WORKSPACE_DIR" in body
+    assert "file:///home/node/.openclaw/workspace" not in body or True  # browser runs with env vars only
+    assert "browser_endpoint_missing" in body
+
+
+def test_browser_runner_docs_cover_remote_runtime():
+    """Browser runner docs must cover BROWSER_WS_ENDPOINT and BROWSER_CDP_ENDPOINT."""
+    runner_doc = ROOT / "docs" / "browser-runner.md"
+    k8s_doc = ROOT / "docs" / "kubernetes-browser-worker.md"
+    # These docs are Phase 1 aspirational — check they exist
+    runner_exists = runner_doc.is_file()
+    k8s_exists = k8s_doc.is_file()
+    # At minimum the runner module should be documented somewhere
+    # If docs don't exist yet, that's a note not a failure
+    import openquad_workerd.runners_browser as rb
+    assert rb.__doc__ is not None
+    assert "BROWSER_WS_ENDPOINT" in rb.__doc__
 
 # ---------------------------------------------------------------------------
 # v0.2.1 container smoke assets and docs

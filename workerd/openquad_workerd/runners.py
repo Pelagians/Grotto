@@ -56,6 +56,12 @@ def run_task(envelope: TaskEnvelope, manifest: dict[str, Any]) -> TaskResult:
 
     # -- Real capability runners ---------------------------------------------
 
+    if envelope.capability == "browser.screenshot" and envelope.task_type == "screenshot":
+        from .runners_browser import run_screenshot
+        return run_screenshot(envelope, manifest)
+
+
+
     if envelope.capability == "documents.convert" and envelope.task_type == "convert_pdf_to_text":
         from .runners_documents import run_convert_pdf_to_text
         return run_convert_pdf_to_text(envelope, manifest)
