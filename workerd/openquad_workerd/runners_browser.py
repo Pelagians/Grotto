@@ -57,12 +57,21 @@ def _execute_screenshot(
     browser_cdp_endpoint: str | None,
     viewport: dict | None = None,
     full_page: bool = False,
+    timeout_ms: int = 30000,
 ) -> bytes:
     """Take a screenshot using Playwright.  Returns raw PNG bytes.
 
     This function is designed to be monkeypatchable in tests — tests can replace it
     with a function that returns a fake or minimal PNG without a real browser.
+
+    Raises TimeoutError on navigation timeout, RuntimeError on missing endpoint,
+    and other Playwright exceptions on screenshot or connection failures.
     """
+    try:
+        from playwright.sync_api import TimeoutError as PlaywrightTimeout
+    except ImportError:  # pragma: no cover — playwright not installed
+        PlaywrightTimeout = TimeoutError  # type: ignore[assignment]
+
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as p:
@@ -80,7 +89,11 @@ def _execute_screenshot(
             else:
                 page = browser.new_page()
 
-            page.goto(url, wait_until="networkidle", timeout=30000)
+            try:
+                page.goto(url, wait_until="networkidle", timeout=timeout_ms)
+            except PlaywrightTimeout:
+                raise TimeoutError(f"Navigation to {url} timed out after {timeout_ms // 1000}s")
+
             png = page.screenshot(full_page=full_page)
         finally:
             try:
@@ -166,6 +179,33 @@ def run_screenshot(envelope: TaskEnvelope, manifest: dict[str, Any]) -> TaskResu
     artifact_dir = tdir / "artifacts"
     artifact_dir.mkdir(parents=True, exist_ok=True)
 
+    # -- Clamp viewport -------------------------------------------------------------
+    MAX_VIEWPORT = (3840, 2160)
+    if viewport:
+        vw = viewport.get("width", 1920)
+        vh = viewport.get("height", 1080)
+        if vw > MAX_VIEWPORT[0] or vh > MAX_VIEWPORT[1]:
+            return TaskResult(
+                task_id=task_id,
+                status="failed",
+                worker=worker,
+                capability=envelope.capability,
+                task_type=envelope.task_type,
+                result={
+                    "message": f"Viewport {vw}x{vh} exceeds maximum {MAX_VIEWPORT[0]}x{MAX_VIEWPORT[1]}",
+                },
+                policy_decision=envelope.policy,
+                provenance=envelope.provenance,
+                errors=[TaskError(
+                    code="viewport_too_large",
+                    message=f"Viewport dimensions {vw}x{vh} exceed maximum {MAX_VIEWPORT[0]}x{MAX_VIEWPORT[1]}",
+                    details={"width": vw, "height": vh, "max_width": MAX_VIEWPORT[0], "max_height": MAX_VIEWPORT[1]},
+                )],
+            )
+
+    # -- Determine timeout ----------------------------------------------------------
+    timeout_ms = (envelope.constraints.max_runtime_seconds or 30) * 1000
+
     # -- Take the screenshot --------------------------------------------------------
     append_event(
         task_id, "task.tool_start",
@@ -176,10 +216,27 @@ def run_screenshot(envelope: TaskEnvelope, manifest: dict[str, Any]) -> TaskResu
         png_bytes = _execute_screenshot(
             url, browser_ws, browser_cdp,
             viewport=viewport, full_page=full_page,
+            timeout_ms=timeout_ms,
+        )
+    except TimeoutError:
+        msg = f"Screenshot navigation timed out after {timeout_ms // 1000}s for {url}"
+        errors.append(TaskError(code="navigation_timeout", message=msg, details={"url": url, "timeout_ms": timeout_ms}))
+        append_event(task_id, "task.tool_error", {"tool": "playwright_screenshot", "error": msg})
+        return TaskResult(
+            task_id=task_id,
+            status="failed",
+            worker=worker,
+            capability=envelope.capability,
+            task_type=envelope.task_type,
+            result={"message": msg, "url": url},
+            policy_decision=envelope.policy,
+            provenance=envelope.provenance,
+            errors=errors,
         )
     except Exception as exc:
+        code = "screenshot_failed"
         msg = f"Screenshot failed: {type(exc).__name__}: {exc}"
-        errors.append(TaskError(code="screenshot_error", message=msg, details={"url": url}))
+        errors.append(TaskError(code=code, message=msg, details={"url": url}))
         append_event(task_id, "task.tool_error", {"tool": "playwright_screenshot", "error": msg})
         return TaskResult(
             task_id=task_id,

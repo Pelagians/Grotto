@@ -52,6 +52,10 @@ def result_path(task_id: str) -> Path:
     return task_dir(task_id) / "result.json"
 
 
+def status_path(task_id: str) -> Path:
+    return task_dir(task_id) / "status.json"
+
+
 def task_path(task_id: str) -> Path:
     return task_dir(task_id) / "task.json"
 
