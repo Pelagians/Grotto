@@ -31,10 +31,13 @@ The Phase 1 `browser.screenshot` runner lives in `workerd/openquad_workerd/runne
 - **BROWSER_WS_ENDPOINT** → `playwright.chromium.connect(ws_endpoint)` (Playwright remote browser protocol)
 - **BROWSER_CDP_ENDPOINT** → `playwright.chromium.connect_over_cdp(cdp_endpoint)` (Chrome DevTools Protocol)
 
+## VIC deployment path
+
+For the VIC Phase 1 cluster proof, use [`vic-browser-worker.md`](vic-browser-worker.md). That path deploys only `ghcr.io/myos-dev/openquad-browser-agent:latest` and connects it to `vic-web` browser runtime images. Do not deploy OpenQuad browser runtime images for the VIC proof unless you are explicitly testing the upstream runtime contract.
+
 ## Next for OpenQuad
 
 1. **Deploy smoke** — run `smoke_browser_container.sh` with a real container engine to verify the browser-agent image builds and the runner dispatches correctly
-2. **Runtime integration** — wire the runner to a running `vic-web` or `openquad-browser-runtime-headless` instance for a real Playwright screenshot
+2. **Runtime integration** — wire the runner to a running `vic-web` runtime for a real Playwright/CDP screenshot
 3. **Error detail** — improve navigation timeout handling, network errors, domain mismatch detail in result
 4. **Viewport control** — clamp viewport at the runner level (max width/height) and surface constraint violations
-5. **Docs** — this file should expand with deployment and integration examples

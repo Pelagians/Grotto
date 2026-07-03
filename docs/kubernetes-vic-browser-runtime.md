@@ -293,6 +293,8 @@ spec:
 
 ## Browser agent Deployment sketch
 
+For the VIC product proof, prefer [`vic-browser-worker.md`](vic-browser-worker.md). It deploys only the OpenQuad browser-agent worker into `vic-system`, labels it `app.kubernetes.io/component: vic-worker` for `vic-web` NetworkPolicy compatibility, and targets the `vic-web` runtime Service. The sketch below remains a generic upstream OpenQuad runtime topology example.
+
 ```yaml
 apiVersion: apps/v1
 kind: Deployment
