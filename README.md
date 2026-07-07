@@ -1,19 +1,83 @@
 # Grotto
 
-Grotto is the product/family name for a four-agent starter bundle of minimal OpenClaw container templates plus split browser runtimes. The design goal is the opposite of a large do-everything Hermes context: each Grotto agent should be small, connected to a small local model when possible, and equipped with only the tools needed for one constrained job.
+Grotto is a curated ecosystem of specialized AI agent runtimes packaged as portable OCI containers.
 
-Grotto agents are narrow workers, not mini-Hermes instances. All writes should be auditable. Autonomous writes are allowed only when bounded by policy. Destructive, financial, security-sensitive, external-communication, or irreversible actions require confirmation or are blocked by default.
+Each runtime is narrow, focused, and designed for one constrained job. Grotto agents are specialized workers, not general-purpose AI platforms.
 
-## Image Matrix
+## What Grotto Is
 
-| Image | Kind | Purpose |
-| --- | --- | --- |
-| `ghcr.io/myos-dev/grotto-comms:latest` | OpenClaw agent | Email, messaging, calendar, reminders, contacts, scheduling, follow-up |
-| `ghcr.io/myos-dev/grotto-records:latest` | OpenClaw agent | Structured business records with Nereus/Postgres/SQLite/JSON/CSV support |
-| `ghcr.io/myos-dev/grotto-documents:latest` | OpenClaw agent | Read, classify, OCR, extract, convert, draft, and organize documents |
-| `ghcr.io/myos-dev/grotto-browser-agent:latest` | OpenClaw agent | Browser workflows through separate browser runtime containers |
+- Specialized AI agent runtimes
+- Portable OCI containers
+- Reproducible builds
+- Sane defaults
+- Runtime-agnostic (if it runs in OCI, it can be a Grotto runtime)
 
-See [`docs/image-matrix.md`](docs/image-matrix.md) for the detailed data surfaces, permissions, allowed tools, out-of-scope actions, and output contracts.
+## What Grotto Is Not
+
+- An AI framework
+- An LLM
+- An orchestration platform
+- A chatbot system
+- A general-purpose AI assistant
+
+## Current Runtimes
+
+| Image | Purpose |
+| --- | --- |
+| `ghcr.io/pelagians/grotto-comms:latest` | Email, messaging, calendar, reminders, contacts, scheduling |
+| `ghcr.io/pelagians/grotto-records:latest` | Structured business records with database support |
+| `ghcr.io/pelagians/grotto-documents:latest` | Document processing: read, classify, OCR, extract, convert |
+| `ghcr.io/pelagians/grotto-browser-agent:latest` | Browser automation through separate browser runtimes |
+
+See [`docs/image-matrix.md`](docs/image-matrix.md) for detailed capabilities, permissions, and output contracts.
+
+## Design Principles
+
+- **OCI-first**: Containers are the primary deployment artifact
+- **Container-native**: Built to run as containers, not adapted to them
+- **Reproducible**: Same inputs produce same outputs
+- **Versioned**: Explicit versions for reproducibility
+- **Portable**: Run anywhere OCI containers run
+- **Runtime-focused**: Each runtime does one thing well
+- **Curated quality**: Official runtimes maintained to high standards
+
+## Build
+
+Agent images use a shared Containerfile with template-specific build args:
+
+```bash
+podman build \
+  -t grotto-comms:dev \
+  -f Containerfile \
+  --build-arg GROTTO_TEMPLATE=communications-calendar \
+  --build-arg GROTTO_IMAGE_NAME=grotto-comms \
+  --build-arg GROTTO_VERIFY_TOOLS="himalaya gcalcli vdirsyncer khal khard jq" \
+  .
+```
+
+Other runtimes use the same pattern:
+
+```bash
+# Records agent
+podman build -t grotto-records:dev -f Containerfile \
+  --build-arg GROTTO_TEMPLATE=records \
+  --build-arg GROTTO_IMAGE_NAME=grotto-records \
+  --build-arg GROTTO_LINK_FORMULAE="sqlite libpq" \
+  --build-arg GROTTO_VERIFY_TOOLS="sqlite3 duckdb jq yq psql" .
+
+# Documents agent
+podman build -t grotto-documents:dev -f Containerfile \
+  --build-arg GROTTO_TEMPLATE=documents \
+  --build-arg GROTTO_IMAGE_NAME=grotto-documents \
+  --build-arg GROTTO_VERIFY_TOOLS="pandoc pdfinfo pdftotext qpdf tesseract ocrmypdf python3.13 jq" .
+
+# Browser agent
+podman build -t grotto-browser-agent:dev -f Containerfile \
+  --build-arg GROTTO_TEMPLATE=browser-agent \
+  --build-arg GROTTO_IMAGE_NAME=grotto-browser-agent \
+  --build-arg GROTTO_NPM_PACKAGES="playwright@1.60.0" \
+  --build-arg GROTTO_VERIFY_TOOLS="jq node npm playwright" .
+```
 
 ## Template Layout
 
@@ -35,116 +99,79 @@ templates/
     Brewfile
     openclaw.json5
     grotto.container
-  browser-runtime-headless/
-    Brewfile
-    grotto.container
-  browser-runtime-visible/
-    Brewfile
-    grotto.container
 ```
 
-The root `Brewfile` is a local/dev default. CI builds every published image from its template-specific matrix entry.
+Each template contains:
+- Purpose-built Brewfile with required tools
+- Starter configuration
+- Runtime example
+- Explicit policy boundaries
+- Expected output contract
 
-## Build Agents Locally
+## Worker Contract
 
-Agent images share the OpenClaw/Homebrew base `Containerfile` and select a template with build args:
+Grotto runtimes expose a generic worker contract for orchestrators. Grotto remains a runtime layer: it does not own tenants, workflows, approvals, durable records, or canonical audit.
 
-```bash
-podman build \
-  -t grotto-comms:dev \
-  -f Containerfile \
-  --build-arg GROTTO_TEMPLATE=communications-calendar \
-  --build-arg GROTTO_IMAGE_NAME=grotto-comms \
-  --build-arg GROTTO_VERIFY_TOOLS="himalaya gcalcli vdirsyncer khal khard jq" \
-  .
-```
-
-Other agent matrix entries use the same `Containerfile`:
-
-```bash
-podman build -t grotto-records:dev -f Containerfile \
-  --build-arg GROTTO_TEMPLATE=records \
-  --build-arg GROTTO_IMAGE_NAME=grotto-records \
-  --build-arg GROTTO_LINK_FORMULAE="sqlite libpq" \
-  --build-arg GROTTO_VERIFY_TOOLS="sqlite3 duckdb jq yq psql" .
-
-podman build -t grotto-documents:dev -f Containerfile \
-  --build-arg GROTTO_TEMPLATE=documents \
-  --build-arg GROTTO_IMAGE_NAME=grotto-documents \
-  --build-arg GROTTO_VERIFY_TOOLS="pandoc pdfinfo pdftotext qpdf tesseract ocrmypdf python3.13 jq" .
-
-podman build -t grotto-browser-agent:dev -f Containerfile \
-  --build-arg GROTTO_TEMPLATE=browser-agent \
-  --build-arg GROTTO_IMAGE_NAME=grotto-browser-agent \
-  --build-arg GROTTO_NPM_PACKAGES="playwright@1.60.0" \
-  --build-arg GROTTO_VERIFY_TOOLS="jq node npm playwright" .
-```
-
-## Worker Contract v0.1
-
-Grotto worker images expose a generic worker contract that Nereus and other orchestrators can consume. Grotto remains a worker/runtime family: it does not own tenants, workflows, approvals, durable records, or canonical audit.
-
-Contract docs:
-
+Contract documentation:
 - [`docs/worker-contract.md`](docs/worker-contract.md)
 - [`docs/capability-model.md`](docs/capability-model.md)
 - [`docs/orchestrator-integration.md`](docs/orchestrator-integration.md)
 - [`docs/nereus-integration.md`](docs/nereus-integration.md)
 
-Validation and local daemon checks:
-
-```bash
-make validate-schemas
-make validate-manifests
-make test
-make test-browser-runtime
-```
-
-Run a local worker daemon for one template:
-
-```bash
-GROTTO_MANIFEST_PATH=templates/documents/grotto.manifest.json \
-GROTTO_WORKSPACE_DIR=/tmp/grotto-workspace \
-uv run --project workerd grotto-workerd
-```
-
-The first daemon validates tasks, writes task/result/events/artifact-manifest files, and returns `failed` with `not_implemented` for task types that are declared but do not yet have concrete connector/browser runners. It must not fake successful execution.
-
 ## Runtime Layout
 
-Grotto agent images follow the live rootless OpenClaw layout:
+Grotto agent images follow a rootless layout:
 
 - `/home/node/.openclaw` is the writable state boundary
 - `OPENCLAW_CONFIG_PATH` defaults to `/home/node/.openclaw/openclaw.json`
 - `GROTTO_DEFAULT_CONFIG` points to `/usr/share/grotto/templates/<template>/openclaw.json5`
-- npm, XDG, Codex, and Homebrew caches live under the state tree
 
-Runtime credentials and sync state stay outside the image. Do not bake account credentials, OAuth tokens, browser profiles, or sernereuse secrets into images.
+Runtime credentials and sync state stay outside the image. Do not bake account credentials, OAuth tokens, browser profiles, or secrets into images.
 
-## Local Sernereuse Topologies
+## Browser Integration
 
-The included Quadlet examples default to a shared user-defined Podman network:
-
-```text
-quadlet/grotto.network
-templates/*/grotto.container
-```
-
-In this mode, sibling sernereuses use DNS names such as:
+The browser agent connects to separate browser runtime containers:
 
 ```text
-OLLAMA_BASE_URL=http://ollama:11434
-SEARXNG_BASE_URL=http://searxng:8080
-BROWSER_WS_ENDPOINT=ws://grotto-browser-runtime-headless:3000
-BROWSER_CDP_ENDPOINT=http://grotto-browser-runtime-visible:9222
+BROWSER_WS_ENDPOINT=ws://browser-runtime-headless:3000
+BROWSER_CDP_ENDPOINT=http://browser-runtime-visible:9222
 ```
 
-`localhost` inside a container means that same container, not sibling sernereuses.
+Browser runtimes are maintained in the [web-apps repository](https://github.com/pelagians/web-apps).
 
 ## Published Images
 
-GitHub Actions builds and publishes all matrix images to GHCR on pushes to `main`, version tags, scheduled rebuilds, and manual workflow runs. Pull requests build images without publishing them.
+GitHub Actions builds and publishes all runtime images to GHCR on:
+- Pushes to `main`
+- Version tags
+- Scheduled rebuilds
+- Manual workflow runs
 
-## Template Expansion Rule
+Pull requests build images without publishing them.
 
-When adding future Grotto templates, create a narrow `templates/<purpose>/` directory with a purpose-built Brewfile, starter config, runtime example, explicit policy boundaries, and an expected output contract. Do not grow any Grotto image into a broad Hermes replacement.
+## Adding New Runtimes
+
+When adding future Grotto runtimes, create a narrow `templates/<purpose>/` directory with:
+- Purpose-built Brewfile
+- Starter configuration
+- Runtime example
+- Explicit policy boundaries
+- Expected output contract
+
+Do not grow any Grotto runtime into a broad general-purpose agent.
+
+## Relationship to Pelagian Ecosystem
+
+Grotto is one of the open-source foundations of the Pelagian ecosystem:
+
+- **Current** provides the operating system
+- **Grotto** provides specialized AI workers
+- **Cage** provides Windows compatibility workers
+- **Nereus** deploys and orchestrates Grotto workers
+- **Nyra** interacts with Nereus, not directly with Grotto
+
+Grotto is fully usable without Nereus. Users can pull and run Grotto containers independently.
+
+## License
+
+See [LICENSE](LICENSE) for details.
