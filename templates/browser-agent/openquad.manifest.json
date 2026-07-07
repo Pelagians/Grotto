@@ -1,10 +1,10 @@
 {
-  "contract_version": "openquad.worker.v0.1",
+  "contract_version": "grotto.worker.v0.1",
   "worker": {
-    "name": "openquad-browser-agent",
-    "description": "Generic OpenQuad browser-agent worker"
+    "name": "grotto-browser-agent",
+    "description": "Generic Grotto browser-agent worker"
   },
-  "image": "ghcr.io/myos-dev/openquad-browser-agent:latest",
+  "image": "ghcr.io/myos-dev/grotto-browser-agent:latest",
   "template": "browser-agent",
   "capabilities": [
     {

@@ -1,6 +1,6 @@
-# openquad-records
+# grotto-records
 
-Structured business-records OpenClaw agent. VIC durable records are the ideal backend, but this image stays generic enough for Postgres, SQLite, JSON/CSV, and later Sheets/CRM connectors.
+Structured business-records OpenClaw agent. Nereus durable records are the ideal backend, but this image stays generic enough for Postgres, SQLite, JSON/CSV, and later Sheets/CRM connectors.
 
 ## Scope
 
@@ -10,7 +10,7 @@ Out of scope: destructive deletes by default, external communications, payments,
 
 ## Mutation model
 
-Low-risk autonomous record create/update is allowed when policy permits it. Bulk updates, schema changes, and VIC mutations should carry explicit policy decisions and evidence. Deletes are blocked by default.
+Low-risk autonomous record create/update is allowed when policy permits it. Bulk updates, schema changes, and Nereus mutations should carry explicit policy decisions and evidence. Deletes are blocked by default.
 
 ## Expected output contract
 

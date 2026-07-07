@@ -1,4 +1,4 @@
-// openquad-browser-agent starter config.
+// grotto-browser-agent starter config.
 {
   agents: {
     defaults: {
@@ -6,17 +6,17 @@
     },
   },
 
-  openquad: {
-    product: "OpenQuad",
-    image: "openquad-browser-agent",
+  grotto: {
+    product: "Grotto",
+    image: "grotto-browser-agent",
     template: "browser-agent",
     primaryJob: "Operate websites and legacy portals where APIs do not exist, by controlling separate browser runtime containers.",
     dataSurfaces: ["internal browser runtime WebSocket/CDP endpoints", "approved web workflows", "downloaded artifacts", "workflow-specific uploads"],
     connectionModel: {
       preferred: "Playwright browser server WebSocket",
       fallback: "Chromium CDP for Chromium-specific or persistent-profile workflows",
-      headlessDefaultEndpoint: "ws://openquad-browser-runtime-headless:3000",
-      visibleDefaultEndpoint: "http://openquad-browser-runtime-visible:9222",
+      headlessDefaultEndpoint: "ws://grotto-browser-runtime-headless:3000",
+      visibleDefaultEndpoint: "http://grotto-browser-runtime-visible:9222",
     },
     mutationPermissions: {
       autonomous: ["navigate", "read", "search within an allowed site", "extract", "download", "fill forms", "upload to a managed workflow when allowed"],
@@ -43,8 +43,8 @@
   env: {
     vars: {
       OLLAMA_BASE_URL: "http://ollama:11434",
-      BROWSER_WS_ENDPOINT: "ws://openquad-browser-runtime-headless:3000",
-      BROWSER_CDP_ENDPOINT: "http://openquad-browser-runtime-visible:9222",
+      BROWSER_WS_ENDPOINT: "ws://grotto-browser-runtime-headless:3000",
+      BROWSER_CDP_ENDPOINT: "http://grotto-browser-runtime-visible:9222",
       BROWSER_DOMAIN_ALLOWLIST: "",
       XDG_CONFIG_HOME: "/home/node/.openclaw/.config",
       XDG_DATA_HOME: "/home/node/.openclaw/.local/share",

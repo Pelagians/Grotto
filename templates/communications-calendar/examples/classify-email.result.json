@@ -1,7 +1,7 @@
 {
   "task_id": "example-comms-classify-email",
   "status": "failed",
-  "worker": "openquad-comms",
+  "worker": "grotto-comms",
   "capability": "comms.classify",
   "task_type": "classify_email",
   "result": {

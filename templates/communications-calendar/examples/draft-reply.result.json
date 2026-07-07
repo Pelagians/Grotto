@@ -1,7 +1,7 @@
 {
   "task_id": "example-comms-draft-reply",
   "status": "failed",
-  "worker": "openquad-comms",
+  "worker": "grotto-comms",
   "capability": "comms.draft_reply",
   "task_type": "draft_reply",
   "result": {

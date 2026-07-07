@@ -1,12 +1,12 @@
-# openquad-browser-agent
+# grotto-browser-agent
 
 Browser-workflow OpenClaw agent for sites and legacy portals where APIs do not exist. This image contains agent logic, model config, policy, and Playwright client tooling only. It does not bundle headless/headful browser stacks.
 
 ## Runtime connection model
 
-Prefer Playwright-native WebSocket control of `openquad-browser-runtime-headless`. Use Chromium CDP against `openquad-browser-runtime-visible` for persistent-profile, teaching, debugging, and user-assisted workflows.
+Prefer Playwright-native WebSocket control of `grotto-browser-runtime-headless`. Use Chromium CDP against `grotto-browser-runtime-visible` for persistent-profile, teaching, debugging, and user-assisted workflows.
 
-Browser-control endpoints are privileged and must stay internal to the cluster or trusted Podman network. In Kubernetes, expose them only through Service DNS and restrict them with NetworkPolicy.
+Browser-control endpoints are privileged and must stay internal to the cluster or trusted Podman network. In Kubernetes, expose them only through Sernereuse DNS and restrict them with NetworkPolicy.
 
 ## Mutation model
 

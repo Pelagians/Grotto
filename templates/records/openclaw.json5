@@ -1,4 +1,4 @@
-// openquad-records starter config.
+// grotto-records starter config.
 {
   agents: {
     defaults: {
@@ -6,12 +6,12 @@
     },
   },
 
-  openquad: {
-    product: "OpenQuad",
-    image: "openquad-records",
+  grotto: {
+    product: "Grotto",
+    image: "grotto-records",
     template: "records",
-    primaryJob: "Structured business records, with VIC durable records as the ideal backend and standalone JSON/Postgres/SQLite/CSV support.",
-    dataSurfaces: ["VIC API/resources", "Postgres", "SQLite", "local JSON/CSV", "Google Sheets bridge later", "CRM APIs later"],
+    primaryJob: "Structured business records, with Nereus durable records as the ideal backend and standalone JSON/Postgres/SQLite/CSV support.",
+    dataSurfaces: ["Nereus API/resources", "Postgres", "SQLite", "local JSON/CSV", "Google Sheets bridge later", "CRM APIs later"],
     canonicalRecordShape: {
       external: "JSON API resource",
       durable: "Postgres row underneath when a database backend is present",
@@ -19,7 +19,7 @@
     },
     mutationPermissions: {
       autonomous: ["create low-risk records", "update low-risk records", "import/export JSON/CSV when policy allows"],
-      requiresPolicyDecision: ["VIC record mutation", "schema-changing operations", "bulk updates"],
+      requiresPolicyDecision: ["Nereus record mutation", "schema-changing operations", "bulk updates"],
       blockedByDefault: ["destructive deletes", "external communications", "payments", "browser actions", "freeform web research"],
     },
     allowedTools: ["sqlite3", "duckdb", "jq", "yq", "psql", "curl"],
@@ -42,8 +42,8 @@
   env: {
     vars: {
       OLLAMA_BASE_URL: "http://ollama:11434",
-      VIC_API_BASE_URL: "http://vic-api:8080",
-      DATABASE_URL: "postgresql://openquad-records@postgres/openquad_records",
+      Nereus_API_BASE_URL: "http://nereus-api:8080",
+      DATABASE_URL: "postgresql://grotto-records@postgres/grotto_records",
       XDG_CONFIG_HOME: "/home/node/.openclaw/.config",
       XDG_DATA_HOME: "/home/node/.openclaw/.local/share",
       XDG_CACHE_HOME: "/home/node/.openclaw/.cache",

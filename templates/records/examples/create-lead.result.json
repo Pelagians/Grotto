@@ -1,7 +1,7 @@
 {
   "task_id": "example-records-create-lead",
   "status": "failed",
-  "worker": "openquad-records",
+  "worker": "grotto-records",
   "capability": "records.create",
   "task_type": "create_lead",
   "result": {

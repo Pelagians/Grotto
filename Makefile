@@ -6,7 +6,7 @@ CONTAINER_ENGINE ?= $(DETECTED_CONTAINER_ENGINE)
 ifeq ($(strip $(CONTAINER_ENGINE)),)
 CONTAINER_ENGINE := $(DETECTED_CONTAINER_ENGINE)
 endif
-OPENQUAD_DOCUMENTS_IMAGE ?= openquad-documents:smoke
+GROTTO_DOCUMENTS_IMAGE ?= grotto-documents:smoke
 
 .PHONY: check-container-engine
 check-container-engine:
@@ -17,7 +17,7 @@ check-container-engine:
 	fi
 
 validate-schemas:
-	uv run --project workerd --with jsonschema python scripts/validate_openquad_contracts.py .
+	uv run --project workerd --with jsonschema python scripts/validate_grotto_contracts.py .
 
 validate-manifests: validate-schemas
 
@@ -25,18 +25,18 @@ test:
 	PYTHONPATH=. uv run --project workerd --with pytest --with httpx --with fastapi --with jsonschema python -m pytest workerd/tests -q
 
 run-workerd:
-	PYTHONPATH=. uv run --project workerd openquad-workerd
+	PYTHONPATH=. uv run --project workerd grotto-workerd
 
 image-documents: check-container-engine
 	$(CONTAINER_ENGINE) build \
 		-f Containerfile \
-		--build-arg OPENQUAD_TEMPLATE=documents \
-		--build-arg OPENQUAD_IMAGE_NAME=openquad-documents \
-		--build-arg "OPENQUAD_VERIFY_TOOLS=pdfinfo pdftotext qpdf tesseract ocrmypdf" \
-		-t $(OPENQUAD_DOCUMENTS_IMAGE) \
+		--build-arg GROTTO_TEMPLATE=documents \
+		--build-arg GROTTO_IMAGE_NAME=grotto-documents \
+		--build-arg "GROTTO_VERIFY_TOOLS=pdfinfo pdftotext qpdf tesseract ocrmypdf" \
+		-t $(GROTTO_DOCUMENTS_IMAGE) \
 		.
 
 smoke-documents-container:
 	CONTAINER_ENGINE="$(CONTAINER_ENGINE)" \
-	OPENQUAD_DOCUMENTS_IMAGE="$(OPENQUAD_DOCUMENTS_IMAGE)" \
+	GROTTO_DOCUMENTS_IMAGE="$(GROTTO_DOCUMENTS_IMAGE)" \
 	scripts/smoke_documents_container.sh

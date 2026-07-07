@@ -1,6 +1,6 @@
 {
-  "task_id": "vic-task-doc-convert-example-001",
-  "idempotency_key": "vic-idem-doc-convert-example-001",
+  "task_id": "nereus-task-doc-convert-example-001",
+  "idempotency_key": "nereus-idem-doc-convert-example-001",
   "capability": "documents.convert",
   "task_type": "convert_pdf_to_text",
   "input": {
@@ -22,9 +22,9 @@
     }
   },
   "provenance": {
-    "orchestrator": "vic",
+    "orchestrator": "nereus",
     "tenant_id": "demo-tenant",
     "workflow_id": null,
-    "submitted_by": "vic-control-plane"
+    "submitted_by": "nereus-control-plane"
   }
 }

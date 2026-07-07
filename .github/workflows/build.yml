@@ -48,7 +48,7 @@ jobs:
           - name: grotto-records
             image: ghcr.io/pelagians/grotto-records
             title: Grotto Records
-            description: Focused OpenClaw records agent for VIC, Postgres, SQLite, JSON, CSV, and evidence-backed record writes
+            description: Focused OpenClaw records agent for Nereus, Postgres, SQLite, JSON, CSV, and evidence-backed record writes
             file: ./Containerfile
             template: records
             verify_tools: sqlite3 duckdb jq yq psql
@@ -112,10 +112,10 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            OPENQUAD_TEMPLATE=${{ matrix.template }}
-            OPENQUAD_IMAGE_NAME=${{ matrix.name }}
-            OPENQUAD_LINK_FORMULAE=${{ matrix.link_formulae }}
-            OPENQUAD_NPM_PACKAGES=${{ matrix.npm_packages }}
-            OPENQUAD_VERIFY_TOOLS=${{ matrix.verify_tools }}
+            GROTTO_TEMPLATE=${{ matrix.template }}
+            GROTTO_IMAGE_NAME=${{ matrix.name }}
+            GROTTO_LINK_FORMULAE=${{ matrix.link_formulae }}
+            GROTTO_NPM_PACKAGES=${{ matrix.npm_packages }}
+            GROTTO_VERIFY_TOOLS=${{ matrix.verify_tools }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
