@@ -1,4 +1,4 @@
-# openquad-documents
+# grotto-documents
 
 Document-processing OpenClaw agent for reading, classifying, OCR, extracting, converting, drafting, and organizing documents.
 

@@ -1,10 +1,10 @@
 {
-  "contract_version": "openquad.worker.v0.1",
+  "contract_version": "grotto.worker.v0.1",
   "worker": {
-    "name": "openquad-records",
-    "description": "Generic OpenQuad records worker"
+    "name": "grotto-records",
+    "description": "Generic Grotto records worker"
   },
-  "image": "ghcr.io/myos-dev/openquad-records:latest",
+  "image": "ghcr.io/myos-dev/grotto-records:latest",
   "template": "records",
   "capabilities": [
     {

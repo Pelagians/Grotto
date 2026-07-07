@@ -1,10 +1,10 @@
 {
-  "contract_version": "openquad.worker.v0.1",
+  "contract_version": "grotto.worker.v0.1",
   "worker": {
-    "name": "openquad-comms",
-    "description": "Generic OpenQuad communications-calendar worker"
+    "name": "grotto-comms",
+    "description": "Generic Grotto communications-calendar worker"
   },
-  "image": "ghcr.io/myos-dev/openquad-comms:latest",
+  "image": "ghcr.io/myos-dev/grotto-comms:latest",
   "template": "communications-calendar",
   "capabilities": [
     {

@@ -1,10 +1,10 @@
 {
-  "contract_version": "openquad.worker.v0.1",
+  "contract_version": "grotto.worker.v0.1",
   "worker": {
-    "name": "openquad-documents",
-    "description": "Generic OpenQuad documents worker"
+    "name": "grotto-documents",
+    "description": "Generic Grotto documents worker"
   },
-  "image": "ghcr.io/myos-dev/openquad-documents:latest",
+  "image": "ghcr.io/myos-dev/grotto-documents:latest",
   "template": "documents",
   "capabilities": [
     {

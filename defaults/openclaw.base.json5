@@ -1,4 +1,4 @@
-// OpenQuad starter config for local Podman service integration.
+// Grotto starter config for local Podman sernereuse integration.
 // Copy or merge this into /home/node/.openclaw/openclaw.json when bootstrapping state.
 {
   agents: {
@@ -23,9 +23,9 @@
     },
   },
 
-  // Shared-network defaults. They work when OpenQuad, Ollama, and SearXNG are
+  // Shared-network defaults. They work when Grotto, Ollama, and SearXNG are
   // attached to the same user-defined Podman network with stable container
-  // names. For host-published services, override these with:
+  // names. For host-published sernereuses, override these with:
   // OLLAMA_BASE_URL=http://host.containers.internal:11434
   // SEARXNG_BASE_URL=http://host.containers.internal:8888
   env: {
@@ -36,7 +36,7 @@
   },
 
   // Local search endpoint. SearXNG is key-free, but its JSON API must be enabled
-  // in the SearXNG service settings.
+  // in the SearXNG sernereuse settings.
   tools: {
     web: {
       search: {
@@ -65,7 +65,7 @@
 
   // Local LLM endpoint placeholder. OpenClaw's implicit Ollama discovery uses
   // 127.0.0.1, so container-to-container Ollama should be configured explicitly
-  // after choosing model IDs that exist in your Ollama service.
+  // after choosing model IDs that exist in your Ollama sernereuse.
   // models: {
   //   providers: {
   //     ollama: {

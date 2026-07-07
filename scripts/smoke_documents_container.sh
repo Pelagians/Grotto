@@ -2,10 +2,10 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-IMAGE="${OPENQUAD_DOCUMENTS_IMAGE:-openquad-documents:smoke}"
-HOST_PORT="${OPENQUAD_SMOKE_PORT:-18789}"
-SKIP_BUILD="${OPENQUAD_SKIP_BUILD:-false}"
-WORKSPACE_DIR="${OPENQUAD_SMOKE_WORKSPACE:-}"
+IMAGE="${GROTTO_DOCUMENTS_IMAGE:-grotto-documents:smoke}"
+HOST_PORT="${GROTTO_SMOKE_PORT:-18789}"
+SKIP_BUILD="${GROTTO_SKIP_BUILD:-false}"
+WORKSPACE_DIR="${GROTTO_SMOKE_WORKSPACE:-}"
 CID=""
 
 choose_engine() {
@@ -35,7 +35,7 @@ cleanup() {
   if [ -n "${CID}" ]; then
     engine rm -f "${CID}" >/dev/null 2>&1 || true
   fi
-  if [ -z "${OPENQUAD_SMOKE_WORKSPACE:-}" ] && [ -n "${WORKSPACE_DIR}" ]; then
+  if [ -z "${GROTTO_SMOKE_WORKSPACE:-}" ] && [ -n "${WORKSPACE_DIR}" ]; then
     rm -rf "${WORKSPACE_DIR}"
   fi
 }
@@ -48,15 +48,15 @@ if [ "${SKIP_BUILD}" != "true" ]; then
   echo "Building ${IMAGE} with documents template..."
   engine build \
     -f Containerfile \
-    --build-arg OPENQUAD_TEMPLATE=documents \
-    --build-arg OPENQUAD_IMAGE_NAME=openquad-documents \
-    --build-arg "OPENQUAD_VERIFY_TOOLS=pdfinfo pdftotext qpdf tesseract ocrmypdf" \
+    --build-arg GROTTO_TEMPLATE=documents \
+    --build-arg GROTTO_IMAGE_NAME=grotto-documents \
+    --build-arg "GROTTO_VERIFY_TOOLS=pdfinfo pdftotext qpdf tesseract ocrmypdf" \
     -t "${IMAGE}" \
     "${ROOT_DIR}"
 fi
 
 if [ -z "${WORKSPACE_DIR}" ]; then
-  WORKSPACE_DIR="$(mktemp -d -t openquad-documents-smoke.XXXXXX)"
+  WORKSPACE_DIR="$(mktemp -d -t grotto-documents-smoke.XXXXXX)"
 fi
 mkdir -p "${WORKSPACE_DIR}/inputs"
 
@@ -68,7 +68,7 @@ page_stream = (
     "BT\n"
     "/F1 12 Tf\n"
     "50 750 Td\n"
-    "(Hello from OpenQuad container smoke.) Tj\n"
+    "(Hello from Grotto container smoke.) Tj\n"
     "0 -20 Td\n"
     "(convert_pdf_to_text should extract this line.) Tj\n"
     "ET"
@@ -92,7 +92,7 @@ PY
 CID="$(engine run -d --rm \
   -p "127.0.0.1:${HOST_PORT}:18789" \
   -v "${WORKSPACE_DIR}:/home/node/.openclaw/workspace:Z" \
-  -e OPENQUAD_WORKSPACE_DIR=/home/node/.openclaw/workspace \
+  -e GROTTO_WORKSPACE_DIR=/home/node/.openclaw/workspace \
   "${IMAGE}")"
 
 echo "Started ${IMAGE} as ${CID} on 127.0.0.1:${HOST_PORT}"
@@ -140,7 +140,7 @@ JSON
 curl -fsS \
   -H 'content-type: application/json' \
   --data-binary "@${REQUEST_JSON}" \
-  "http://127.0.0.1:${HOST_PORT}/openquad/v1/tasks" \
+  "http://127.0.0.1:${HOST_PORT}/grotto/v1/tasks" \
   > "${RESPONSE_JSON}"
 
 python3 - "${WORKSPACE_DIR}" "${TASK_ID}" "${RESPONSE_JSON}" <<'PY'
@@ -162,7 +162,7 @@ result_path = task_dir / "result.json"
 for path in (output, metadata, manifest_path, result_path):
     assert path.is_file(), f"missing {path}"
 text = output.read_text(encoding="utf-8", errors="replace")
-assert "OpenQuad container smoke" in text
+assert "Grotto container smoke" in text
 manifest = json.loads(manifest_path.read_text())
 result = json.loads(result_path.read_text())
 assert manifest["task_id"] == task_id

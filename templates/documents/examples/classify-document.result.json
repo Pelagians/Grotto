@@ -1,7 +1,7 @@
 {
   "task_id": "example-docs-classify",
   "status": "failed",
-  "worker": "openquad-documents",
+  "worker": "grotto-documents",
   "capability": "documents.classify",
   "task_type": "classify_document",
   "result": {

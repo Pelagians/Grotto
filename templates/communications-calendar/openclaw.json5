@@ -1,4 +1,4 @@
-// openquad-comms starter config.
+// grotto-comms starter config.
 {
   agents: {
     defaults: {
@@ -6,9 +6,9 @@
     },
   },
 
-  openquad: {
-    product: "OpenQuad",
-    image: "openquad-comms",
+  grotto: {
+    product: "Grotto",
+    image: "grotto-comms",
     template: "communications-calendar",
     primaryJob: "Email, messaging, calendar, reminders, contact coordination, drafting replies, scheduling, and follow-up.",
     dataSurfaces: ["email", "messaging connectors", "calendars", "contacts", "reminders"],
@@ -70,7 +70,7 @@
     },
   },
 
-  // Enable only after pulling the model into the sibling Ollama service.
+  // Enable only after pulling the model into the sibling Ollama sernereuse.
   // Suggested class: 3B-8B instruct models for short communications tasks.
   // models: {
   //   providers: {

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://openquad.dev/schemas/openquad-task-result.schema.json",
-  "title": "OpenQuad Task Result",
+  "$id": "https://grotto.dev/schemas/grotto-task-result.schema.json",
+  "title": "Grotto Task Result",
   "type": "object",
   "required": [
     "task_id",
@@ -48,8 +48,8 @@
     },
     "policy_decision": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "$id": "https://openquad.dev/schemas/openquad-policy-decision.schema.json",
-      "title": "OpenQuad Policy Decision Hint",
+      "$id": "https://grotto.dev/schemas/grotto-policy-decision.schema.json",
+      "title": "Grotto Policy Decision Hint",
       "type": "object",
       "required": [
         "decision",

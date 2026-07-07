@@ -7,7 +7,7 @@ Grotto provides specialized AI agent containers. Each agent is a narrow, focused
 | Image | Purpose |
 | --- | --- |
 | `ghcr.io/pelagians/grotto-comms:latest` | Communications/calendar agent for email, messaging, calendar, reminders, and contacts |
-| `ghcr.io/pelagians/grotto-records:latest` | Records agent for structured business records with VIC/Postgres/SQLite/JSON/CSV support |
+| `ghcr.io/pelagians/grotto-records:latest` | Records agent for structured business records with Nereus/Postgres/SQLite/JSON/CSV support |
 | `ghcr.io/pelagians/grotto-documents:latest` | Documents agent for OCR, extraction, conversion, classification, and managed document organization |
 | `ghcr.io/pelagians/grotto-browser-agent:latest` | Browser workflow agent that controls separate browser runtime containers |
 
@@ -38,11 +38,11 @@ Each Grotto agent follows these principles:
 
 ## Integration
 
-Agents connect to external services and runtimes through well-defined contracts:
+Agents connect to external sernereuses and runtimes through well-defined contracts:
 
 - **Browser agent** connects to web-apps browser runtimes over internal networking
 - **Records agent** connects to databases and storage systems
-- **Documents agent** connects to document storage and processing services
-- **Communications agent** connects to email, calendar, and messaging services
+- **Documents agent** connects to document storage and processing sernereuses
+- **Communications agent** connects to email, calendar, and messaging sernereuses
 
 All agent-to-runtime communication follows the worker contract defined in `docs/worker-contract.md`.

@@ -1,4 +1,4 @@
-# openquad-comms
+# grotto-comms
 
 Communications/calendar OpenClaw agent for email, messaging, calendar, reminders, contacts, drafting replies, scheduling, and follow-up.
 

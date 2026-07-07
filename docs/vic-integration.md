@@ -1,37 +1,37 @@
 
-# VIC Integration
+# Nereus Integration
 
-VIC can ingest OpenQuad workers as external task executors, but OpenQuad remains a generic worker family.
+Nereus can ingest Grotto workers as external task executors, but Grotto remains a generic worker family.
 
 ## Boundary
 
 ```text
-VIC WorkflowRun
-  -> VIC Task
-  -> VIC policy evaluation
-  -> OpenQuad worker task API
-  -> OpenQuad structured result/artifacts/events
-  -> VIC task status/audit/workflow continuation
+Nereus WorkflowRun
+  -> Nereus Task
+  -> Nereus policy evaluation
+  -> Grotto worker task API
+  -> Grotto structured result/artifacts/events
+  -> Nereus task status/audit/workflow continuation
 ```
 
-VIC remains the control plane. It owns tenants, workflows, approvals, durable status, records, audit events, and policy authority.
+Nereus remains the control plane. It owns tenants, workflows, approvals, durable status, records, audit events, and policy authority.
 
 ## Registration
 
-VIC should register an OpenQuad executor per tenant with:
+Nereus should register an Grotto executor per tenant with:
 
 - name
-- executor type such as `openquad`
+- executor type such as `grotto`
 - base URL
 - stored manifest JSON
 - stored capabilities JSON
 - enabled flag
 
-`sync-manifest` should call the OpenQuad worker, store the manifest/capabilities, and create a VIC audit event.
+`sync-manifest` should call the Grotto worker, store the manifest/capabilities, and create a Nereus audit event.
 
 ## Routing
 
-VIC resolves:
+Nereus resolves:
 
 ```text
 tenant_id + capability + task_type -> Executor
@@ -41,7 +41,7 @@ Disabled executors are ignored. Unknown capabilities fail cleanly. Multiple matc
 
 ## Policy
 
-VIC may use OpenQuad side-effect classes and policy hints as input, but VIC makes the final policy decision:
+Nereus may use Grotto side-effect classes and policy hints as input, but Nereus makes the final policy decision:
 
 - read-only tasks can run automatically
 - tasks that mutate external systems require approval
@@ -49,10 +49,10 @@ VIC may use OpenQuad side-effect classes and policy hints as input, but VIC make
 - tasks that touch secrets are rejected by default
 - unknown task types require approval
 
-OpenQuad should never be treated as an approval authority.
+Grotto should never be treated as an approval authority.
 
 ## Browser runtime split
 
-`openquad-browser-agent` talks to separate browser runtime images. In the VIC product path, those runtime images are packaged and published by `vic-web`; the OpenQuad image VIC normally deploys is the browser-agent worker, not an OpenQuad browser runtime. VIC should keep browser-control endpoints private and internal-only. OpenQuad browser workers should return screenshots/traces/artifacts as evidence; VIC decides what becomes durable audit.
+`grotto-browser-agent` talks to separate browser runtime images. In the Nereus product path, those runtime images are packaged and published by `nereus-web`; the Grotto image Nereus normally deploys is the browser-agent worker, not an Grotto browser runtime. Nereus should keep browser-control endpoints private and internal-only. Grotto browser workers should return screenshots/traces/artifacts as evidence; Nereus decides what becomes durable audit.
 
-For the concrete VIC worker deployment and NetworkPolicy label contract, see [`vic-browser-worker.md`](vic-browser-worker.md).
+For the concrete Nereus worker deployment and NetworkPolicy label contract, see [`nereus-browser-worker.md`](nereus-browser-worker.md).

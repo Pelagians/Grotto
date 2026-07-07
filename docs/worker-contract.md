@@ -1,40 +1,40 @@
 
-# OpenQuad Worker Contract v0.1
+# Grotto Worker Contract v0.1
 
-OpenQuad is a generic deployable worker family. It is not inherently tied to VIC and it does not own tenants, workflows, approvals, durable records, or audit source-of-truth.
+Grotto is a generic deployable worker family. It is not inherently tied to Nereus and it does not own tenants, workflows, approvals, durable records, or audit source-of-truth.
 
-OpenQuad workers accept bounded typed task envelopes, execute one task at a time from an external orchestrator, and return structured results, artifacts, and local events. The orchestrator remains responsible for scheduling, policy authority, approvals, durable status, and audit.
+Grotto workers accept bounded typed task envelopes, execute one task at a time from an external orchestrator, and return structured results, artifacts, and local events. The orchestrator remains responsible for scheduling, policy authority, approvals, durable status, and audit.
 
 ## Contract shape
 
 ```text
 External orchestrator
   -> policy decision
-  -> OpenQuad task envelope
-  -> OpenQuad structured result/artifacts/events
+  -> Grotto task envelope
+  -> Grotto structured result/artifacts/events
   -> orchestrator durable task status/audit/continuation
 ```
 
-OpenQuad workers must not form an uncontrolled peer-to-peer agent swarm. A worker may call connector APIs or browser runtimes needed for its own bounded task, but it should not delegate orchestration authority to another worker.
+Grotto workers must not form an uncontrolled peer-to-peer agent swarm. A worker may call connector APIs or browser runtimes needed for its own bounded task, but it should not delegate orchestration authority to another worker.
 
 ## Required endpoints
 
-Every OpenQuad worker daemon exposes:
+Every Grotto worker daemon exposes:
 
 ```text
 GET  /healthz
 GET  /readyz
-GET  /openquad/v1/manifest
-GET  /openquad/v1/capabilities
-POST /openquad/v1/tasks
-GET  /openquad/v1/tasks/{task_id}
-POST /openquad/v1/tasks/{task_id}/cancel
-GET  /openquad/v1/tasks/{task_id}/artifacts
+GET  /grotto/v1/manifest
+GET  /grotto/v1/capabilities
+POST /grotto/v1/tasks
+GET  /grotto/v1/tasks/{task_id}
+POST /grotto/v1/tasks/{task_id}/cancel
+GET  /grotto/v1/tasks/{task_id}/artifacts
 ```
 
 ## Task envelope
 
-Task envelopes are validated against `schemas/openquad-task.schema.json`. They include:
+Task envelopes are validated against `schemas/grotto-task.schema.json`. They include:
 
 - `task_id`: orchestrator-supplied task identity
 - `idempotency_key`: stable retry key
@@ -45,11 +45,11 @@ Task envelopes are validated against `schemas/openquad-task.schema.json`. They i
 - `policy`: policy decision already made by the orchestrator
 - `provenance`: source/orchestrator context
 
-OpenQuad respects policy decisions in the envelope, but it does not make final policy decisions for an external control plane.
+Grotto respects policy decisions in the envelope, but it does not make final policy decisions for an external control plane.
 
 ## Result envelope
 
-Results are validated against `schemas/openquad-task-result.schema.json`. They include:
+Results are validated against `schemas/grotto-task-result.schema.json`. They include:
 
 - status: `queued`, `running`, `succeeded`, `failed`, `cancelled`, `requires_approval`, or `rejected`
 - `worker`, `capability`, and `task_type`
@@ -74,11 +74,11 @@ Every task uses this local layout:
   artifact-manifest.json
 ```
 
-`OPENQUAD_WORKSPACE_DIR` can override `/home/node/.openclaw/workspace` for local development and tests.
+`GROTTO_WORKSPACE_DIR` can override `/home/node/.openclaw/workspace` for local development and tests.
 
 ## Artifact contract
 
-Artifacts must be described by `schemas/openquad-artifact-manifest.schema.json` and include:
+Artifacts must be described by `schemas/grotto-artifact-manifest.schema.json` and include:
 
 ```json
 {
@@ -90,11 +90,11 @@ Artifacts must be described by `schemas/openquad-artifact-manifest.schema.json` 
 }
 ```
 
-OpenQuad stores local file URIs. External orchestrators decide whether to copy, persist, redact, or expose those artifacts.
+Grotto stores local file URIs. External orchestrators decide whether to copy, persist, redact, or expose those artifacts.
 
 ## Event contract
 
-Events are JSONL entries validated by `schemas/openquad-event.schema.json`. Common event types are:
+Events are JSONL entries validated by `schemas/grotto-event.schema.json`. Common event types are:
 
 ```json
 {"event_type":"task.accepted","task_id":"...","created_at":"..."}

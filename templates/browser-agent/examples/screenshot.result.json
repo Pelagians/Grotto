@@ -1,7 +1,7 @@
 {
   "task_id": "example-browser-screenshot",
   "status": "failed",
-  "worker": "openquad-browser-agent",
+  "worker": "grotto-browser-agent",
   "capability": "browser.screenshot",
   "task_type": "screenshot",
   "result": {

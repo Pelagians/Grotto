@@ -1,18 +1,18 @@
 # Kubernetes Documents Worker Deployment
 
-This document shows the v0.2.1 Kubernetes/local deployment path for proving VIC can route a real `documents.convert / convert_pdf_to_text` task to `openquad-documents` and receive real artifact metadata.
+This document shows the v0.2.1 Kubernetes/local deployment path for proving Nereus can route a real `documents.convert / convert_pdf_to_text` task to `grotto-documents` and receive real artifact metadata.
 
 ## Objects
 
 The MVP deployment uses:
 
-1. `openquad-documents` `Deployment`
-2. `ClusterIP` `Service` on port `18789`
+1. `grotto-documents` `Deployment`
+2. `ClusterIP` `Sernereuse` on port `18789`
 3. shared task workspace `PersistentVolumeClaim`
-4. VIC executor registration using the service DNS name
+4. Nereus executor registration using the sernereuse DNS name
 5. manifest sync
 6. task submission with `source_uri=file:///...`
-7. artifact verification from VIC and from the shared workspace
+7. artifact verification from Nereus and from the shared workspace
 
 ## Shared workspace PVC
 
@@ -20,8 +20,8 @@ The MVP deployment uses:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: openquad-documents-workspace
-  namespace: vic
+  name: grotto-documents-workspace
+  namespace: nereus
 spec:
   accessModes:
     - ReadWriteMany
@@ -30,7 +30,7 @@ spec:
       storage: 10Gi
 ```
 
-For single-node local clusters that do not support `ReadWriteMany`, use the local storage class your cluster provides and keep VIC and `openquad-documents` scheduled where they can both mount the same workspace. The production direction is a VIC artifact API or signed object-storage URL; this PVC handoff is only the MVP proof path.
+For single-node local clusters that do not support `ReadWriteMany`, use the local storage class your cluster provides and keep Nereus and `grotto-documents` scheduled where they can both mount the same workspace. The production direction is a Nereus artifact API or signed object-storage URL; this PVC handoff is only the MVP proof path.
 
 ## Deployment
 
@@ -38,79 +38,79 @@ For single-node local clusters that do not support `ReadWriteMany`, use the loca
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: openquad-documents
-  namespace: vic
+  name: grotto-documents
+  namespace: nereus
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: openquad-documents
+      app: grotto-documents
   template:
     metadata:
       labels:
-        app: openquad-documents
+        app: grotto-documents
     spec:
       containers:
-        - name: openquad-documents
-          image: ghcr.io/myos-dev/openquad-documents:v0.2.1
+        - name: grotto-documents
+          image: ghcr.io/myos-dev/grotto-documents:v0.2.1
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
               containerPort: 18789
           env:
-            - name: OPENQUAD_WORKERD_ENABLED
+            - name: GROTTO_WORKERD_ENABLED
               value: "true"
-            - name: OPENQUAD_WORKERD_HOST
+            - name: GROTTO_WORKERD_HOST
               value: 0.0.0.0
-            - name: OPENQUAD_WORKERD_PORT
+            - name: GROTTO_WORKERD_PORT
               value: "18789"
-            - name: OPENQUAD_WORKSPACE_DIR
+            - name: GROTTO_WORKSPACE_DIR
               value: /home/node/.openclaw/workspace
-            - name: OPENQUAD_MANIFEST_PATH
-              value: /usr/share/openquad/templates/documents/openquad.manifest.json
+            - name: GROTTO_MANIFEST_PATH
+              value: /usr/share/grotto/templates/documents/grotto.manifest.json
           volumeMounts:
             - name: workspace
               mountPath: /home/node/.openclaw/workspace
       volumes:
         - name: workspace
           persistentVolumeClaim:
-            claimName: openquad-documents-workspace
+            claimName: grotto-documents-workspace
 ```
 
-## ClusterIP Service
+## ClusterIP Sernereuse
 
 ```yaml
 apiVersion: v1
-kind: Service
+kind: Sernereuse
 metadata:
-  name: openquad-documents
-  namespace: vic
+  name: grotto-documents
+  namespace: nereus
 spec:
   type: ClusterIP
   selector:
-    app: openquad-documents
+    app: grotto-documents
   ports:
     - name: http
       port: 18789
       targetPort: 18789
 ```
 
-VIC should use the in-cluster service URL:
+Nereus should use the in-cluster sernereuse URL:
 
 ```text
-http://openquad-documents.vic.svc.cluster.local:18789
+http://grotto-documents.nereus.svc.cluster.local:18789
 ```
 
-## VIC executor registration
+## Nereus executor registration
 
 ```bash
-VIC_URL="http://vic-backend.vic.svc.cluster.local:8000"
+Nereus_URL="http://nereus-backend.nereus.svc.cluster.local:8000"
 TENANT_ID="internal"
 
 curl -fsS \
   -H 'content-type: application/json' \
-  --data '{"name":"openquad-documents","executor_type":"openquad","base_url":"http://openquad-documents.vic.svc.cluster.local:18789"}' \
-  "${VIC_URL}/tenants/${TENANT_ID}/executors"
+  --data '{"name":"grotto-documents","executor_type":"grotto","base_url":"http://grotto-documents.nereus.svc.cluster.local:18789"}' \
+  "${Nereus_URL}/tenants/${TENANT_ID}/executors"
 ```
 
 ## Manifest sync
@@ -119,14 +119,14 @@ Replace `<executor_id>` with the ID from registration:
 
 ```bash
 curl -fsS -X POST \
-  "${VIC_URL}/tenants/${TENANT_ID}/executors/<executor_id>/sync-manifest"
+  "${Nereus_URL}/tenants/${TENANT_ID}/executors/<executor_id>/sync-manifest"
 ```
 
-The synced manifest should show `worker.name=openquad-documents`, `documents.convert`, and `convert_pdf_to_text`.
+The synced manifest should show `worker.name=grotto-documents`, `documents.convert`, and `convert_pdf_to_text`.
 
 ## Task submission with `source_uri=file://...`
 
-For the MVP PVC path, VIC stages the input into the shared task workspace and submits a task with a source URI like:
+For the MVP PVC path, Nereus stages the input into the shared task workspace and submits a task with a source URI like:
 
 ```text
 source_uri=file:///home/node/.openclaw/workspace/<tenant-id>/task-<task-id>/inputs/inquiry.pdf
@@ -144,10 +144,10 @@ curl -fsS \
       "source_uri":"file:///home/node/.openclaw/workspace/inputs/inquiry.pdf"
     }
   }' \
-  "${VIC_URL}/tenants/${TENANT_ID}/tasks"
+  "${Nereus_URL}/tenants/${TENANT_ID}/tasks"
 ```
 
-Staged-source MVP example, where VIC can read the source path from the VIC backend pod filesystem and copies it into a tenant/task-scoped input directory on the shared workspace. Keep the source outside `VIC_TASK_WORKSPACE_ROOT`; sources already inside the shared workspace are rejected unless they are already inside the same tenant/task workspace.
+Staged-source MVP example, where Nereus can read the source path from the Nereus backend pod filesystem and copies it into a tenant/task-scoped input directory on the shared workspace. Keep the source outside `Nereus_TASK_WORKSPACE_ROOT`; sources already inside the shared workspace are rejected unless they are already inside the same tenant/task workspace.
 
 ```bash
 curl -fsS \
@@ -157,29 +157,29 @@ curl -fsS \
     "input_json":{
       "capability":"documents.convert",
       "stage_source":true,
-      "source_file_path":"/tmp/vic-openquad-inputs/inquiry.pdf",
+      "source_file_path":"/tmp/nereus-grotto-inputs/inquiry.pdf",
       "filename":"inquiry.pdf"
     }
   }' \
-  "${VIC_URL}/tenants/${TENANT_ID}/tasks"
+  "${Nereus_URL}/tenants/${TENANT_ID}/tasks"
 ```
 
 ## Artifact verification
 
-In VIC, verify the returned task has:
+In Nereus, verify the returned task has:
 
 - `status=Completed`
-- `output_json.openquad_result.status=succeeded`
-- `output_json.openquad_result.artifacts[]`
+- `output_json.grotto_result.status=succeeded`
+- `output_json.grotto_result.artifacts[]`
 - `TaskArtifact` rows for `text` and `json` artifacts
 - `sha256` and `size_bytes` populated
 
 In the shared workspace, verify:
 
 ```text
-/home/node/.openclaw/workspace/tasks/<openquad-task-id>/artifacts/output.txt
-/home/node/.openclaw/workspace/tasks/<openquad-task-id>/artifacts/metadata.json
-/home/node/.openclaw/workspace/tasks/<openquad-task-id>/artifact-manifest.json
+/home/node/.openclaw/workspace/tasks/<grotto-task-id>/artifacts/output.txt
+/home/node/.openclaw/workspace/tasks/<grotto-task-id>/artifacts/metadata.json
+/home/node/.openclaw/workspace/tasks/<grotto-task-id>/artifact-manifest.json
 ```
 
 The artifact verification step should compare the manifest `sha256` and `size_bytes` against the actual files.
@@ -187,7 +187,7 @@ The artifact verification step should compare the manifest `sha256` and `size_by
 ## Known limitations
 
 - `file://` source URIs are intentionally required for now.
-- Workspace boundary validation is strict; sources outside `OPENQUAD_WORKSPACE_DIR` are rejected by the worker.
-- PVC staging is the MVP path. Later milestones should replace or supplement it with a VIC artifact API or signed object-storage URLs.
-- Only `openquad-documents` and `convert_pdf_to_text` are in scope for v0.2.1.
+- Workspace boundary validation is strict; sources outside `GROTTO_WORKSPACE_DIR` are rejected by the worker.
+- PVC staging is the MVP path. Later milestones should replace or supplement it with a Nereus artifact API or signed object-storage URLs.
+- Only `grotto-documents` and `convert_pdf_to_text` are in scope for v0.2.1.
 - Records, comms, browser, and LLM-backed classification remain out of scope.

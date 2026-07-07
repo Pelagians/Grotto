@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# OpenQuad browser-agent container smoke
+# Grotto browser-agent container smoke
 set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-IMAGE="${OPENQUAD_BROWSER_IMAGE:-openquad-browser-agent:smoke}"
-HOST_PORT="${OPENQUAD_BROWSER_SMOKE_PORT:-18790}"
-SKIP_BUILD="${OPENQUAD_SKIP_BUILD:-false}"
-WORKSPACE_DIR="${OPENQUAD_SMOKE_WORKSPACE:-}"
+IMAGE="${GROTTO_BROWSER_IMAGE:-grotto-browser-agent:smoke}"
+HOST_PORT="${GROTTO_BROWSER_SMOKE_PORT:-18790}"
+SKIP_BUILD="${GROTTO_SKIP_BUILD:-false}"
+WORKSPACE_DIR="${GROTTO_SMOKE_WORKSPACE:-}"
 CID=""
 choose_engine() {
   if [ -n "${CONTAINER_ENGINE:-}" ]; then return 0; fi
@@ -17,18 +17,18 @@ choose_engine() {
 engine() { ${CONTAINER_ENGINE} "$@"; }
 cleanup() {
   if [ -n "${CID}" ]; then engine rm -f "${CID}" >/dev/null 2>&1 || true; fi
-  if [ -z "${OPENQUAD_SMOKE_WORKSPACE:-}" ] && [ -n "${WORKSPACE_DIR}" ]; then rm -rf "${WORKSPACE_DIR}"; fi
+  if [ -z "${GROTTO_SMOKE_WORKSPACE:-}" ] && [ -n "${WORKSPACE_DIR}" ]; then rm -rf "${WORKSPACE_DIR}"; fi
 }
 trap cleanup EXIT
 choose_engine; cd "${ROOT_DIR}"
 if [ "${SKIP_BUILD}" != "true" ]; then
   echo "Building ${IMAGE} with browser-agent template..."
-  engine build -f Containerfile --build-arg OPENQUAD_TEMPLATE=browser-agent --build-arg OPENQUAD_IMAGE_NAME=openquad-browser-agent --build-arg "OPENQUAD_VERIFY_TOOLS=" -t "${IMAGE}" "${ROOT_DIR}"
+  engine build -f Containerfile --build-arg GROTTO_TEMPLATE=browser-agent --build-arg GROTTO_IMAGE_NAME=grotto-browser-agent --build-arg "GROTTO_VERIFY_TOOLS=" -t "${IMAGE}" "${ROOT_DIR}"
 fi
-if [ -z "${WORKSPACE_DIR}" ]; then WORKSPACE_DIR="$(mktemp -d -t openquad-browser-smoke.XXXXXX)"; fi
+if [ -z "${WORKSPACE_DIR}" ]; then WORKSPACE_DIR="$(mktemp -d -t grotto-browser-smoke.XXXXXX)"; fi
 mkdir -p "${WORKSPACE_DIR}/inputs"
 echo "Starting ${IMAGE}..."
-CID="$(engine run -d --rm -p "127.0.0.1:${HOST_PORT}:18789" -v "${WORKSPACE_DIR}:/home/node/.openclaw/workspace:Z" -e OPENQUAD_WORKSPACE_DIR=/home/node/.openclaw/workspace "${IMAGE}")"
+CID="$(engine run -d --rm -p "127.0.0.1:${HOST_PORT}:18789" -v "${WORKSPACE_DIR}:/home/node/.openclaw/workspace:Z" -e GROTTO_WORKSPACE_DIR=/home/node/.openclaw/workspace "${IMAGE}")"
 echo "Started ${IMAGE} as ${CID} on 127.0.0.1:${HOST_PORT}"
 for _ in $(seq 1 90); do
   if curl -fsS "http://127.0.0.1:${HOST_PORT}/healthz" >/dev/null 2>&1; then break; fi
@@ -36,7 +36,7 @@ for _ in $(seq 1 90); do
 done
 curl -fsS "http://127.0.0.1:${HOST_PORT}/healthz" >/dev/null
 echo "Verifying capabilities..."
-CAPS="$(curl -fsS "http://127.0.0.1:${HOST_PORT}/openquad/v1/capabilities")"
+CAPS="$(curl -fsS "http://127.0.0.1:${HOST_PORT}/grotto/v1/capabilities")"
 echo "${CAPS}" | python3 -c "import json, sys; caps = json.load(sys.stdin); assert 'browser.screenshot' in caps; print('OK')"
 TASK_ID="browser-container-smoke"
 REQUEST_JSON="${WORKSPACE_DIR}/task-request.json"
@@ -45,7 +45,7 @@ cat > "${REQUEST_JSON}" <<JSON
 {"task_id":"${TASK_ID}","idempotency_key":"smoke:${TASK_ID}","capability":"browser.screenshot","task_type":"screenshot","input":{"url":"https://example.com/"},"constraints":{"max_runtime_seconds":120,"network_policy":"restricted","allowed_domains":["example.com"],"write_scope":"task"},"policy":{"decision":"allowed","reason":"container smoke","policy_version":"v0.1-smoke"},"provenance":{"orchestrator":"container-smoke"}}
 JSON
 echo "Submitting screenshot task..."
-curl -fsS -H 'content-type: application/json' --data-binary "@${REQUEST_JSON}" "http://127.0.0.1:${HOST_PORT}/openquad/v1/tasks" > "${RESPONSE_JSON}"
+curl -fsS -H 'content-type: application/json' --data-binary "@${REQUEST_JSON}" "http://127.0.0.1:${HOST_PORT}/grotto/v1/tasks" > "${RESPONSE_JSON}"
 python3 - "${WORKSPACE_DIR}" "${TASK_ID}" "${RESPONSE_JSON}" <<'PY'
 import json, sys; from pathlib import Path
 w,tid,rp = Path(sys.argv[1]),sys.argv[2],Path(sys.argv[3])

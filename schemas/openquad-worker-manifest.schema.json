@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://openquad.dev/schemas/openquad-worker-manifest.schema.json",
-  "title": "OpenQuad Worker Manifest",
-  "description": "Manifest contract for an OpenQuad worker image. All workers must declare this manifest so the orchestrator can register, route, and apply policy correctly.",
+  "$id": "https://grotto.dev/schemas/grotto-worker-manifest.schema.json",
+  "title": "Grotto Worker Manifest",
+  "description": "Manifest contract for an Grotto worker image. All workers must declare this manifest so the orchestrator can register, route, and apply policy correctly.",
   "type": "object",
   "required": [
     "contract_version",
@@ -22,7 +22,7 @@
   "properties": {
     "contract_version": {
       "type": "string",
-      "const": "openquad.worker.v0.1"
+      "const": "grotto.worker.v0.1"
     },
     "worker": {
       "type": "object",

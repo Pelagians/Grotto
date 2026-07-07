@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://openquad.dev/schemas/openquad-event.schema.json",
-  "title": "OpenQuad Event",
+  "$id": "https://grotto.dev/schemas/grotto-event.schema.json",
+  "title": "Grotto Event",
   "type": "object",
   "required": [
     "event_type",

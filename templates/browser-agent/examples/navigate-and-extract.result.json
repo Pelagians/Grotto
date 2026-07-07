@@ -1,7 +1,7 @@
 {
   "task_id": "example-browser-extract",
   "status": "failed",
-  "worker": "openquad-browser-agent",
+  "worker": "grotto-browser-agent",
   "capability": "browser.extract",
   "task_type": "extract_page",
   "result": {
