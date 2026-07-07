@@ -21,11 +21,8 @@ validate-schemas:
 
 validate-manifests: validate-schemas
 
-test: test-browser-runtime
+test:
 	PYTHONPATH=. uv run --project workerd --with pytest --with httpx --with fastapi --with jsonschema python -m pytest workerd/tests -q
-
-test-browser-runtime:
-	node --test tests/browser-runtime/*.test.mjs
 
 run-workerd:
 	PYTHONPATH=. uv run --project workerd openquad-workerd

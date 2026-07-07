@@ -1,3 +1,0 @@
-# openquad-browser-runtime-visible intentionally does not use Homebrew.
-# It is a browser runtime image, not an OpenClaw agent appliance.
-# Browser, VNC, and noVNC dependencies come from the runtime Containerfile.
