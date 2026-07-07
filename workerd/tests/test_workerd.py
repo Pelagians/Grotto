@@ -874,17 +874,35 @@ def test_browser_container_smoke_script_covers_required_steps():
 
 
 def test_browser_runner_docs_cover_remote_runtime():
-    """Browser runner docs must cover BROWSER_WS_ENDPOINT and BROWSER_CDP_ENDPOINT."""
+    """Browser runner docs must cover remote runtime and VIC worker deployment."""
     runner_doc = ROOT / "docs" / "browser-runner.md"
-    k8s_doc = ROOT / "docs" / "kubernetes-browser-worker.md"
-    # These docs are Phase 1 aspirational — check they exist
-    runner_exists = runner_doc.is_file()
-    k8s_exists = k8s_doc.is_file()
-    # At minimum the runner module should be documented somewhere
-    # If docs don't exist yet, that's a note not a failure
-    import openquad_workerd.runners_browser as rb
-    assert rb.__doc__ is not None
-    assert "BROWSER_WS_ENDPOINT" in rb.__doc__
+    vic_worker_doc = ROOT / "docs" / "vic-browser-worker.md"
+
+    assert runner_doc.is_file(), "browser runner doc must exist"
+    assert vic_worker_doc.is_file(), "VIC browser worker deployment runbook must exist"
+
+    runner = runner_doc.read_text()
+    worker = vic_worker_doc.read_text()
+
+    for required in ("BROWSER_WS_ENDPOINT", "BROWSER_CDP_ENDPOINT", "browser.screenshot"):
+        assert required in runner
+
+    for required in (
+        "ghcr.io/myos-dev/openquad-browser-agent:latest",
+        "vic-web-runtime-chrome-headful.vic-system.svc.cluster.local:9222",
+        "app.kubernetes.io/component: vic-worker",
+        "networkPolicy.extraIngressPodSelectors",
+        "sync-manifest",
+        "/tenants/{tenant_id}/tasks",
+        "Front-End must not call OpenQuad",
+        "does **not** deploy an OpenQuad browser runtime",
+    ):
+        assert required in worker
+
+    assert "kind: Deployment" in worker
+    assert "kind: Service" in worker
+    assert "type: ClusterIP" in worker
+    assert "automountServiceAccountToken: false" in worker
 
 # ---------------------------------------------------------------------------
 # v0.2.1 container smoke assets and docs

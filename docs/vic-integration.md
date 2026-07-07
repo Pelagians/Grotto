@@ -53,4 +53,6 @@ OpenQuad should never be treated as an approval authority.
 
 ## Browser runtime split
 
-`openquad-browser-agent` talks to separate browser runtime images. VIC should keep browser-control endpoints private and internal-only. OpenQuad browser workers should return screenshots/traces/artifacts as evidence; VIC decides what becomes durable audit.
+`openquad-browser-agent` talks to separate browser runtime images. In the VIC product path, those runtime images are packaged and published by `vic-web`; the OpenQuad image VIC normally deploys is the browser-agent worker, not an OpenQuad browser runtime. VIC should keep browser-control endpoints private and internal-only. OpenQuad browser workers should return screenshots/traces/artifacts as evidence; VIC decides what becomes durable audit.
+
+For the concrete VIC worker deployment and NetworkPolicy label contract, see [`vic-browser-worker.md`](vic-browser-worker.md).

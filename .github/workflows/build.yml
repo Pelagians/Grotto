@@ -1,4 +1,4 @@
-name: Build OpenQuad
+name: Build Grotto
 
 on:
   schedule:
@@ -22,12 +22,11 @@ permissions:
   packages: write
 
 concurrency:
-  group: build-openquad-${{ github.ref }}
+  group: build-grotto-${{ github.ref }}
   cancel-in-progress: true
 
 env:
   REGISTRY: ghcr.io
-  PLAYWRIGHT_VERSION: "1.60.0"
 
 jobs:
   image:
@@ -37,60 +36,42 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: openquad-comms
-            image: ghcr.io/myos-dev/openquad-comms
-            title: OpenQuad Communications
+          - name: grotto-comms
+            image: ghcr.io/pelagians/grotto-comms
+            title: Grotto Communications
             description: Focused OpenClaw communications/calendar agent for email, messaging, calendar, reminders, and contacts
             file: ./Containerfile
             template: communications-calendar
             verify_tools: himalaya gcalcli vdirsyncer khal khard jq
             link_formulae: ""
             npm_packages: ""
-          - name: openquad-records
-            image: ghcr.io/myos-dev/openquad-records
-            title: OpenQuad Records
+          - name: grotto-records
+            image: ghcr.io/pelagians/grotto-records
+            title: Grotto Records
             description: Focused OpenClaw records agent for VIC, Postgres, SQLite, JSON, CSV, and evidence-backed record writes
             file: ./Containerfile
             template: records
             verify_tools: sqlite3 duckdb jq yq psql
             link_formulae: sqlite libpq
             npm_packages: ""
-          - name: openquad-documents
-            image: ghcr.io/myos-dev/openquad-documents
-            title: OpenQuad Documents
+          - name: grotto-documents
+            image: ghcr.io/pelagians/grotto-documents
+            title: Grotto Documents
             description: Focused OpenClaw documents agent for OCR, extraction, conversion, classification, and managed document organization
             file: ./Containerfile
             template: documents
             verify_tools: pandoc pdfinfo pdftotext qpdf tesseract ocrmypdf python3.13 jq
             link_formulae: ""
             npm_packages: ""
-          - name: openquad-browser-agent
-            image: ghcr.io/myos-dev/openquad-browser-agent
-            title: OpenQuad Browser Agent
+          - name: grotto-browser-agent
+            image: ghcr.io/pelagians/grotto-browser-agent
+            title: Grotto Browser Agent
             description: Focused OpenClaw browser workflow agent that controls separate internal browser runtime containers
             file: ./Containerfile
             template: browser-agent
             verify_tools: jq node npm playwright
             link_formulae: ""
             npm_packages: playwright@1.60.0
-          - name: openquad-browser-runtime-headless
-            image: ghcr.io/myos-dev/openquad-browser-runtime-headless
-            title: OpenQuad Headless Browser Runtime
-            description: Runtime-only Playwright Chromium WebSocket endpoint for repeatable headless browser workflows
-            file: ./Containerfile.browser-runtime-headless
-            template: browser-runtime-headless
-            verify_tools: ""
-            link_formulae: ""
-            npm_packages: ""
-          - name: openquad-browser-runtime-visible
-            image: ghcr.io/myos-dev/openquad-browser-runtime-visible
-            title: OpenQuad Visible Browser Runtime
-            description: Runtime-only visible Chromium with CDP, VNC, noVNC, and persistent browser profile support
-            file: ./Containerfile.browser-runtime-visible
-            template: browser-runtime-visible
-            verify_tools: ""
-            link_formulae: ""
-            npm_packages: ""
 
     steps:
       - name: Check out repository
@@ -120,7 +101,7 @@ jobs:
           labels: |
             org.opencontainers.image.title=${{ matrix.title }}
             org.opencontainers.image.description=${{ matrix.description }}
-            org.opencontainers.image.source=https://github.com/myos-dev/OpenQuad
+            org.opencontainers.image.source=https://github.com/pelagians/grotto
 
       - name: Build and publish image
         uses: docker/build-push-action@v6
@@ -136,6 +117,5 @@ jobs:
             OPENQUAD_LINK_FORMULAE=${{ matrix.link_formulae }}
             OPENQUAD_NPM_PACKAGES=${{ matrix.npm_packages }}
             OPENQUAD_VERIFY_TOOLS=${{ matrix.verify_tools }}
-            PLAYWRIGHT_VERSION=${{ env.PLAYWRIGHT_VERSION }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}

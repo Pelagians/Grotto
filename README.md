@@ -12,8 +12,6 @@ OpenQuad agents are narrow workers, not mini-Hermes instances. All writes should
 | `ghcr.io/myos-dev/openquad-records:latest` | OpenClaw agent | Structured business records with VIC/Postgres/SQLite/JSON/CSV support |
 | `ghcr.io/myos-dev/openquad-documents:latest` | OpenClaw agent | Read, classify, OCR, extract, convert, draft, and organize documents |
 | `ghcr.io/myos-dev/openquad-browser-agent:latest` | OpenClaw agent | Browser workflows through separate browser runtime containers |
-| `ghcr.io/myos-dev/openquad-browser-runtime-headless:latest` | Browser runtime | Playwright WebSocket runtime for repeatable headless workflows |
-| `ghcr.io/myos-dev/openquad-browser-runtime-visible:latest` | Browser runtime | Visible/VNC/noVNC Chromium runtime for login, teaching, and debugging |
 
 See [`docs/image-matrix.md`](docs/image-matrix.md) for the detailed data surfaces, permissions, allowed tools, out-of-scope actions, and output contracts.
 
@@ -82,17 +80,6 @@ podman build -t openquad-browser-agent:dev -f Containerfile \
   --build-arg OPENQUAD_VERIFY_TOOLS="jq node npm playwright" .
 ```
 
-## Build Browser Runtimes Locally
-
-Browser runtime images are separate from the browser agent so the agent stays small and independently upgradable.
-
-```bash
-podman build -t openquad-browser-runtime-headless:dev -f Containerfile.browser-runtime-headless .
-podman build -t openquad-browser-runtime-visible:dev -f Containerfile.browser-runtime-visible .
-```
-
-
-
 ## Worker Contract v0.1
 
 OpenQuad worker images expose a generic worker contract that VIC and other orchestrators can consume. OpenQuad remains a worker/runtime family: it does not own tenants, workflows, approvals, durable records, or canonical audit.
@@ -133,17 +120,6 @@ OpenQuad agent images follow the live rootless OpenClaw layout:
 - npm, XDG, Codex, and Homebrew caches live under the state tree
 
 Runtime credentials and sync state stay outside the image. Do not bake account credentials, OAuth tokens, browser profiles, or service secrets into images.
-
-## Browser Runtime Security
-
-Browser-control endpoints are privileged browser access:
-
-- `openquad-browser-runtime-headless` exposes a Playwright WebSocket endpoint internally.
-- `openquad-browser-runtime-visible` exposes Chromium CDP plus VNC/noVNC internally.
-
-Do not publish these ports publicly. In Kubernetes, expose them only through internal Service DNS and lock them down with NetworkPolicy so only `openquad-browser-agent` and trusted control-plane components can reach them.
-
-For the browser runtime env/endpoint contract, see [`docs/browser-runtime-contract.md`](docs/browser-runtime-contract.md). For k3s/VIC deployment guidance, profile PVC notes, managed Chromium policy, and validation commands, see [`docs/kubernetes-vic-browser-runtime.md`](docs/kubernetes-vic-browser-runtime.md).
 
 ## Local Service Topologies
 
