@@ -1,48 +1,129 @@
 # Grotto Image Matrix
 
-Grotto provides specialized AI agent containers. Each agent is a narrow, focused worker designed for specific tasks.
+This document describes the specialized AI agent runtimes in the Grotto ecosystem.
 
-## Agent Images
+## Runtime Images
 
-| Image | Purpose |
-| --- | --- |
-| `ghcr.io/pelagians/grotto-comms:latest` | Communications/calendar agent for email, messaging, calendar, reminders, and contacts |
-| `ghcr.io/pelagians/grotto-records:latest` | Records agent for structured business records with Nereus/Postgres/SQLite/JSON/CSV support |
-| `ghcr.io/pelagians/grotto-documents:latest` | Documents agent for OCR, extraction, conversion, classification, and managed document organization |
-| `ghcr.io/pelagians/grotto-browser-agent:latest` | Browser workflow agent that controls separate browser runtime containers |
+| Image | Purpose | Key Capabilities |
+| --- | --- | --- |
+| `ghcr.io/pelagians/grotto-comms:latest` | Communications & Calendar | Email, messaging, calendar, reminders, contacts, scheduling, follow-up |
+| `ghcr.io/pelagians/grotto-records:latest` | Structured Records | Business records with database support (Postgres, SQLite, JSON, CSV) |
+| `ghcr.io/pelagians/grotto-documents:latest` | Document Processing | Read, classify, OCR, extract, convert, draft, organize documents |
+| `ghcr.io/pelagians/grotto-browser-agent:latest` | Browser Automation | Browser workflows through separate browser runtime containers |
 
-## Browser Runtime Images
+## Browser Runtimes
 
-Browser runtime containers are maintained in the separate **web-apps** repository:
+Browser runtimes are maintained separately in the [web-apps repository](https://github.com/pelagians/web-apps).
 
-- `ghcr.io/pelagians/web-apps-browser-runtime-chromium-headless`
-- `ghcr.io/pelagians/web-apps-browser-runtime-chromium-headful`
-- `ghcr.io/pelagians/web-apps-browser-runtime-chrome-headless`
-- `ghcr.io/pelagians/web-apps-browser-runtime-chrome-headful`
-- `ghcr.io/pelagians/web-apps-browser-runtime-edge-headless`
-- `ghcr.io/pelagians/web-apps-browser-runtime-edge-headful`
-- `ghcr.io/pelagians/web-apps-browser-runtime-brave-headless`
-- `ghcr.io/pelagians/web-apps-browser-runtime-brave-headful`
+The browser agent connects to browser runtimes via:
+- `BROWSER_WS_ENDPOINT` - WebSocket endpoint for headless browser
+- `BROWSER_CDP_ENDPOINT` - Chrome DevTools Protocol endpoint for visible browser
 
-See the web-apps repository for browser runtime documentation.
+See [web-apps image matrix](https://github.com/pelagians/web-apps/blob/main/docs/image-matrix.md) for browser runtime details.
 
-## Agent Design Principles
+## Runtime Capabilities
 
-Each Grotto agent follows these principles:
+### grotto-comms
 
-1. **Narrow focus**: Each agent is designed for a specific task domain
-2. **Small context**: Agents work with minimal context to reduce token usage
-3. **Auditable writes**: All writes are logged and reviewable
-4. **Bounded autonomy**: Autonomous writes are allowed only when bounded by policy
-5. **Confirmation required**: Destructive, financial, security-sensitive, external-communication, or irreversible actions require confirmation or are blocked by default
+**Data surfaces:**
+- Email (IMAP/SMTP via himalaya)
+- Calendar (Google Calendar via gcalcli, CalDAV via vdirsyncer/khal)
+- Contacts (CardDAV via vdirsyncer/khard)
 
-## Integration
+**Allowed tools:**
+- himalaya, gcalcli, vdirsyncer, khal, khard, jq
 
-Agents connect to external sernereuses and runtimes through well-defined contracts:
+**Out of scope:**
+- Direct database writes
+- File system operations outside workspace
+- Network access beyond configured endpoints
 
-- **Browser agent** connects to web-apps browser runtimes over internal networking
-- **Records agent** connects to databases and storage systems
-- **Documents agent** connects to document storage and processing sernereuses
-- **Communications agent** connects to email, calendar, and messaging sernereuses
+**Output contract:**
+- Structured JSON responses
+- Audit trail for all actions
+- Error messages with context
 
-All agent-to-runtime communication follows the worker contract defined in `docs/worker-contract.md`.
+### grotto-records
+
+**Data surfaces:**
+- SQLite databases
+- PostgreSQL databases
+- JSON files
+- CSV files
+
+**Allowed tools:**
+- sqlite3, duckdb, jq, yq, psql
+
+**Out of scope:**
+- Email sending
+- Calendar operations
+- Document processing
+
+**Output contract:**
+- Query results in requested format
+- Transaction logs
+- Schema validation
+
+### grotto-documents
+
+**Data surfaces:**
+- PDF files
+- Office documents (DOCX, XLSX, PPTX)
+- Plain text files
+- Images (for OCR)
+
+**Allowed tools:**
+- pandoc, pdfinfo, pdftotext, qpdf, tesseract, ocrmypdf, python3.13, jq
+
+**Out of scope:**
+- Email operations
+- Database queries
+- Calendar management
+
+**Output contract:**
+- Extracted text in structured format
+- Document metadata
+- Conversion results with status
+
+### grotto-browser-agent
+
+**Data surfaces:**
+- Web pages via browser runtime
+- Screenshots and DOM snapshots
+
+**Allowed tools:**
+- jq, node, npm, playwright
+
+**Out of scope:**
+- Direct browser execution (delegated to browser runtimes)
+- File system operations outside workspace
+- Direct network requests (must go through browser)
+
+**Output contract:**
+- Browser action results
+- Screenshot paths
+- Extracted data in structured format
+
+## Design Constraints
+
+All Grotto runtimes follow these constraints:
+
+1. **Narrow scope**: Each runtime does one thing well
+2. **Auditable writes**: All write operations are logged
+3. **Bounded autonomy**: Autonomous writes allowed only when bounded by policy
+4. **No destructive actions**: Destructive, financial, security-sensitive, external-communication, or irreversible actions require confirmation or are blocked by default
+5. **Portable**: Run anywhere OCI containers run
+6. **Reproducible**: Same inputs produce same outputs
+
+## Template Expansion
+
+When adding new Grotto runtimes:
+
+1. Create a narrow `templates/<purpose>/` directory
+2. Include purpose-built Brewfile with required tools
+3. Provide starter configuration
+4. Define explicit policy boundaries
+5. Specify expected output contract
+6. Document allowed tools and out-of-scope actions
+
+Do not grow any Grotto runtime into a broad general-purpose agent.

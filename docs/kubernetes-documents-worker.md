@@ -52,7 +52,7 @@ spec:
     spec:
       containers:
         - name: grotto-documents
-          image: ghcr.io/myos-dev/grotto-documents:v0.2.1
+          image: ghcr.io/pelagians/grotto-documents:v0.2.1
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
