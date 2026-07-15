@@ -29,7 +29,7 @@ Most Grotto images are narrow worker agents. Interactive images remain single-pu
 | `ghcr.io/pelagians/grotto-records:latest` | Structured business records with database support |
 | `ghcr.io/pelagians/grotto-documents:latest` | Document processing: read, classify, OCR, extract, convert |
 | `ghcr.io/pelagians/grotto-browser-agent:latest` | Browser automation through separate browser runtimes |
-| `ghcr.io/pelagians/grotto-chatgpt-desktop:latest` | Selkies-streamed ChatGPT and Codex desktop workbench; publication is gated |
+| `ghcr.io/pelagians/grotto-chatgpt-desktop:latest` | Selkies-streamed ChatGPT and Codex desktop workbench |
 
 See [`docs/image-matrix.md`](docs/image-matrix.md) for detailed capabilities, permissions, and output contracts.
 
@@ -177,18 +177,16 @@ Browser runtimes are maintained in the [web-apps repository](https://github.com/
 
 ## Published Images
 
-GitHub Actions builds and publishes agent images to GHCR on:
+GitHub Actions builds and publishes all Grotto images to GHCR on:
 
 - pushes to `main`
 - version tags
 - scheduled rebuilds
 - manual workflow runs
 
-Pull requests build agent images without publishing them.
-
-The ChatGPT desktop image has a separate workflow. It builds automatically but
-publishes only through a manual, repository-variable-gated action. This avoids
-accidental redistribution of the proprietary upstream desktop application.
+Pull requests build every matrix entry without publishing it. The ChatGPT
+desktop image is part of the same matrix and follows the same tags and
+publication rules as the agent images.
 
 ## Adding New Runtimes
 
