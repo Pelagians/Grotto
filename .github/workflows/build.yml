@@ -31,12 +31,14 @@ env:
 jobs:
   image:
     name: Build ${{ matrix.name }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
         include:
           - name: grotto-comms
+            kind: agent
             image: ghcr.io/pelagians/grotto-comms
             title: Grotto Communications
             description: Focused OpenClaw communications/calendar agent for email, messaging, calendar, reminders, and contacts
@@ -46,6 +48,7 @@ jobs:
             link_formulae: ""
             npm_packages: ""
           - name: grotto-records
+            kind: agent
             image: ghcr.io/pelagians/grotto-records
             title: Grotto Records
             description: Focused OpenClaw records agent for Nereus, Postgres, SQLite, JSON, CSV, and evidence-backed record writes
@@ -55,6 +58,7 @@ jobs:
             link_formulae: sqlite libpq
             npm_packages: ""
           - name: grotto-documents
+            kind: agent
             image: ghcr.io/pelagians/grotto-documents
             title: Grotto Documents
             description: Focused OpenClaw documents agent for OCR, extraction, conversion, classification, and managed document organization
@@ -64,6 +68,7 @@ jobs:
             link_formulae: ""
             npm_packages: ""
           - name: grotto-browser-agent
+            kind: agent
             image: ghcr.io/pelagians/grotto-browser-agent
             title: Grotto Browser Agent
             description: Focused OpenClaw browser workflow agent that controls separate internal browser runtime containers
@@ -72,10 +77,39 @@ jobs:
             verify_tools: jq node npm playwright
             link_formulae: ""
             npm_packages: playwright@1.60.0
+          - name: grotto-chatgpt-desktop
+            kind: desktop
+            image: ghcr.io/pelagians/grotto-chatgpt-desktop
+            title: Grotto ChatGPT Desktop
+            description: Selkies-streamed ChatGPT and Codex desktop workbench
+            file: ./Containerfile.chatgpt-desktop
+            wrapper_ref: 52e9701e3f1be291821cff904b6cd4bdce30998d
+            codex_cli_version: latest
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Reclaim runner disk space
+        if: matrix.kind == 'desktop'
+        shell: bash
+        run: |
+          set -euxo pipefail
+          df -h /
+          sudo rm -rf \
+            /usr/local/lib/android \
+            /usr/share/dotnet \
+            /opt/ghc \
+            /opt/hostedtoolcache/CodeQL
+          sudo docker system prune --all --force --volumes || true
+          available_kib="$(df --output=avail -k / | tail -n 1)"
+          minimum_kib="$((15 * 1024 * 1024))"
+          if (( available_kib < minimum_kib )); then
+            echo "At least 15 GiB of free runner storage is required." >&2
+            df -h /
+            exit 1
+          fi
+          df -h /
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
@@ -103,7 +137,8 @@ jobs:
             org.opencontainers.image.description=${{ matrix.description }}
             org.opencontainers.image.source=https://github.com/pelagians/grotto
 
-      - name: Build and publish image
+      - name: Build and publish agent image
+        if: matrix.kind == 'agent'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -119,3 +154,22 @@ jobs:
             GROTTO_VERIFY_TOOLS=${{ matrix.verify_tools }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+      - name: Build and publish desktop image
+        if: matrix.kind == 'desktop'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.file }}
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            CODEX_DESKTOP_LINUX_REF=${{ matrix.wrapper_ref }}
+            CODEX_CLI_VERSION=${{ matrix.codex_cli_version }}
+            MAX_BUILD_THREADS=4
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=min,scope=${{ matrix.name }}
+          provenance: false
+          sbom: false
