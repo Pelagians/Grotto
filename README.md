@@ -1,24 +1,25 @@
 # Grotto
 
-Grotto is a curated ecosystem of specialized AI agent runtimes packaged as portable OCI containers.
+Grotto is a curated ecosystem of specialized AI runtimes packaged as portable OCI containers.
 
-Each runtime is narrow, focused, and designed for one constrained job. Grotto agents are specialized workers, not general-purpose AI platforms.
+Most Grotto images are narrow worker agents. Interactive images remain single-purpose workbenches rather than general desktop environments.
 
 ## What Grotto Is
 
-- Specialized AI agent runtimes
+- Specialized worker and workbench runtimes
 - Portable OCI containers
-- Reproducible builds
+- Reproducible build definitions
 - Sane defaults
-- Runtime-agnostic (if it runs in OCI, it can be a Grotto runtime)
+- Runtime-agnostic infrastructure when the workload fits OCI
+- A curated runtime layer for Pelagian and independent deployments
 
 ## What Grotto Is Not
 
 - An AI framework
 - An LLM
 - An orchestration platform
-- A chatbot system
-- A general-purpose AI assistant
+- A monolithic assistant product
+- A tenant, workflow, or audit system
 
 ## Current Runtimes
 
@@ -28,18 +29,19 @@ Each runtime is narrow, focused, and designed for one constrained job. Grotto ag
 | `ghcr.io/pelagians/grotto-records:latest` | Structured business records with database support |
 | `ghcr.io/pelagians/grotto-documents:latest` | Document processing: read, classify, OCR, extract, convert |
 | `ghcr.io/pelagians/grotto-browser-agent:latest` | Browser automation through separate browser runtimes |
+| `ghcr.io/pelagians/grotto-chatgpt-desktop:latest` | Selkies-streamed ChatGPT and Codex desktop workbench; publication is gated |
 
 See [`docs/image-matrix.md`](docs/image-matrix.md) for detailed capabilities, permissions, and output contracts.
 
 ## Design Principles
 
 - **OCI-first**: Containers are the primary deployment artifact
-- **Container-native**: Built to run as containers, not adapted to them
-- **Reproducible**: Same inputs produce same outputs
-- **Versioned**: Explicit versions for reproducibility
-- **Portable**: Run anywhere OCI containers run
-- **Runtime-focused**: Each runtime does one thing well
-- **Curated quality**: Official runtimes maintained to high standards
+- **Container-native**: New runtimes should be designed around container boundaries
+- **Build-time assembly**: Applications and dependencies are assembled before runtime
+- **Versioned**: Explicit versions and source revisions where possible
+- **Portable**: Run anywhere compatible OCI containers run
+- **Runtime-focused**: Each image has a defined purpose and state boundary
+- **Curated quality**: Official runtimes are maintained to consistent standards
 
 ## Build
 
@@ -55,7 +57,7 @@ podman build \
   .
 ```
 
-Other runtimes use the same pattern:
+Other agent runtimes use the same pattern:
 
 ```bash
 # Records agent
@@ -79,6 +81,19 @@ podman build -t grotto-browser-agent:dev -f Containerfile \
   --build-arg GROTTO_VERIFY_TOOLS="jq node npm playwright" .
 ```
 
+The ChatGPT desktop workbench uses a dedicated multi-stage build because it is
+an interactive Selkies application rather than an OpenClaw worker:
+
+```bash
+podman build \
+  -t grotto-chatgpt-desktop:dev \
+  -f Containerfile.chatgpt-desktop \
+  .
+```
+
+See [`docs/chatgpt-desktop.md`](docs/chatgpt-desktop.md) for CI, runtime, storage,
+security, and publication details.
+
 ## Template Layout
 
 ```text
@@ -99,20 +114,34 @@ templates/
     Brewfile
     openclaw.json5
     grotto.container
+
+runtimes/
+  chatgpt-desktop/
+    root/
+      defaults/
+        autostart
 ```
 
-Each template contains:
+Agent templates contain:
+
 - Purpose-built Brewfile with required tools
 - Starter configuration
 - Runtime example
 - Explicit policy boundaries
 - Expected output contract
 
+Interactive runtimes use their own Containerfile and document their state,
+network, display, and authentication boundaries.
+
 ## Worker Contract
 
-Grotto runtimes expose a generic worker contract for orchestrators. Grotto remains a runtime layer: it does not own tenants, workflows, approvals, durable records, or canonical audit.
+Grotto worker images expose a generic worker contract for orchestrators. Grotto remains a runtime layer: it does not own tenants, workflows, approvals, durable records, or canonical audit.
+
+Interactive workbench images such as `grotto-chatgpt-desktop` do not implement
+the worker contract.
 
 Contract documentation:
+
 - [`docs/worker-contract.md`](docs/worker-contract.md)
 - [`docs/capability-model.md`](docs/capability-model.md)
 - [`docs/orchestrator-integration.md`](docs/orchestrator-integration.md)
@@ -126,7 +155,14 @@ Grotto agent images follow a rootless layout:
 - `OPENCLAW_CONFIG_PATH` defaults to `/home/node/.openclaw/openclaw.json`
 - `GROTTO_DEFAULT_CONFIG` points to `/usr/share/grotto/templates/<template>/openclaw.json5`
 
-Runtime credentials and sync state stay outside the image. Do not bake account credentials, OAuth tokens, browser profiles, or secrets into images.
+The ChatGPT desktop runtime uses:
+
+- `/config` for authenticated application and Codex state
+- `/workspace` for the mounted project workspace
+- port `3001` for Selkies HTTPS
+
+Runtime credentials and sync state stay outside images. Do not bake account
+credentials, OAuth tokens, browser profiles, or secrets into images.
 
 ## Browser Integration
 
@@ -141,37 +177,55 @@ Browser runtimes are maintained in the [web-apps repository](https://github.com/
 
 ## Published Images
 
-GitHub Actions builds and publishes all runtime images to GHCR on:
-- Pushes to `main`
-- Version tags
-- Scheduled rebuilds
-- Manual workflow runs
+GitHub Actions builds and publishes agent images to GHCR on:
 
-Pull requests build images without publishing them.
+- pushes to `main`
+- version tags
+- scheduled rebuilds
+- manual workflow runs
+
+Pull requests build agent images without publishing them.
+
+The ChatGPT desktop image has a separate workflow. It builds automatically but
+publishes only through a manual, repository-variable-gated action. This avoids
+accidental redistribution of the proprietary upstream desktop application.
 
 ## Adding New Runtimes
 
-When adding future Grotto runtimes, create a narrow `templates/<purpose>/` directory with:
+For worker agents, create a narrow `templates/<purpose>/` directory with:
+
 - Purpose-built Brewfile
 - Starter configuration
 - Runtime example
 - Explicit policy boundaries
 - Expected output contract
 
-Do not grow any Grotto runtime into a broad general-purpose agent.
+For interactive or non-OpenClaw runtimes:
+
+- Use a dedicated Containerfile
+- Build application payloads before runtime
+- Document persistent state and exposed ports
+- Define whether the image implements the worker contract
+- Keep the application surface single-purpose
+- Review upstream redistribution terms before publication
+
+Do not grow a Grotto runtime into a broad general-purpose desktop.
 
 ## Relationship to Pelagian Ecosystem
 
 Grotto is one of the open-source foundations of the Pelagian ecosystem:
 
 - **Current** provides the operating system
-- **Grotto** provides specialized AI workers
+- **Grotto** provides specialized AI workers and workbench runtimes
 - **Cage** provides Windows compatibility workers
 - **Nereus** deploys and orchestrates Grotto workers
 - **Nyra** interacts with Nereus, not directly with Grotto
 
-Grotto is fully usable without Nereus. Users can pull and run Grotto containers independently.
+Grotto is fully usable without Nereus. Users can build and run Grotto
+containers independently.
 
 ## License
 
-See [LICENSE](LICENSE) for details.
+See [LICENSE](LICENSE) for Grotto source licensing. Upstream applications built
+by individual runtime definitions retain their own licenses and distribution
+terms.

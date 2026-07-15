@@ -1,5 +1,5 @@
 
-.PHONY: test test-browser-runtime validate-schemas validate-manifests run-workerd image-documents smoke-documents-container
+.PHONY: test test-browser-runtime validate-schemas validate-manifests run-workerd image-documents smoke-documents-container image-chatgpt-desktop
 
 DETECTED_CONTAINER_ENGINE := $(shell if command -v podman >/dev/null 2>&1 && podman info >/dev/null 2>&1; then printf 'podman'; elif command -v sudo >/dev/null 2>&1 && sudo -n podman info >/dev/null 2>&1; then printf 'sudo podman'; elif command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then printf 'docker'; fi)
 CONTAINER_ENGINE ?= $(DETECTED_CONTAINER_ENGINE)
@@ -7,6 +7,9 @@ ifeq ($(strip $(CONTAINER_ENGINE)),)
 CONTAINER_ENGINE := $(DETECTED_CONTAINER_ENGINE)
 endif
 GROTTO_DOCUMENTS_IMAGE ?= grotto-documents:smoke
+GROTTO_CHATGPT_DESKTOP_IMAGE ?= grotto-chatgpt-desktop:dev
+CODEX_DESKTOP_LINUX_REF ?= 52e9701e3f1be291821cff904b6cd4bdce30998d
+CODEX_CLI_VERSION ?= latest
 
 .PHONY: check-container-engine
 check-container-engine:
@@ -40,3 +43,11 @@ smoke-documents-container:
 	CONTAINER_ENGINE="$(CONTAINER_ENGINE)" \
 	GROTTO_DOCUMENTS_IMAGE="$(GROTTO_DOCUMENTS_IMAGE)" \
 	scripts/smoke_documents_container.sh
+
+image-chatgpt-desktop: check-container-engine
+	$(CONTAINER_ENGINE) build \
+		-f Containerfile.chatgpt-desktop \
+		--build-arg CODEX_DESKTOP_LINUX_REF="$(CODEX_DESKTOP_LINUX_REF)" \
+		--build-arg CODEX_CLI_VERSION="$(CODEX_CLI_VERSION)" \
+		-t $(GROTTO_CHATGPT_DESKTOP_IMAGE) \
+		.

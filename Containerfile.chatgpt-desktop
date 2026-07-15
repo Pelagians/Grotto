@@ -1,0 +1,172 @@
+# syntax=docker/dockerfile:1.7
+
+ARG CODEX_DESKTOP_LINUX_REF=52e9701e3f1be291821cff904b6cd4bdce30998d
+ARG CODEX_CLI_VERSION=latest
+ARG SELKIES_BASE_IMAGE=ghcr.io/linuxserver/baseimage-selkies:debiantrixie
+
+FROM docker.io/library/debian:trixie-slim AS builder
+
+ARG CODEX_DESKTOP_LINUX_REF
+ARG CODEX_CLI_VERSION
+ARG MAX_BUILD_THREADS=4
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PATH=/root/.cargo/bin:/root/.local/bin:/usr/local/bin:/usr/bin:/bin \
+    CARGO_HOME=/root/.cargo \
+    RUSTUP_HOME=/root/.rustup
+
+RUN set -eux; \
+    apt-get update -o Acquire::Retries=5; \
+    apt-get install --no-install-recommends -y \
+        bash \
+        build-essential \
+        ca-certificates \
+        curl \
+        file \
+        git \
+        pkg-config \
+        python3 \
+        tar \
+        unzip \
+        util-linux \
+        xz-utils; \
+    rm -rf /var/lib/apt/lists/*
+
+# Current ChatGPT DMGs use APFS. Debian's legacy p7zip cannot reliably extract
+# them, so install a modern standalone 7zz before invoking the wrapper.
+RUN set -eux; \
+    case "$(dpkg --print-architecture)" in \
+        amd64) sevenzip_arch=x64 ;; \
+        arm64) sevenzip_arch=arm64 ;; \
+        armhf) sevenzip_arch=arm ;; \
+        *) echo "Unsupported build architecture: $(dpkg --print-architecture)" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://www.7-zip.org/a/7z2600-linux-${sevenzip_arch}.tar.xz" \
+        | tar -xJ -C /usr/local/bin 7zz; \
+    chmod 0755 /usr/local/bin/7zz; \
+    7zz | head -n 2
+
+RUN set -eux; \
+    curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs \
+        | sh -s -- -y --profile minimal; \
+    cargo --version; \
+    rustc --version
+
+WORKDIR /src
+
+RUN set -eux; \
+    git init .; \
+    git remote add origin https://github.com/ilysenko/codex-desktop-linux.git; \
+    git fetch --depth=1 origin "${CODEX_DESKTOP_LINUX_REF}"; \
+    git checkout --detach FETCH_HEAD; \
+    git rev-parse HEAD
+
+# The upstream installer downloads the official ChatGPT DMG, checks the
+# generated Linux candidate, rebuilds native modules, and stages the complete
+# Electron application. Nothing is downloaded or compiled at container start.
+RUN set -eux; \
+    MAX_BUILD_THREADS="${MAX_BUILD_THREADS}" \
+    CODEX_INSTALL_DIR=/opt/chatgpt \
+        ./install.sh --fresh; \
+    test -x /opt/chatgpt/start.sh; \
+    test -x /opt/chatgpt/resources/node-runtime/bin/node; \
+    rm -rf \
+        /root/.cache/codex-desktop \
+        /src/Codex.dmg \
+        /src/Codex.dmg.metadata \
+        /src/dist-next \
+        /tmp/*
+
+# Install the Codex CLI and its platform-specific optional dependency into the
+# image. npm and the installed codex launcher both use `#!/usr/bin/env node`,
+# so the managed Node runtime must be on PATH before either command starts.
+RUN set -eux; \
+    export PATH="/opt/chatgpt/resources/node-runtime/bin:/opt/codex-cli/bin:${PATH}"; \
+    command -v node; \
+    command -v npm; \
+    node --version; \
+    npm --version; \
+    npm install \
+        --global \
+        --prefix /opt/codex-cli \
+        --include=optional \
+        "@openai/codex@${CODEX_CLI_VERSION}"; \
+    test -x /opt/codex-cli/bin/codex; \
+    codex --version; \
+    npm cache clean --force; \
+    rm -rf /root/.npm
+
+FROM ${SELKIES_BASE_IMAGE}
+
+ENV TITLE="ChatGPT Desktop" \
+    START_DOCKER=false \
+    PIXELFLUX_WAYLAND=true \
+    AUTO_GPU=true \
+    NO_DECOR=true \
+    RESTART_APP=true \
+    FILE_MANAGER_PATH=/workspace \
+    GROTTO_RUNTIME=chatgpt-desktop \
+    CODEX_HOME=/config/.codex \
+    CODEX_CLI_PATH=/opt/codex-cli/bin/codex \
+    XDG_CONFIG_HOME=/config/.config \
+    XDG_CACHE_HOME=/config/.cache \
+    XDG_STATE_HOME=/config/.local/state \
+    CODEX_FORCE_DEVICE_SCALE_FACTOR=1 \
+    PATH=/opt/codex-cli/bin:/opt/chatgpt/resources/node-runtime/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+RUN set -eux; \
+    apt-get update -o Acquire::Retries=5; \
+    apt-get install --no-install-recommends -y \
+        at-spi2-core \
+        ca-certificates \
+        libasound2t64 \
+        libatk-bridge2.0-0 \
+        libatk1.0-0 \
+        libcairo2 \
+        libcups2t64 \
+        libdbus-1-3 \
+        libdrm2 \
+        libgbm1 \
+        libglib2.0-0t64 \
+        libgtk-3-0t64 \
+        libnspr4 \
+        libnss3 \
+        libpango-1.0-0 \
+        libsecret-1-0 \
+        libstdc++6 \
+        libx11-6 \
+        libx11-xcb1 \
+        libxcb-dri3-0 \
+        libxcb1 \
+        libxcomposite1 \
+        libxdamage1 \
+        libxext6 \
+        libxfixes3 \
+        libxkbcommon0 \
+        libxrandr2 \
+        python3 \
+        xdg-utils; \
+    rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /opt/chatgpt /opt/chatgpt
+COPY --from=builder /opt/codex-cli /opt/codex-cli
+COPY runtimes/chatgpt-desktop/root/ /
+
+RUN set -eux; \
+    chmod 0755 /defaults/autostart; \
+    chmod -R a+rX /opt/chatgpt /opt/codex-cli; \
+    install -d -o abc -g abc -m 0755 /workspace; \
+    if [ -f /opt/chatgpt/.codex-linux/codex-desktop.png ]; then \
+        install -m 0644 \
+            /opt/chatgpt/.codex-linux/codex-desktop.png \
+            /usr/share/selkies/www/icon.png; \
+    fi; \
+    test -x /opt/chatgpt/start.sh; \
+    test -x /opt/codex-cli/bin/codex; \
+    /opt/codex-cli/bin/codex --version
+
+WORKDIR /workspace
+
+EXPOSE 3001
+
+VOLUME ["/config", "/workspace"]
