@@ -1,0 +1,168 @@
+name: Build Grotto ChatGPT Desktop
+
+on:
+  schedule:
+    # Weekly upstream-drift check. GitHub Actions cron is UTC.
+    - cron: '47 11 * * 1'
+
+  push:
+    branches:
+      - main
+    paths:
+      - Containerfile.chatgpt-desktop
+      - runtimes/chatgpt-desktop/**
+      - docs/chatgpt-desktop.md
+      - .github/workflows/build-chatgpt-desktop.yml
+
+  pull_request:
+    branches:
+      - main
+    paths:
+      - Containerfile.chatgpt-desktop
+      - runtimes/chatgpt-desktop/**
+      - docs/chatgpt-desktop.md
+      - .github/workflows/build-chatgpt-desktop.yml
+
+  workflow_dispatch:
+    inputs:
+      wrapper_ref:
+        description: codex-desktop-linux commit to build
+        required: false
+        type: string
+        default: 52e9701e3f1be291821cff904b6cd4bdce30998d
+      codex_cli_version:
+        description: '@openai/codex npm version'
+        required: false
+        type: string
+        default: latest
+      publish:
+        description: Publish to GHCR when the repository gate is also enabled
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: build-grotto-chatgpt-desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE: ghcr.io/pelagians/grotto-chatgpt-desktop
+  DEFAULT_WRAPPER_REF: 52e9701e3f1be291821cff904b6cd4bdce30998d
+  DEFAULT_CODEX_CLI_VERSION: latest
+
+jobs:
+  image:
+    name: Build grotto-chatgpt-desktop
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Reclaim runner disk space
+        shell: bash
+        run: |
+          set -euxo pipefail
+          df -h /
+          sudo rm -rf \
+            /usr/local/lib/android \
+            /usr/share/dotnet \
+            /opt/ghc \
+            /opt/hostedtoolcache/CodeQL
+          sudo docker system prune --all --force --volumes || true
+          available_kib="$(df --output=avail -k / | tail -n 1)"
+          minimum_kib="$((15 * 1024 * 1024))"
+          if (( available_kib < minimum_kib )); then
+            echo "At least 15 GiB of free runner storage is required." >&2
+            df -h /
+            exit 1
+          fi
+          df -h /
+
+      - name: Resolve build inputs
+        id: versions
+        shell: bash
+        env:
+          INPUT_WRAPPER_REF: ${{ inputs.wrapper_ref }}
+          INPUT_CODEX_CLI_VERSION: ${{ inputs.codex_cli_version }}
+        run: |
+          set -euo pipefail
+          wrapper_ref="${INPUT_WRAPPER_REF:-${DEFAULT_WRAPPER_REF}}"
+          codex_cli_version="${INPUT_CODEX_CLI_VERSION:-${DEFAULT_CODEX_CLI_VERSION}}"
+          echo "wrapper_ref=${wrapper_ref}" >> "$GITHUB_OUTPUT"
+          echo "codex_cli_version=${codex_cli_version}" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve publication policy
+        id: publish
+        shell: bash
+        env:
+          REQUESTED: ${{ github.event_name == 'workflow_dispatch' && inputs.publish }}
+          ALLOWED: ${{ vars.GROTTO_PUBLISH_CHATGPT_DESKTOP }}
+        run: |
+          set -euo pipefail
+          enabled=false
+          if [[ "${REQUESTED:-false}" == "true" && "${ALLOWED:-false}" == "true" ]]; then
+            enabled=true
+          fi
+          echo "enabled=${enabled}" >> "$GITHUB_OUTPUT"
+          if [[ "${REQUESTED:-false}" == "true" && "${enabled}" != "true" ]]; then
+            echo "::notice::Publication was requested but GROTTO_PUBLISH_CHATGPT_DESKTOP is not true."
+          fi
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: steps.publish.outputs.enabled == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=tag
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable={{is_default_branch}}
+          labels: |
+            org.opencontainers.image.title=Grotto ChatGPT Desktop
+            org.opencontainers.image.description=Selkies-streamed ChatGPT and Codex desktop workbench
+            org.opencontainers.image.source=https://github.com/pelagians/grotto
+
+      - name: Build and optionally publish image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Containerfile.chatgpt-desktop
+          platforms: linux/amd64
+          push: ${{ steps.publish.outputs.enabled == 'true' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            CODEX_DESKTOP_LINUX_REF=${{ steps.versions.outputs.wrapper_ref }}
+            CODEX_CLI_VERSION=${{ steps.versions.outputs.codex_cli_version }}
+            MAX_BUILD_THREADS=4
+          cache-from: type=gha,scope=grotto-chatgpt-desktop
+          cache-to: type=gha,mode=min,scope=grotto-chatgpt-desktop
+          provenance: false
+          sbom: false
+
+      - name: Report publication status
+        shell: bash
+        run: |
+          if [[ "${{ steps.publish.outputs.enabled }}" == "true" ]]; then
+            echo "Published ${IMAGE}"
+          else
+            echo "Build validated without publishing."
+          fi
