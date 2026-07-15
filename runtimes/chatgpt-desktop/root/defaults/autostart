@@ -1,0 +1,12 @@
+#!/bin/bash
+set -Eeuo pipefail
+
+install -d -m 0755 \
+    /config/.cache \
+    /config/.codex \
+    /config/.config \
+    /config/.local/state \
+    /workspace
+
+cd /workspace
+exec /opt/chatgpt/start.sh
