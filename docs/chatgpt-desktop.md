@@ -26,32 +26,33 @@ Container startup does not download the DMG, run npm, or compile native code.
 
 ## CI behavior
 
-The dedicated workflow is
-[`.github/workflows/build-chatgpt-desktop.yml`](../.github/workflows/build-chatgpt-desktop.yml).
+The image is part of the main
+[`.github/workflows/build.yml`](../.github/workflows/build.yml) matrix alongside
+the other Grotto images.
 
-It runs on:
+It builds on:
 
-- relevant pull requests
-- relevant pushes to `main`
-- a weekly upstream-drift check
+- pull requests targeting `main`
+- pushes to `main`
+- version tags
+- scheduled rebuilds
 - manual workflow dispatch
 
-The workflow reclaims unused GitHub-hosted runner toolchains before building
-because the DMG and expanded Electron application require substantial
-temporary storage.
+Pull-request builds validate the image without publishing it. All other events
+use the same GHCR login, metadata, tags, and publication rule as the other
+Grotto images. A successful `main` build publishes:
 
-### Publication gate
+```text
+ghcr.io/pelagians/grotto-chatgpt-desktop:latest
+```
 
-Automatic jobs validate the build but do not publish the image.
+The desktop matrix entry reclaims unused GitHub-hosted runner toolchains before
+building because the DMG and expanded Electron application require substantial
+temporary storage. That cleanup is conditional and does not run for the smaller
+agent images.
 
-Manual publication requires both:
-
-1. `publish: true` in the workflow-dispatch inputs
-2. repository variable `GROTTO_PUBLISH_CHATGPT_DESKTOP=true`
-
-This gate is intentional. The wrapper is open source, but the upstream
-ChatGPT Desktop application is proprietary. Do not publish a derived public
-image until Pelagian has confirmed that redistribution is permitted.
+The wrapper is open source, while the upstream ChatGPT Desktop payload retains
+its own license and distribution terms.
 
 ## Local build
 
@@ -96,7 +97,7 @@ podman run --rm \
   --env AUTO_GPU=true \
   --volume "$PWD/chatgpt-config:/config:Z" \
   --volume "$PWD/workspace:/workspace:Z" \
-  localhost/grotto-chatgpt-desktop:dev
+  ghcr.io/pelagians/grotto-chatgpt-desktop:latest
 ```
 
 Open `https://localhost:3001`. Selkies uses a self-signed certificate unless a
