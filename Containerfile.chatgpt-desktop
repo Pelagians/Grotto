@@ -78,17 +78,22 @@ RUN set -eux; \
         /tmp/*
 
 # Install the Codex CLI and its platform-specific optional dependency into the
-# image. The desktop app must never need npm installation during startup.
+# image. npm and the installed codex launcher both use `#!/usr/bin/env node`,
+# so the managed Node runtime must be on PATH before either command starts.
 RUN set -eux; \
-    /opt/chatgpt/resources/node-runtime/bin/npm install \
+    export PATH="/opt/chatgpt/resources/node-runtime/bin:/opt/codex-cli/bin:${PATH}"; \
+    command -v node; \
+    command -v npm; \
+    node --version; \
+    npm --version; \
+    npm install \
         --global \
         --prefix /opt/codex-cli \
         --include=optional \
         "@openai/codex@${CODEX_CLI_VERSION}"; \
     test -x /opt/codex-cli/bin/codex; \
-    PATH="/opt/codex-cli/bin:/opt/chatgpt/resources/node-runtime/bin:${PATH}" \
-        /opt/codex-cli/bin/codex --version; \
-    /opt/chatgpt/resources/node-runtime/bin/npm cache clean --force; \
+    codex --version; \
+    npm cache clean --force; \
     rm -rf /root/.npm
 
 FROM ${SELKIES_BASE_IMAGE}
