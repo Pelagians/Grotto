@@ -188,6 +188,10 @@ Pull requests build every matrix entry without publishing it. The ChatGPT
 desktop image is part of the same matrix and follows the same tags and
 publication rules as the agent images.
 
+GHCR publication and package visibility are separate: the workflow creates or
+updates the package, while public or private visibility is managed in the
+organization's package settings.
+
 ## Adding New Runtimes
 
 For worker agents, create a narrow `templates/<purpose>/` directory with:
