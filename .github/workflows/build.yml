@@ -37,46 +37,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: grotto-comms
+          - name: grotto-openclaw
             kind: agent
-            image: ghcr.io/pelagians/grotto-comms
-            title: Grotto Communications
-            description: Focused OpenClaw communications/calendar agent for email, messaging, calendar, reminders, and contacts
+            image: ghcr.io/pelagians/grotto-openclaw
+            title: Grotto OpenClaw
+            description: General OpenClaw gateway with curated baseline tools and persistent user-installed toolchains
             file: ./Containerfile
-            template: communications-calendar
-            verify_tools: himalaya gcalcli vdirsyncer khal khard jq
-            link_formulae: ""
-            npm_packages: ""
-          - name: grotto-records
-            kind: agent
-            image: ghcr.io/pelagians/grotto-records
-            title: Grotto Records
-            description: Focused OpenClaw records agent for Nereus, Postgres, SQLite, JSON, CSV, and evidence-backed record writes
-            file: ./Containerfile
-            template: records
-            verify_tools: sqlite3 duckdb jq yq psql
-            link_formulae: sqlite libpq
-            npm_packages: ""
-          - name: grotto-documents
-            kind: agent
-            image: ghcr.io/pelagians/grotto-documents
-            title: Grotto Documents
-            description: Focused OpenClaw documents agent for OCR, extraction, conversion, classification, and managed document organization
-            file: ./Containerfile
-            template: documents
-            verify_tools: pandoc pdfinfo pdftotext qpdf tesseract ocrmypdf python3.13 jq
-            link_formulae: ""
-            npm_packages: ""
-          - name: grotto-browser-agent
-            kind: agent
-            image: ghcr.io/pelagians/grotto-browser-agent
-            title: Grotto Browser Agent
-            description: Focused OpenClaw browser workflow agent that controls separate internal browser runtime containers
-            file: ./Containerfile
-            template: browser-agent
-            verify_tools: jq node npm playwright
-            link_formulae: ""
-            npm_packages: playwright@1.60.0
           - name: grotto-chatgpt-desktop
             kind: desktop
             image: ghcr.io/pelagians/grotto-chatgpt-desktop
@@ -137,7 +103,7 @@ jobs:
             org.opencontainers.image.description=${{ matrix.description }}
             org.opencontainers.image.source=https://github.com/pelagians/grotto
 
-      - name: Build and publish agent image
+      - name: Build and publish OpenClaw image
         if: matrix.kind == 'agent'
         uses: docker/build-push-action@v6
         with:
@@ -146,12 +112,6 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            GROTTO_TEMPLATE=${{ matrix.template }}
-            GROTTO_IMAGE_NAME=${{ matrix.name }}
-            GROTTO_LINK_FORMULAE=${{ matrix.link_formulae }}
-            GROTTO_NPM_PACKAGES=${{ matrix.npm_packages }}
-            GROTTO_VERIFY_TOOLS=${{ matrix.verify_tools }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
 
