@@ -114,6 +114,7 @@ ENV TITLE="ChatGPT Desktop" \
     RESTART_APP=true \
     FILE_MANAGER_PATH=/workspace \
     GROTTO_RUNTIME=chatgpt-desktop \
+    GROTTO_CHATGPT_AUTH_MODE=device \
     CODEX_HOME=/config/.codex \
     CODEX_CLI_PATH=/opt/codex-cli/bin/codex \
     CODEX_MANAGED_NODE_RUNTIME_DIR=/opt/chatgpt/resources/node-runtime \
@@ -154,7 +155,8 @@ RUN set -eux; \
         libxkbcommon0 \
         libxrandr2 \
         python3 \
-        xdg-utils; \
+        xdg-utils \
+        xterm; \
     rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /opt/chatgpt /opt/chatgpt
@@ -162,7 +164,13 @@ COPY --from=builder /opt/codex-cli /opt/codex-cli
 COPY runtimes/chatgpt-desktop/root/ /
 
 RUN set -eux; \
-    chmod 0755 /defaults/autostart; \
+    chmod 0755 \
+        /defaults/autostart \
+        /usr/local/bin/grotto-chatgpt-auth \
+        /custom-cont-init.d/10-grotto-chatgpt-permissions; \
+    bash -n /defaults/autostart; \
+    bash -n /usr/local/bin/grotto-chatgpt-auth; \
+    bash -n /custom-cont-init.d/10-grotto-chatgpt-permissions; \
     chmod -R a+rX /opt/chatgpt /opt/codex-cli; \
     install -d -o abc -g abc -m 0755 /workspace; \
     if [ -f /opt/chatgpt/.codex-linux/codex-desktop.png ]; then \
@@ -172,6 +180,7 @@ RUN set -eux; \
     fi; \
     test -x /lsiopy/bin/selkies; \
     test "$(command -v selkies)" = /lsiopy/bin/selkies; \
+    test -x /usr/bin/xterm; \
     test -x /opt/chatgpt/start.sh; \
     test -x /opt/codex-cli/bin/codex; \
     test "$(head -n 1 /opt/codex-cli/lib/node_modules/@openai/codex/bin/codex.js)" = '#!/opt/chatgpt/resources/node-runtime/bin/node'; \
