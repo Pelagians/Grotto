@@ -275,8 +275,24 @@ architecture candidates.
 
 For Fedora validation, run the image with rootless Podman, normal seccomp,
 SELinux enforcing, and `:Z` volume labels. Capture host AVC records for the
-doctor interval. Do not infer Fedora SELinux behavior from GitHub-hosted Docker
-CI.
+doctor interval. The container normally cannot read that host audit stream;
+host-side correlation for the documented reproduction confirmed SELinux
+denials for filesystem remount, fresh devpts mount, occasional proc mount, and
+tmpfs relabel operations. Do not infer Fedora SELinux behavior from
+GitHub-hosted Docker CI.
+
+Run the correlated query on the Fedora host, not inside the container:
+
+~~~bash
+START_DATE="$(LC_TIME=C date -d '2026-07-16' +%x)"
+sudo env LC_TIME=C ausearch \
+  -m AVC,USER_AVC \
+  -ts "$START_DATE" 12:48:09 \
+  -i
+~~~
+
+Use the output for diagnosis. Do not generate or install broad
+'audit2allow' rules for the reported 'container_t' filesystem permissions.
 
 ## Remove the local runtime completely
 

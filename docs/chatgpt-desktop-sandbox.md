@@ -255,20 +255,46 @@ The outer host audit stream is not exposed inside this rootless container:
 - 'auditctl -s' lacks the required host audit capability;
 - the container journal and dmesg contain no host AVC records.
 
-No matching AVC could therefore be collected from inside the container.
-'EACCES' alone is not treated as proof of an SELinux denial. Correlation must be
-performed on the Fedora host for the same test interval, for example:
+The container cannot normally read the host audit stream. Host-side AVC
+correlation confirmed that SELinux denies Bubblewrap's filesystem remount,
+fresh devpts mount, occasional proc mount, and tmpfs relabel operations.
+
+The correlated interval contained 1,910 denials:
+
+- 1,827 denied 'remount' operations from 'container_t' to
+  'device_t:filesystem';
+- 79 denied 'mount' operations from 'container_t' to
+  'devpts_t:filesystem';
+- 2 denied 'mount' operations to 'proc_t:filesystem';
+- 2 denied 'relabelfrom' operations to 'tmpfs_t:filesystem'.
+
+Most records identify 'comm=bwrap'. These timestamps correlate with the
+Bubblewrap tests. An unavailable audit stream inside a container must never be
+interpreted as evidence that SELinux was uninvolved.
+
+Use a locale-stable host query for a recorded test start:
 
 ~~~bash
-sudo ausearch \
-  -m AVC,USER_AVC,SELINUX_ERR \
-  -ts 22:02:50 \
-  -te 22:04:00 \
+START_DATE="$(LC_TIME=C date -d '2026-07-16' +%x)"
+sudo env LC_TIME=C ausearch \
+  -m AVC,USER_AVC \
+  -ts "$START_DATE" 12:48:09 \
   -i
 ~~~
 
 A new reproduction should record fresh UTC boundaries and query the host with
 those timestamps.
+
+The observed denials correspond to these allow-like policy signatures:
+
+- 'container_t device_t:filesystem remount'
+- 'container_t devpts_t:filesystem mount'
+- 'container_t proc_t:filesystem mount'
+- 'container_t tmpfs_t:filesystem relabelfrom'
+
+They document the policy boundary; Grotto does not generate or install broad
+'audit2allow' rules for them. SELinux remains enabled, along with normal Podman
+seccomp and ':Z' volume labels.
 
 ## Architecture candidates
 

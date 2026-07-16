@@ -53,6 +53,8 @@ jq -e '.checks | has("bubblewrap_fresh_dev")' "$report" >/dev/null
 jq -e '.checks | has("bubblewrap_protected_child_remount")' "$report" >/dev/null
 jq -e '.checks | has("codex_workspace_permissions")' "$report" >/dev/null
 jq -e '.checks | has("landlock_read_only")' "$report" >/dev/null
+jq -e '.security.selinux | has("host_audit_access") and has("attribution")' \
+    "$report" >/dev/null
 jq -e '.sandbox.automatic_fallback_enabled == false' "$report" >/dev/null
 jq -e '.paths["/config"].writable == true' "$report" >/dev/null
 jq -e '.paths["/workspace"].writable == true' "$report" >/dev/null

@@ -539,6 +539,13 @@ def collect() -> dict[str, Any]:
         "sqlite3": version_info(command_paths["sqlite3"], ["--version"]),
     }
 
+    host_audit_access = os.access("/var/log/audit/audit.log", os.R_OK)
+    selinux_attribution = (
+        "requires_host_audit_review"
+        if host_audit_access
+        else "unknown_without_host_audit"
+    )
+
     remediation: list[str] = []
     fresh_dev_error = checks["bubblewrap_fresh_dev"]["stderr"]
     protected_error = checks["bubblewrap_protected_child_remount"]["stderr"]
@@ -563,8 +570,9 @@ def collect() -> dict[str, Any]:
     if not checks["codex_workspace_permissions"]["ok"]:
         remediation.append(
             "The Codex workspace sandbox is not ready. Keep SELinux and normal "
-            "Podman seccomp enabled; collect matching host AVC records before "
-            "attributing EACCES to SELinux."
+            "Podman seccomp enabled. An unavailable container audit stream is "
+            "not evidence that SELinux was uninvolved; correlate matching AVC "
+            "records from the host."
         )
     if not pathlib.Path("/dev/dri").exists():
         remediation.append(
@@ -638,6 +646,12 @@ def collect() -> dict[str, Any]:
             **proc_status(),
             "selinux_context": read_text("/proc/self/attr/current"),
             "pid1_selinux_context": read_text("/proc/1/attr/current"),
+            "selinux": {
+                "process_context": read_text("/proc/self/attr/current"),
+                "pid1_context": read_text("/proc/1/attr/current"),
+                "host_audit_access": host_audit_access,
+                "attribution": selinux_attribution,
+            },
             "max_user_namespaces": read_text(
                 "/proc/sys/user/max_user_namespaces"
             ),
@@ -647,10 +661,7 @@ def collect() -> dict[str, Any]:
             "uid_map": read_text("/proc/self/uid_map"),
             "gid_map": read_text("/proc/self/gid_map"),
             "audit_visibility": {
-                "audit_log_readable": os.access(
-                    "/var/log/audit/audit.log",
-                    os.R_OK,
-                ),
+                "audit_log_readable": host_audit_access,
                 "selinuxfs_enforce_readable": os.access(
                     "/sys/fs/selinux/enforce",
                     os.R_OK,
@@ -712,6 +723,12 @@ def render_human(report: dict[str, Any]) -> str:
             f"{report['identity']['user']} "
             f"uid={report['identity']['uid']} "
             f"gid={report['identity']['gid']}"
+        ),
+        (
+            "selinux: host_audit_access="
+            f"{report['security']['selinux']['host_audit_access']} "
+            "attribution="
+            f"{report['security']['selinux']['attribution']}"
         ),
     ]
     for name, check in report["checks"].items():
