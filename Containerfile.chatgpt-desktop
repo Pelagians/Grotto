@@ -98,6 +98,8 @@ RUN set -eux; \
 
 FROM ${SELKIES_BASE_IMAGE}
 
+# LinuxServer installs the Selkies backend in /lsiopy. Keep that venv on PATH;
+# its s6 service invokes the bare `selkies` command during container startup.
 ENV TITLE="ChatGPT Desktop" \
     START_DOCKER=false \
     PIXELFLUX_WAYLAND=true \
@@ -112,7 +114,7 @@ ENV TITLE="ChatGPT Desktop" \
     XDG_CACHE_HOME=/config/.cache \
     XDG_STATE_HOME=/config/.local/state \
     CODEX_FORCE_DEVICE_SCALE_FACTOR=1 \
-    PATH=/opt/codex-cli/bin:/opt/chatgpt/resources/node-runtime/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    PATH=/opt/codex-cli/bin:/opt/chatgpt/resources/node-runtime/bin:/lsiopy/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 RUN set -eux; \
     apt-get update -o Acquire::Retries=5; \
@@ -161,6 +163,8 @@ RUN set -eux; \
             /opt/chatgpt/.codex-linux/codex-desktop.png \
             /usr/share/selkies/www/icon.png; \
     fi; \
+    test -x /lsiopy/bin/selkies; \
+    test "$(command -v selkies)" = /lsiopy/bin/selkies; \
     test -x /opt/chatgpt/start.sh; \
     test -x /opt/codex-cli/bin/codex; \
     /opt/codex-cli/bin/codex --version
