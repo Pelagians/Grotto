@@ -1,9 +1,35 @@
 #!/usr/bin/with-contenv bash
+# shellcheck shell=bash
 set -Eeuo pipefail
 
 # LinuxServer adjusts the abc account to PUID/PGID before custom init scripts run.
 # Keep Codex credentials owned by the same account that launches the desktop app.
 install -d -o abc -g abc -m 0700 /config/.codex
+install -d -o abc -g abc -m 0755 \
+    /workspace \
+    /tools \
+    /tools/bin \
+    /tools/cargo \
+    /tools/mise \
+    /tools/npm \
+    /tools/pnpm \
+    /tools/python \
+    /tools/pipx \
+    /tools/venvs \
+    /cache \
+    /cache/npm \
+    /cache/pip \
+    /cache/uv \
+    /cache/xdg
+
+# Repair only the persistent roots and Grotto-managed tool/cache directories.
+# Project contents keep their existing ownership so host-side checkouts are not
+# recursively rewritten on every container start.
+chown abc:abc /workspace /tools /cache
+chown abc:abc \
+    /tools/bin /tools/cargo /tools/mise /tools/npm /tools/pnpm \
+    /tools/python /tools/pipx /tools/venvs \
+    /cache/npm /cache/pip /cache/uv /cache/xdg
 
 if [[ -d /config/.codex ]]; then
     chown -R abc:abc /config/.codex
