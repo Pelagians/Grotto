@@ -1,12 +1,36 @@
 #!/bin/bash
 set -Eeuo pipefail
 
+export HOME="${HOME:-/config}"
+export CODEX_HOME="${CODEX_HOME:-/config/.codex}"
+export PATH="/opt/codex-cli/bin:/opt/chatgpt/resources/node-runtime/bin:/lsiopy/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
 install -d -m 0755 \
     /config/.cache \
-    /config/.codex \
     /config/.config \
     /config/.local/state \
     /workspace
+install -d -m 0700 /config/.codex
+
+case "${GROTTO_CHATGPT_AUTH_MODE:-device}" in
+    off)
+        ;;
+    device|auto)
+        if ! /opt/codex-cli/bin/codex login status >/dev/null 2>&1; then
+            # This script is launched by Selkies as abc, so the resulting
+            # /config/.codex/auth.json is readable by the desktop app.
+            if ! xterm \
+                -T "Sign in to ChatGPT" \
+                -geometry 96x30 \
+                -e /usr/local/bin/grotto-chatgpt-auth; then
+                echo "[grotto] Device authentication window exited before sign-in completed" >&2
+            fi
+        fi
+        ;;
+    *)
+        echo "[grotto] Unknown GROTTO_CHATGPT_AUTH_MODE=${GROTTO_CHATGPT_AUTH_MODE}" >&2
+        ;;
+esac
 
 cd /workspace
 exec /opt/chatgpt/start.sh
