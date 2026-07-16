@@ -2,12 +2,6 @@
 ARG OPENCLAW_BASE_IMAGE="ghcr.io/openclaw/openclaw:slim"
 FROM ${OPENCLAW_BASE_IMAGE}
 
-ARG OPENQUAD_TEMPLATE="communications-calendar"
-ARG OPENQUAD_IMAGE_NAME="openquad-comms"
-ARG OPENQUAD_LINK_FORMULAE=""
-ARG OPENQUAD_NPM_PACKAGES=""
-ARG OPENQUAD_VERIFY_TOOLS=""
-
 USER root
 
 ARG HOMEBREW_VERSION=5.1.6
@@ -18,27 +12,36 @@ ENV HOMEBREW_PREFIX=/home/linuxbrew/.linuxbrew \
     HOMEBREW_NO_AUTO_UPDATE=1 \
     HOMEBREW_NO_ENV_HINTS=1
 
-ENV OPENQUAD_TEMPLATE=${OPENQUAD_TEMPLATE} \
-    OPENQUAD_IMAGE_NAME=${OPENQUAD_IMAGE_NAME} \
-    OPENCLAW_STATE_DIR=/home/node/.openclaw \
-    OPENCLAW_CONFIG_PATH=/home/node/.openclaw/openclaw.json \
-    OPENQUAD_DEFAULT_CONFIG=/usr/share/openquad/templates/${OPENQUAD_TEMPLATE}/openclaw.json5 \
-    NPM_CONFIG_CACHE=/home/node/.openclaw/.npm \
-    NPM_CONFIG_PREFIX=/home/node/.local \
-    XDG_CONFIG_HOME=/home/node/.openclaw/.config \
-    XDG_DATA_HOME=/home/node/.openclaw/.local/share \
-    XDG_CACHE_HOME=/home/node/.openclaw/.cache \
-    CODEX_HOME=/home/node/.openclaw/.codex \
-    CODEX_SQLITE_HOME=/home/node/.openclaw/.codex/sqlite \
-    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
-    OPENQUAD_WORKERD_ENABLED=true \
-    OPENQUAD_WORKERD_HOST=0.0.0.0 \
-    OPENQUAD_WORKERD_PORT=18789 \
-    OPENQUAD_WORKSPACE_DIR=/home/node/.openclaw/workspace \
-    OPENQUAD_MANIFEST_PATH=/usr/share/openquad/templates/${OPENQUAD_TEMPLATE}/openquad.manifest.json
+ENV GROTTO_RUNTIME=openclaw \
+    GROTTO_UPDATE_MODE=image \
+    HOME=/config \
+    OPENCLAW_HOME=/config \
+    OPENCLAW_STATE_DIR=/config/.openclaw \
+    OPENCLAW_CONFIG_DIR=/config/.openclaw \
+    OPENCLAW_CONFIG_PATH=/config/.openclaw/openclaw.json \
+    OPENCLAW_WORKSPACE_DIR=/workspace \
+    XDG_CONFIG_HOME=/config/.config \
+    XDG_DATA_HOME=/config/.local/share \
+    XDG_STATE_HOME=/config/.local/state \
+    XDG_CACHE_HOME=/cache/xdg \
+    CODEX_HOME=/config/.codex \
+    NPM_CONFIG_PREFIX=/tools/npm \
+    NPM_CONFIG_CACHE=/cache/npm \
+    PNPM_HOME=/tools/pnpm \
+    BUN_INSTALL=/tools/bun \
+    UV_TOOL_DIR=/tools/uv/tools \
+    UV_TOOL_BIN_DIR=/tools/bin \
+    UV_CACHE_DIR=/cache/uv \
+    PIPX_HOME=/tools/pipx \
+    PIPX_BIN_DIR=/tools/bin \
+    PIP_CACHE_DIR=/cache/pip \
+    MISE_DATA_DIR=/tools/mise \
+    MISE_CACHE_DIR=/cache/mise \
+    MISE_CONFIG_DIR=/config/mise \
+    CARGO_HOME=/tools/cargo \
+    GOBIN=/tools/bin \
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
-# OpenClaw slim already includes curl, git, and procps. Homebrew on Debian
-# still needs certificates, build tools, and the `file` utility to bootstrap.
 RUN set -eux; \
     apt-get update; \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
@@ -46,11 +49,14 @@ RUN set -eux; \
         ca-certificates \
         file \
         python3 \
-        python3-venv; \
+        python3-pip \
+        python3-venv \
+        unzip \
+        xz-utils \
+        zstd; \
     rm -rf /var/lib/apt/lists/*; \
-    install -d -m 0755 "${HOMEBREW_REPOSITORY}"; \
-    git clone --branch "${HOMEBREW_VERSION}" --depth 1 https://github.com/Homebrew/brew "${HOMEBREW_REPOSITORY}"; \
     install -d -m 0755 \
+        "${HOMEBREW_REPOSITORY}" \
         "${HOMEBREW_PREFIX}/bin" \
         "${HOMEBREW_PREFIX}/etc" \
         "${HOMEBREW_PREFIX}/include" \
@@ -61,64 +67,61 @@ RUN set -eux; \
         "${HOMEBREW_PREFIX}/var" \
         "${HOMEBREW_CELLAR}" \
         /home/linuxbrew/.cache/Homebrew \
-        /usr/share/openquad/templates/${OPENQUAD_TEMPLATE}; \
-    install -d -o node -g node -m 0755 \
-        /home/node/.cache \
-        /home/node/.local \
-        /home/node/.npm \
-        /home/node/.openclaw \
-        /home/node/.openclaw/.cache \
-        /home/node/.openclaw/.codex \
-        /home/node/.openclaw/.codex/sqlite \
-        /home/node/.openclaw/.config \
-        /home/node/.openclaw/.local/share \
-        /home/node/.openclaw/.npm \
-        /home/node/.openclaw/workspace \
-        /usr/share/openquad/schemas \
-        /opt/openquad/workerd; \
+        /usr/share/grotto; \
+    git clone --branch "${HOMEBREW_VERSION}" --depth 1 \
+        https://github.com/Homebrew/brew "${HOMEBREW_REPOSITORY}"; \
     ln -s "${HOMEBREW_REPOSITORY}/bin/brew" "${HOMEBREW_PREFIX}/bin/brew"; \
-    chown -R node:node /home/linuxbrew /home/node/.local
+    install -d -o node -g node -m 0755 \
+        /config \
+        /workspace \
+        /tools \
+        /cache \
+        /tools/apps \
+        /tools/bin \
+        /tools/npm \
+        /tools/pnpm \
+        /tools/bun \
+        /tools/cargo \
+        /tools/mise \
+        /cache/homebrew \
+        /cache/mise \
+        /cache/npm \
+        /cache/pip \
+        /cache/uv \
+        /cache/xdg; \
+    chown -R node:node /home/linuxbrew
 
+COPY Brewfile /usr/share/grotto/Brewfile
+COPY files/grotto-openclaw-entrypoint /usr/local/bin/grotto-openclaw-entrypoint
 COPY files/profile.d/linuxbrew.sh /etc/profile.d/linuxbrew.sh
-COPY defaults/openclaw.base.json5 /usr/share/openquad/defaults/openclaw.base.json5
-COPY schemas /usr/share/openquad/schemas
-COPY workerd /opt/openquad/workerd
-COPY templates/${OPENQUAD_TEMPLATE}/Brewfile /usr/share/openquad/templates/${OPENQUAD_TEMPLATE}/Brewfile
-COPY templates/${OPENQUAD_TEMPLATE}/openclaw.json5 /usr/share/openquad/templates/${OPENQUAD_TEMPLATE}/openclaw.json5
-COPY templates/${OPENQUAD_TEMPLATE}/openquad.manifest.json /usr/share/openquad/templates/${OPENQUAD_TEMPLATE}/openquad.manifest.json
 
-RUN set -eux; \
-    python3 -m venv /opt/openquad/workerd/.venv; \
-    /opt/openquad/workerd/.venv/bin/pip install --no-cache-dir /opt/openquad/workerd; \
-    ln -sf /opt/openquad/workerd/.venv/bin/openquad-workerd /usr/local/bin/openquad-workerd; \
-    chmod -R a+rX /usr/share/openquad /opt/openquad/workerd; \
-    test -r /usr/share/openquad/schemas/openquad-task.schema.json; \
-    test -r "/usr/share/openquad/templates/${OPENQUAD_TEMPLATE}/openquad.manifest.json"
-
-ENV PATH="/home/node/.local/bin:${HOMEBREW_PREFIX}/bin:${HOMEBREW_PREFIX}/sbin:${PATH}"
+ENV HOMEBREW_CACHE=/cache/homebrew \
+    PATH=/tools/bin:/tools/npm/bin:/tools/pnpm:/tools/bun/bin:/tools/cargo/bin:/tools/mise/shims:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 USER node
-WORKDIR /home/node
+WORKDIR /workspace
 
 RUN set -eux; \
     brew --version; \
     HOMEBREW_NO_AUTO_UPDATE=0 brew update --force --quiet; \
-    brew bundle --file="/usr/share/openquad/templates/${OPENQUAD_TEMPLATE}/Brewfile"; \
-    if [ -n "${OPENQUAD_LINK_FORMULAE}" ]; then \
-        for formula in ${OPENQUAD_LINK_FORMULAE}; do brew link --force --overwrite "${formula}"; done; \
-    fi; \
-    if [ -n "${OPENQUAD_NPM_PACKAGES}" ]; then \
-        npm install --global ${OPENQUAD_NPM_PACKAGES}; \
-    fi; \
-    for tool in ${OPENQUAD_VERIFY_TOOLS}; do \
-        command -v "${tool}"; \
-    done; \
-    test -r /usr/share/openquad/defaults/openclaw.base.json5; \
-    test -r "/usr/share/openquad/templates/${OPENQUAD_TEMPLATE}/Brewfile"; \
-    test -r "/usr/share/openquad/templates/${OPENQUAD_TEMPLATE}/openclaw.json5"; \
+    brew bundle --file=/usr/share/grotto/Brewfile; \
+    command -v jq; \
+    command -v yq; \
+    command -v rg; \
+    command -v uv; \
+    command -v mise; \
+    command -v openclaw; \
     brew cleanup --prune=all -s || true; \
-    rm -rf "$(brew --cache)" /home/linuxbrew/.cache/Homebrew "${NPM_CONFIG_CACHE}"/_cacache 2>/dev/null || true
+    rm -rf "$(brew --cache)" /home/linuxbrew/.cache/Homebrew 2>/dev/null || true
 
+USER root
+RUN chmod 0755 /usr/local/bin/grotto-openclaw-entrypoint; \
+    sh -n /usr/local/bin/grotto-openclaw-entrypoint; \
+    chown -R node:node /config /workspace /tools /cache
+
+VOLUME ["/config", "/workspace", "/tools", "/cache"]
 EXPOSE 18789
 
-CMD ["sh", "-lc", "if [ \"${OPENQUAD_WORKERD_ENABLED:-true}\" = \"true\" ]; then exec openquad-workerd; else exec sleep infinity; fi"]
+USER node
+ENTRYPOINT ["tini", "-s", "--", "/usr/local/bin/grotto-openclaw-entrypoint"]
+CMD ["openclaw", "gateway", "--bind", "lan", "--port", "18789"]

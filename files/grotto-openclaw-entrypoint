@@ -1,0 +1,40 @@
+#!/bin/sh
+set -eu
+
+install -d -m 0700 /config/.openclaw /config/.codex
+install -d -m 0755 \
+    /config/.config \
+    /config/.local/share \
+    /config/.local/state \
+    /workspace \
+    /tools/apps \
+    /tools/bin \
+    /tools/npm \
+    /tools/pnpm \
+    /tools/bun \
+    /tools/cargo \
+    /tools/mise \
+    /cache/homebrew \
+    /cache/mise \
+    /cache/npm \
+    /cache/pip \
+    /cache/uv \
+    /cache/xdg
+
+base_path="/tools/bin:/tools/npm/bin:/tools/pnpm:/tools/bun/bin:/tools/cargo/bin:/tools/mise/shims:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+case "${GROTTO_UPDATE_MODE:-image}" in
+    image)
+        PATH="$base_path"
+        ;;
+    user)
+        PATH="/tools/apps/openclaw/bin:$base_path"
+        ;;
+    *)
+        echo "grotto-openclaw: invalid GROTTO_UPDATE_MODE=${GROTTO_UPDATE_MODE}" >&2
+        exit 64
+        ;;
+esac
+
+export PATH
+exec "$@"
