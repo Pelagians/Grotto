@@ -1,7 +1,0 @@
-# openquad-comms dependencies.
-brew "himalaya"     # IMAP/SMTP email CLI
-brew "gcalcli"      # Google Calendar CLI
-brew "vdirsyncer"   # CalDAV/CardDAV sync for calendars and contacts
-brew "khal"         # terminal calendar on top of vdirsyncer data
-brew "khard"        # terminal contacts/CardDAV client
-brew "jq"           # lightweight JSON filtering for CLI integrations

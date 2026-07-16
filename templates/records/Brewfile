@@ -1,7 +1,0 @@
-# openquad-records dependencies.
-# curl is provided by the OpenClaw base image for API calls.
-brew "sqlite"       # local SQLite records and import/export staging
-brew "duckdb"       # analytical SQL over CSV/JSON/Parquet-style files
-brew "jq"           # JSON shaping for API resources and evidence payloads
-brew "yq"           # YAML/JSON/CSV transformation
-brew "libpq"        # psql client for Postgres-backed record stores

@@ -1,8 +1,0 @@
-# openquad-documents dependencies.
-brew "pandoc"       # document conversion across markdown/docx/html/etc.
-brew "poppler"      # PDF inspection/extraction tools such as pdftotext/pdfinfo
-brew "qpdf"         # PDF structure inspection and safe transformations
-brew "tesseract"    # OCR engine for images and scanned documents
-brew "ocrmypdf"     # add OCR text layers to scanned PDFs
-brew "python@3.13"  # lightweight extraction/classification scripts
-brew "jq"           # JSON output shaping for extraction/classification artifacts

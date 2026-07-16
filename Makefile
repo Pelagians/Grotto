@@ -1,17 +1,22 @@
-
-.PHONY: test test-browser-runtime validate-schemas validate-manifests run-workerd image-documents smoke-documents-container image-chatgpt-desktop
+.PHONY: check check-container-engine image-openclaw image-chatgpt-desktop image-all
 
 DETECTED_CONTAINER_ENGINE := $(shell if command -v podman >/dev/null 2>&1 && podman info >/dev/null 2>&1; then printf 'podman'; elif command -v sudo >/dev/null 2>&1 && sudo -n podman info >/dev/null 2>&1; then printf 'sudo podman'; elif command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then printf 'docker'; fi)
 CONTAINER_ENGINE ?= $(DETECTED_CONTAINER_ENGINE)
 ifeq ($(strip $(CONTAINER_ENGINE)),)
 CONTAINER_ENGINE := $(DETECTED_CONTAINER_ENGINE)
 endif
-GROTTO_DOCUMENTS_IMAGE ?= grotto-documents:smoke
+
+GROTTO_OPENCLAW_IMAGE ?= grotto-openclaw:dev
 GROTTO_CHATGPT_DESKTOP_IMAGE ?= grotto-chatgpt-desktop:dev
 CODEX_DESKTOP_LINUX_REF ?= 52e9701e3f1be291821cff904b6cd4bdce30998d
 CODEX_CLI_VERSION ?= latest
 
-.PHONY: check-container-engine
+check:
+	sh -n files/grotto-openclaw-entrypoint
+	bash -n runtimes/chatgpt-desktop/root/defaults/autostart
+	bash -n runtimes/chatgpt-desktop/root/usr/local/bin/grotto-chatgpt-auth
+	bash -n runtimes/chatgpt-desktop/root/custom-cont-init.d/10-grotto-chatgpt-permissions
+
 check-container-engine:
 	@if [ -z "$(CONTAINER_ENGINE)" ]; then \
 		echo "No usable container engine found. Tried rootless podman, sudo podman, and docker." >&2; \
@@ -19,30 +24,11 @@ check-container-engine:
 		exit 2; \
 	fi
 
-validate-schemas:
-	uv run --project workerd --with jsonschema python scripts/validate_grotto_contracts.py .
-
-validate-manifests: validate-schemas
-
-test:
-	PYTHONPATH=. uv run --project workerd --with pytest --with httpx --with fastapi --with jsonschema python -m pytest workerd/tests -q
-
-run-workerd:
-	PYTHONPATH=. uv run --project workerd grotto-workerd
-
-image-documents: check-container-engine
+image-openclaw: check-container-engine
 	$(CONTAINER_ENGINE) build \
 		-f Containerfile \
-		--build-arg GROTTO_TEMPLATE=documents \
-		--build-arg GROTTO_IMAGE_NAME=grotto-documents \
-		--build-arg "GROTTO_VERIFY_TOOLS=pdfinfo pdftotext qpdf tesseract ocrmypdf" \
-		-t $(GROTTO_DOCUMENTS_IMAGE) \
+		-t $(GROTTO_OPENCLAW_IMAGE) \
 		.
-
-smoke-documents-container:
-	CONTAINER_ENGINE="$(CONTAINER_ENGINE)" \
-	GROTTO_DOCUMENTS_IMAGE="$(GROTTO_DOCUMENTS_IMAGE)" \
-	scripts/smoke_documents_container.sh
 
 image-chatgpt-desktop: check-container-engine
 	$(CONTAINER_ENGINE) build \
@@ -51,3 +37,5 @@ image-chatgpt-desktop: check-container-engine
 		--build-arg CODEX_CLI_VERSION="$(CODEX_CLI_VERSION)" \
 		-t $(GROTTO_CHATGPT_DESKTOP_IMAGE) \
 		.
+
+image-all: image-openclaw image-chatgpt-desktop
