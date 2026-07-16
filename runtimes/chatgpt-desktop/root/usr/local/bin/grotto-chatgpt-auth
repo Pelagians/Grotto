@@ -1,0 +1,59 @@
+#!/bin/bash
+set -Eeuo pipefail
+
+export HOME="${HOME:-/config}"
+export CODEX_HOME="${CODEX_HOME:-/config/.codex}"
+export PATH="/opt/codex-cli/bin:/opt/chatgpt/resources/node-runtime/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+codex=/opt/codex-cli/bin/codex
+
+install -d -m 0700 "$CODEX_HOME"
+
+if "$codex" login status >/dev/null 2>&1; then
+    exit 0
+fi
+
+while true; do
+    clear
+    cat <<'EOF'
+Grotto ChatGPT Desktop — Sign in
+
+This container does not include a web browser.
+Codex will display a verification URL and a one-time code below.
+
+1. Open the URL in your normal browser or on another device.
+2. Enter the one-time code.
+3. Leave this window open while Codex completes authentication.
+
+Credentials are stored persistently in /config/.codex.
+EOF
+    printf '\n'
+
+    if "$codex" login --device-auth; then
+        chmod 0700 "$CODEX_HOME" 2>/dev/null || true
+        if [[ -f "$CODEX_HOME/auth.json" ]]; then
+            chmod 0600 "$CODEX_HOME/auth.json" 2>/dev/null || true
+        fi
+
+        printf '\nAuthentication complete. Starting ChatGPT Desktop...\n'
+        sleep 2
+        exit 0
+    fi
+
+    cat <<'EOF'
+
+Authentication did not complete.
+
+If the request timed out, the container may not be able to use the host's DNS
+resolver. With rootless Podman, recreate it with explicit DNS, for example:
+
+  --dns=1.1.1.1 --dns=8.8.8.8
+
+Press Enter to retry, or type s and press Enter to skip authentication.
+EOF
+
+    read -r answer
+    if [[ "$answer" == "s" || "$answer" == "S" ]]; then
+        exit 0
+    fi
+done
