@@ -78,8 +78,9 @@ RUN set -eux; \
         /tmp/*
 
 # Install the Codex CLI and its platform-specific optional dependency into the
-# image. npm and the installed codex launcher both use `#!/usr/bin/env node`,
-# so the managed Node runtime must be on PATH before either command starts.
+# image. Electron resolves the npm launcher to codex.js before spawning it, so
+# make that script independent of the child process PATH by pinning its shebang
+# to the managed Node runtime shipped in the same image.
 RUN set -eux; \
     export PATH="/opt/chatgpt/resources/node-runtime/bin:/opt/codex-cli/bin:${PATH}"; \
     command -v node; \
@@ -91,8 +92,13 @@ RUN set -eux; \
         --prefix /opt/codex-cli \
         --include=optional \
         "@openai/codex@${CODEX_CLI_VERSION}"; \
+    codex_js=/opt/codex-cli/lib/node_modules/@openai/codex/bin/codex.js; \
+    test -f "$codex_js"; \
+    sed -i '1c #!/opt/chatgpt/resources/node-runtime/bin/node' "$codex_js"; \
+    chmod 0755 "$codex_js"; \
+    test "$(head -n 1 "$codex_js")" = '#!/opt/chatgpt/resources/node-runtime/bin/node'; \
     test -x /opt/codex-cli/bin/codex; \
-    codex --version; \
+    env -i HOME=/tmp PATH=/usr/bin:/bin /opt/codex-cli/bin/codex --version; \
     npm cache clean --force; \
     rm -rf /root/.npm
 
@@ -155,13 +161,9 @@ COPY --from=builder /opt/chatgpt /opt/chatgpt
 COPY --from=builder /opt/codex-cli /opt/codex-cli
 COPY runtimes/chatgpt-desktop/root/ /
 
-# The generated upstream Electron payload can launch a Node child through the
-# absolute compatibility path /node. Keep it pinned to the managed runtime
-# shipped with the image rather than relying on a host or distro Node install.
 RUN set -eux; \
     chmod 0755 /defaults/autostart; \
     chmod -R a+rX /opt/chatgpt /opt/codex-cli; \
-    ln -sfn /opt/chatgpt/resources/node-runtime/bin/node /node; \
     install -d -o abc -g abc -m 0755 /workspace; \
     if [ -f /opt/chatgpt/.codex-linux/codex-desktop.png ]; then \
         install -m 0644 \
@@ -170,12 +172,10 @@ RUN set -eux; \
     fi; \
     test -x /lsiopy/bin/selkies; \
     test "$(command -v selkies)" = /lsiopy/bin/selkies; \
-    test -x /node; \
-    test "$(readlink -f /node)" = /opt/chatgpt/resources/node-runtime/bin/node; \
-    /node --version; \
     test -x /opt/chatgpt/start.sh; \
     test -x /opt/codex-cli/bin/codex; \
-    /opt/codex-cli/bin/codex --version
+    test "$(head -n 1 /opt/codex-cli/lib/node_modules/@openai/codex/bin/codex.js)" = '#!/opt/chatgpt/resources/node-runtime/bin/node'; \
+    env -i HOME=/tmp PATH=/usr/bin:/bin /opt/codex-cli/bin/codex --version
 
 WORKDIR /workspace
 
