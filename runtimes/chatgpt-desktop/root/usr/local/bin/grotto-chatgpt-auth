@@ -1,59 +1,613 @@
-#!/bin/bash
-set -Eeuo pipefail
+#!/usr/bin/python3
+from __future__ import annotations
 
-export HOME="${HOME:-/config}"
-export CODEX_HOME="${CODEX_HOME:-/config/.codex}"
-export PATH="/opt/codex-cli/bin:/opt/chatgpt/resources/node-runtime/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+import os
+import re
+import signal
+import subprocess
+import sys
+import threading
+import time
+from pathlib import Path
+from typing import Optional, Tuple
 
-codex=/opt/codex-cli/bin/codex
+import gi
 
-install -d -m 0700 "$CODEX_HOME"
+gi.require_version("Gtk", "3.0")
+gi.require_version("GdkPixbuf", "2.0")
 
-if "$codex" login status >/dev/null 2>&1; then
-    exit 0
-fi
+from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk  # noqa: E402
 
-while true; do
-    clear
-    cat <<'EOF'
-Grotto ChatGPT Desktop — Sign in
+CODEX = "/opt/codex-cli/bin/codex"
+ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+URL_RE = re.compile(r"https://[^\s\x1b]+/codex/device\b")
+CODE_RE = re.compile(r"\b[A-Z0-9]{4}(?:-[A-Z0-9]{4})+\b")
+AUTH_TIMEOUT_SECONDS = 15 * 60
 
-This container does not include a web browser.
-Codex will display a verification URL and a one-time code below.
 
-1. Open the URL in your normal browser or on another device.
-2. Enter the one-time code.
-3. Leave this window open while Codex completes authentication.
+def strip_ansi(value: str) -> str:
+    return ANSI_RE.sub("", value)
 
-Credentials are stored persistently in /config/.codex.
-EOF
-    printf '\n'
 
-    if "$codex" login --device-auth; then
-        chmod 0700 "$CODEX_HOME" 2>/dev/null || true
-        if [[ -f "$CODEX_HOME/auth.json" ]]; then
-            chmod 0600 "$CODEX_HOME/auth.json" 2>/dev/null || true
-        fi
+def extract_device_details(value: str) -> Tuple[Optional[str], Optional[str]]:
+    clean = strip_ansi(value)
+    url_match = URL_RE.search(clean)
+    code_match = CODE_RE.search(clean)
+    return (
+        url_match.group(0) if url_match else None,
+        code_match.group(0) if code_match else None,
+    )
 
-        printf '\nAuthentication complete. Starting ChatGPT Desktop...\n'
-        sleep 2
-        exit 0
-    fi
 
-    cat <<'EOF'
+def run_self_test() -> int:
+    sample = (
+        "\x1b[94mhttps://auth.openai.com/codex/device\x1b[0m\n"
+        "\x1b[94mABCD-EFGH\x1b[0m\n"
+    )
+    url, code = extract_device_details(sample)
+    assert url == "https://auth.openai.com/codex/device"
+    assert code == "ABCD-EFGH"
+    print("grotto-chatgpt-auth self-test passed")
+    return 0
 
-Authentication did not complete.
 
-If the request timed out, the container may not be able to use the host's DNS
-resolver. With rootless Podman, recreate it with explicit DNS, for example:
+class AuthWindow(Gtk.Window):
+    def __init__(self) -> None:
+        super().__init__(title="Sign in to ChatGPT")
 
-  --dns=1.1.1.1 --dns=8.8.8.8
+        self.process: Optional[subprocess.Popen[str]] = None
+        self.reader_thread: Optional[threading.Thread] = None
+        self.device_url: Optional[str] = None
+        self.user_code: Optional[str] = None
+        self.output_lines: list[str] = []
+        self.deadline: Optional[float] = None
+        self.exit_code = 1
+        self.closing = False
 
-Press Enter to retry, or type s and press Enter to skip authentication.
-EOF
+        self.set_default_size(720, 680)
+        self.set_resizable(False)
+        self.set_position(Gtk.WindowPosition.CENTER)
+        self.set_deletable(False)
+        self.connect("delete-event", self._ignore_delete)
 
-    read -r answer
-    if [[ "$answer" == "s" || "$answer" == "S" ]]; then
-        exit 0
-    fi
-done
+        icon_path = Path("/usr/share/selkies/www/icon.png")
+        if icon_path.is_file():
+            try:
+                self.set_icon_from_file(str(icon_path))
+            except GLib.Error:
+                pass
+
+        self._install_css()
+        self._build_ui()
+        GLib.timeout_add_seconds(1, self._update_countdown)
+        GLib.idle_add(self.start_authentication)
+
+    def _install_css(self) -> None:
+        css = b"""
+        window {
+            background-color: #101114;
+            color: #f4f4f5;
+        }
+        .auth-card {
+            background-color: #17181c;
+            border: 1px solid #2a2c32;
+            border-radius: 14px;
+            padding: 28px;
+        }
+        .title {
+            font-size: 28px;
+            font-weight: 700;
+            color: #ffffff;
+        }
+        .subtitle {
+            font-size: 15px;
+            color: #b7bac2;
+        }
+        .section-label {
+            font-size: 12px;
+            font-weight: 700;
+            color: #8f939d;
+        }
+        .code-label {
+            font-family: monospace;
+            font-size: 30px;
+            font-weight: 700;
+            color: #ffffff;
+            background-color: #22242a;
+            border: 1px solid #343741;
+            border-radius: 9px;
+            padding: 14px 18px;
+        }
+        .url-entry {
+            font-family: monospace;
+            font-size: 13px;
+            color: #e7e8eb;
+            background-color: #22242a;
+            border: 1px solid #343741;
+            border-radius: 7px;
+            padding: 9px;
+        }
+        .primary-button {
+            background-image: none;
+            background-color: #ffffff;
+            color: #111216;
+            border: none;
+            border-radius: 7px;
+            padding: 10px 18px;
+            font-weight: 700;
+        }
+        .secondary-button {
+            background-image: none;
+            background-color: #25272d;
+            color: #f4f4f5;
+            border: 1px solid #393c45;
+            border-radius: 7px;
+            padding: 10px 16px;
+        }
+        .danger-button {
+            background-image: none;
+            background-color: transparent;
+            color: #9da1aa;
+            border: none;
+            padding: 8px 12px;
+        }
+        .status {
+            font-size: 14px;
+            color: #c7cad1;
+        }
+        .status-success {
+            color: #79d69a;
+        }
+        .status-error {
+            color: #ff8f8f;
+        }
+        .countdown {
+            font-family: monospace;
+            font-size: 13px;
+            color: #9da1aa;
+        }
+        """
+        provider = Gtk.CssProvider()
+        provider.load_from_data(css)
+        screen = Gdk.Screen.get_default()
+        if screen is not None:
+            Gtk.StyleContext.add_provider_for_screen(
+                screen,
+                provider,
+                Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION,
+            )
+
+    @staticmethod
+    def _add_class(widget: Gtk.Widget, name: str) -> None:
+        widget.get_style_context().add_class(name)
+
+    def _build_ui(self) -> None:
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=20)
+        outer.set_border_width(32)
+        self.add(outer)
+
+        title = Gtk.Label(label="Sign in to ChatGPT")
+        title.set_xalign(0)
+        self._add_class(title, "title")
+        outer.pack_start(title, False, False, 0)
+
+        subtitle = Gtk.Label(
+            label=(
+                "Use your normal browser or scan the QR code. "
+                "This container never receives your password."
+            )
+        )
+        subtitle.set_xalign(0)
+        subtitle.set_line_wrap(True)
+        self._add_class(subtitle, "subtitle")
+        outer.pack_start(subtitle, False, False, 0)
+
+        card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18)
+        self._add_class(card, "auth-card")
+        outer.pack_start(card, True, True, 0)
+
+        self.spinner = Gtk.Spinner()
+        self.spinner.set_size_request(42, 42)
+        card.pack_start(self.spinner, False, False, 0)
+
+        self.qr_image = Gtk.Image()
+        self.qr_image.set_size_request(250, 250)
+        self.qr_image.set_no_show_all(True)
+        card.pack_start(self.qr_image, False, False, 0)
+
+        link_label = Gtk.Label(label="SIGN-IN LINK")
+        link_label.set_xalign(0)
+        self._add_class(link_label, "section-label")
+        card.pack_start(link_label, False, False, 0)
+
+        self.url_entry = Gtk.Entry()
+        self.url_entry.set_editable(False)
+        self.url_entry.set_can_focus(True)
+        self.url_entry.set_placeholder_text("Requesting sign-in link…")
+        self._add_class(self.url_entry, "url-entry")
+        card.pack_start(self.url_entry, False, False, 0)
+
+        code_label = Gtk.Label(label="ONE-TIME CODE")
+        code_label.set_xalign(0)
+        self._add_class(code_label, "section-label")
+        card.pack_start(code_label, False, False, 0)
+
+        self.code_label = Gtk.Label(label="—")
+        self.code_label.set_selectable(True)
+        self.code_label.set_xalign(0.5)
+        self._add_class(self.code_label, "code-label")
+        card.pack_start(self.code_label, False, False, 0)
+
+        button_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        card.pack_start(button_row, False, False, 0)
+
+        self.open_button = Gtk.Button(label="Open sign-in page")
+        self.open_button.connect("clicked", self._open_link)
+        self._add_class(self.open_button, "primary-button")
+        button_row.pack_start(self.open_button, True, True, 0)
+
+        self.copy_link_button = Gtk.Button(label="Copy link")
+        self.copy_link_button.connect("clicked", self._copy_link)
+        self._add_class(self.copy_link_button, "secondary-button")
+        button_row.pack_start(self.copy_link_button, False, False, 0)
+
+        self.copy_code_button = Gtk.Button(label="Copy code")
+        self.copy_code_button.connect("clicked", self._copy_code)
+        self._add_class(self.copy_code_button, "secondary-button")
+        button_row.pack_start(self.copy_code_button, False, False, 0)
+
+        status_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        card.pack_start(status_row, False, False, 0)
+
+        self.status_label = Gtk.Label(label="Requesting a sign-in code…")
+        self.status_label.set_xalign(0)
+        self.status_label.set_line_wrap(True)
+        self._add_class(self.status_label, "status")
+        status_row.pack_start(self.status_label, True, True, 0)
+
+        self.countdown_label = Gtk.Label(label="")
+        self._add_class(self.countdown_label, "countdown")
+        status_row.pack_end(self.countdown_label, False, False, 0)
+
+        action_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        outer.pack_end(action_row, False, False, 0)
+
+        self.skip_button = Gtk.Button(label="Skip for now")
+        self.skip_button.set_can_focus(False)
+        self.skip_button.connect("clicked", self._confirm_skip)
+        self._add_class(self.skip_button, "danger-button")
+        action_row.pack_start(self.skip_button, False, False, 0)
+
+        self.retry_button = Gtk.Button(label="Request a new code")
+        self.retry_button.connect("clicked", lambda _button: self.start_authentication())
+        self._add_class(self.retry_button, "secondary-button")
+        self.retry_button.set_no_show_all(True)
+        action_row.pack_end(self.retry_button, False, False, 0)
+
+        self._set_auth_controls_sensitive(False)
+        self.spinner.start()
+        self.show_all()
+        self.qr_image.hide()
+        self.retry_button.hide()
+
+    def _ignore_delete(self, *_args: object) -> bool:
+        return True
+
+    def _set_auth_controls_sensitive(self, enabled: bool) -> None:
+        self.open_button.set_sensitive(enabled)
+        self.copy_link_button.set_sensitive(enabled)
+        self.copy_code_button.set_sensitive(enabled)
+
+    def _set_status(self, text: str, state: str = "normal") -> None:
+        context = self.status_label.get_style_context()
+        context.remove_class("status-success")
+        context.remove_class("status-error")
+        if state == "success":
+            context.add_class("status-success")
+        elif state == "error":
+            context.add_class("status-error")
+        self.status_label.set_text(text)
+
+    def _clipboard_set(self, text: str) -> None:
+        clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
+        clipboard.set_text(text, -1)
+        clipboard.store()
+        primary = Gtk.Clipboard.get(Gdk.SELECTION_PRIMARY)
+        primary.set_text(text, -1)
+
+    def _copy_link(self, _button: Gtk.Button) -> None:
+        if not self.device_url:
+            return
+        self._clipboard_set(self.device_url)
+        self._set_status("Sign-in link copied. Paste it into your browser.")
+
+    def _copy_code(self, _button: Gtk.Button) -> None:
+        if not self.user_code:
+            return
+        self._clipboard_set(self.user_code)
+        self._set_status("One-time code copied.")
+
+    def _open_link(self, _button: Gtk.Button) -> None:
+        if not self.device_url:
+            return
+        try:
+            Gio.AppInfo.launch_default_for_uri(self.device_url, None)
+            self._set_status("Sign-in page opened. Complete authentication in your browser.")
+        except GLib.Error:
+            self._clipboard_set(self.device_url)
+            self._set_status(
+                "No browser is installed in this session, so the sign-in link was copied."
+            )
+
+    def _generate_qr(self, url: str) -> Optional[GdkPixbuf.Pixbuf]:
+        try:
+            result = subprocess.run(
+                [
+                    "qrencode",
+                    "-t",
+                    "PNG",
+                    "-s",
+                    "7",
+                    "-m",
+                    "2",
+                    "-o",
+                    "-",
+                    url,
+                ],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            loader = GdkPixbuf.PixbufLoader.new_with_type("png")
+            loader.write(result.stdout)
+            loader.close()
+            return loader.get_pixbuf()
+        except (OSError, subprocess.SubprocessError, GLib.Error):
+            return None
+
+    def _reset_view(self) -> None:
+        self.device_url = None
+        self.user_code = None
+        self.output_lines.clear()
+        self.deadline = None
+        self.url_entry.set_text("")
+        self.url_entry.set_placeholder_text("Requesting sign-in link…")
+        self.code_label.set_text("—")
+        self.countdown_label.set_text("")
+        self.qr_image.clear()
+        self.qr_image.hide()
+        self.retry_button.hide()
+        self.spinner.show()
+        self.spinner.start()
+        self._set_auth_controls_sensitive(False)
+        self._set_status("Requesting a sign-in code…")
+
+    def start_authentication(self) -> bool:
+        if self.closing:
+            return False
+
+        self._terminate_process()
+        self._reset_view()
+
+        env = os.environ.copy()
+        env.setdefault("HOME", "/config")
+        env.setdefault("CODEX_HOME", "/config/.codex")
+        env["PATH"] = (
+            "/opt/codex-cli/bin:"
+            "/opt/chatgpt/resources/node-runtime/bin:"
+            "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        )
+
+        try:
+            self.process = subprocess.Popen(
+                [CODEX, "login", "--device-auth"],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                env=env,
+                start_new_session=True,
+            )
+        except OSError as error:
+            self._show_failure(f"Unable to start Codex authentication: {error}")
+            return False
+
+        self.reader_thread = threading.Thread(
+            target=self._read_process_output,
+            name="grotto-auth-reader",
+            daemon=True,
+        )
+        self.reader_thread.start()
+        return False
+
+    def _read_process_output(self) -> None:
+        process = self.process
+        if process is None or process.stdout is None:
+            return
+
+        try:
+            for line in process.stdout:
+                GLib.idle_add(self._handle_output_line, line)
+            return_code = process.wait()
+        except Exception as error:
+            GLib.idle_add(self._show_failure, f"Authentication process failed: {error}")
+            return
+
+        GLib.idle_add(self._process_finished, process, return_code)
+
+    def _handle_output_line(self, line: str) -> bool:
+        clean = strip_ansi(line).strip()
+        if clean:
+            self.output_lines.append(clean)
+            self.output_lines = self.output_lines[-20:]
+
+        combined = "\n".join(self.output_lines)
+        url, code = extract_device_details(combined)
+        if url and code and (url != self.device_url or code != self.user_code):
+            self.device_url = url
+            self.user_code = code
+            self.deadline = time.monotonic() + AUTH_TIMEOUT_SECONDS
+
+            self.url_entry.set_text(url)
+            self.code_label.set_text(code)
+            self._set_auth_controls_sensitive(True)
+
+            pixbuf = self._generate_qr(url)
+            if pixbuf is not None:
+                self.qr_image.set_from_pixbuf(pixbuf)
+                self.qr_image.show()
+
+            self.spinner.stop()
+            self.spinner.hide()
+            self._set_status("Waiting for you to finish signing in…")
+
+        return False
+
+    def _process_finished(
+        self,
+        process: subprocess.Popen[str],
+        return_code: int,
+    ) -> bool:
+        if self.closing or process is not self.process:
+            return False
+
+        self.process = None
+
+        if return_code == 0 and self._login_status_ok():
+            self.deadline = None
+            self.countdown_label.set_text("")
+            self.spinner.stop()
+            self.spinner.hide()
+            self.retry_button.hide()
+            self._set_auth_controls_sensitive(False)
+            self._set_status("Signed in. Starting ChatGPT Desktop…", "success")
+            GLib.timeout_add(1200, self._finish_success)
+            return False
+
+        last_line = self.output_lines[-1] if self.output_lines else ""
+        if not last_line or last_line.startswith("Continue only if"):
+            last_line = "Authentication did not complete."
+        self._show_failure(last_line)
+        return False
+
+    @staticmethod
+    def _login_status_ok() -> bool:
+        try:
+            return (
+                subprocess.run(
+                    [CODEX, "login", "status"],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=20,
+                    check=False,
+                ).returncode
+                == 0
+            )
+        except (OSError, subprocess.SubprocessError):
+            return False
+
+    def _show_failure(self, message: str) -> bool:
+        self.deadline = None
+        self.countdown_label.set_text("")
+        self.spinner.stop()
+        self.spinner.hide()
+        self.retry_button.show()
+        self.retry_button.set_sensitive(True)
+        self._set_auth_controls_sensitive(bool(self.device_url and self.user_code))
+
+        if "error sending request" in message.lower() or "timed out" in message.lower():
+            message = (
+                "The authentication service could not be reached. "
+                "Check container DNS and try again."
+            )
+        self._set_status(message, "error")
+        return False
+
+    def _update_countdown(self) -> bool:
+        if self.closing:
+            return False
+        if self.deadline is None:
+            return True
+
+        remaining = max(0, int(self.deadline - time.monotonic()))
+        minutes, seconds = divmod(remaining, 60)
+        self.countdown_label.set_text(f"Expires in {minutes:02d}:{seconds:02d}")
+
+        if remaining == 0:
+            self.deadline = None
+            self.countdown_label.set_text("Code expired")
+            self._terminate_process()
+            self._show_failure("The one-time code expired. Request a new code.")
+        return True
+
+    def _confirm_skip(self, _button: Gtk.Button) -> None:
+        dialog = Gtk.MessageDialog(
+            transient_for=self,
+            modal=True,
+            destroy_with_parent=True,
+            message_type=Gtk.MessageType.QUESTION,
+            buttons=Gtk.ButtonsType.NONE,
+            text="Skip ChatGPT sign-in?",
+        )
+        dialog.format_secondary_text(
+            "ChatGPT Desktop will open, but it will still require authentication."
+        )
+        dialog.add_button("Keep waiting", Gtk.ResponseType.CANCEL)
+        dialog.add_button("Skip for now", Gtk.ResponseType.OK)
+        response = dialog.run()
+        dialog.destroy()
+
+        if response == Gtk.ResponseType.OK:
+            self.exit_code = 2
+            self._close()
+
+    def _finish_success(self) -> bool:
+        self.exit_code = 0
+        self._close()
+        return False
+
+    def _terminate_process(self) -> None:
+        process = self.process
+        self.process = None
+        if process is None or process.poll() is not None:
+            return
+
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+            process.wait(timeout=3)
+        except (ProcessLookupError, subprocess.TimeoutExpired):
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+    def _close(self) -> None:
+        if self.closing:
+            return
+        self.closing = True
+        self._terminate_process()
+        Gtk.main_quit()
+
+
+def main() -> int:
+    if "--self-test" in sys.argv:
+        return run_self_test()
+
+    os.environ.setdefault("HOME", "/config")
+    os.environ.setdefault("CODEX_HOME", "/config/.codex")
+    Path(os.environ["CODEX_HOME"]).mkdir(mode=0o700, parents=True, exist_ok=True)
+
+    initialized, _argv = Gtk.init_check(sys.argv)
+    if not initialized:
+        print("Unable to initialize GTK authentication window", file=sys.stderr)
+        return 1
+
+    window = AuthWindow()
+    Gtk.main()
+    return window.exit_code
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
