@@ -111,6 +111,70 @@ For a CPU/X11 fallback, omit `/dev/dri` and use:
 --env CODEX_OZONE_PLATFORM=x11
 ```
 
+## First-run authentication
+
+The image does not install a full web browser. When no readable Codex session
+exists, Grotto opens a small terminal before launching ChatGPT Desktop and runs:
+
+```bash
+codex login --device-auth
+```
+
+The terminal displays an OpenAI verification URL and one-time code. Open the
+URL in the normal host browser or on another device, enter the code, and leave
+the terminal open until Codex reports success. The terminal then closes and
+ChatGPT Desktop starts with the same authenticated Codex state.
+
+The bootstrap runs as LinuxServer's `abc` account. Its credentials are written
+to `/config/.codex/auth.json` with restrictive permissions and are readable by
+the desktop app. A custom container-init script repairs ownership on existing
+state before the graphical session starts, including state accidentally created
+by a prior root-level `podman exec` login.
+
+Disable the first-run bootstrap when authentication is managed externally:
+
+```bash
+--env GROTTO_CHATGPT_AUTH_MODE=off
+```
+
+For a manual login, always run the CLI as the desktop user:
+
+```bash
+podman exec \
+  --user abc \
+  --env HOME=/config \
+  --env CODEX_HOME=/config/.codex \
+  -it grotto-chatgpt-desktop \
+  /opt/codex-cli/bin/codex login --device-auth
+```
+
+Verify the session from the same account:
+
+```bash
+podman exec \
+  --user abc \
+  --env HOME=/config \
+  --env CODEX_HOME=/config/.codex \
+  grotto-chatgpt-desktop \
+  /opt/codex-cli/bin/codex login status
+```
+
+### Rootless Podman DNS
+
+Some Fedora rootless Podman setups inherit link-local or Tailscale resolvers
+that are not reachable from the container. The symptom is a device-auth request
+that hangs or reports `error sending request` while host networking works.
+
+Recreate the container with explicit resolvers when this occurs:
+
+```bash
+--dns=1.1.1.1 \
+--dns=8.8.8.8
+```
+
+Production and enterprise deployments should use organization-approved DNS
+servers instead of hard-coded public resolvers.
+
 ## Persistent state
 
 - `/config/.config` contains application configuration.
@@ -122,12 +186,35 @@ For a CPU/X11 fallback, omit `/dev/dri` and use:
 Treat `/config` as sensitive. It can contain authenticated application and
 Codex state.
 
+## Remove the local runtime completely
+
+The following removes only the Grotto ChatGPT Desktop test container, pulled
+image, and persisted state. It does not prune unrelated Podman images or
+containers.
+
+```bash
+STATE="$HOME/.local/share/grotto/chatgpt-desktop"
+
+podman rm --force grotto-chatgpt-desktop 2>/dev/null || true
+podman image rm --force \
+  ghcr.io/pelagians/grotto-chatgpt-desktop:latest \
+  2>/dev/null || true
+rm -rf -- "$STATE"
+
+podman ps -a --filter name=grotto-chatgpt-desktop
+podman images ghcr.io/pelagians/grotto-chatgpt-desktop
+```
+
+When the runtime was launched from another bind-mount location, remove that
+specific configuration and workspace directory separately.
+
 ## Runtime boundaries
 
 The image provides:
 
 - ChatGPT Desktop UI
 - Codex CLI
+- browserless device-code authentication bootstrap
 - Selkies HTTPS desktop streaming
 - persistent application state
 - a mounted project workspace
@@ -138,7 +225,8 @@ The image does not provide:
 - Nereus workflow orchestration
 - browser-worker isolation
 - tenant policy or audit storage
-- automatic credential provisioning
+- a full browser session inside the container
+- external credential injection or organization SSO brokering
 
 Expose Selkies only behind an authenticated private network or a proper
 application gateway. LinuxServer describes its built-in basic authentication
