@@ -1,0 +1,754 @@
+#!/usr/bin/python3
+"""Non-destructive diagnostics for the Grotto ChatGPT Desktop runtime."""
+
+from __future__ import annotations
+
+import argparse
+import glob
+import grp
+import json
+import os
+import pathlib
+import pwd
+import shutil
+import socket
+import stat
+import subprocess
+import sys
+import tempfile
+import urllib.error
+import urllib.request
+from typing import Any
+
+SCHEMA_VERSION = 1
+AUTH_HOST = "auth.openai.com"
+CODEX = "/opt/codex-cli/bin/codex"
+MANAGED_NODE_DIR = "/opt/chatgpt/resources/node-runtime/bin"
+WORKSPACE = "/workspace"
+DIAGNOSTIC_PATH = ":".join(
+    (
+        "/usr/local/bin",
+        "/opt/codex-cli/bin",
+        MANAGED_NODE_DIR,
+        "/lsiopy/bin",
+        "/usr/local/sbin",
+        "/usr/sbin",
+        "/usr/bin",
+        "/sbin",
+        "/bin",
+    )
+)
+
+
+def run(
+    command: list[str],
+    *,
+    cwd: str | None = None,
+    timeout: int = 15,
+    extra_env: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    env = os.environ.copy()
+    env["PATH"] = DIAGNOSTIC_PATH
+    if extra_env:
+        env.update(extra_env)
+    try:
+        completed = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env=env,
+            cwd=cwd or (WORKSPACE if pathlib.Path(WORKSPACE).is_dir() else "/"),
+        )
+        return {
+            "ok": completed.returncode == 0,
+            "returncode": completed.returncode,
+            "stdout": completed.stdout.strip()[:8192],
+            "stderr": completed.stderr.strip()[:8192],
+        }
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {
+            "ok": False,
+            "returncode": None,
+            "stdout": "",
+            "stderr": str(exc)[:8192],
+        }
+
+
+def read_text(path: str) -> str | None:
+    try:
+        return pathlib.Path(path).read_text(encoding="utf-8").rstrip("\x00\n")
+    except (OSError, UnicodeError):
+        return None
+
+
+def read_json(path: str) -> dict[str, Any]:
+    try:
+        value = json.loads(pathlib.Path(path).read_text(encoding="utf-8"))
+        return value if isinstance(value, dict) else {}
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return {}
+
+
+def path_status(path: str) -> dict[str, Any]:
+    candidate = pathlib.Path(path)
+    result: dict[str, Any] = {
+        "exists": candidate.exists(),
+        "writable": os.access(candidate, os.W_OK) if candidate.exists() else False,
+    }
+    try:
+        item = candidate.stat()
+        result.update(
+            {
+                "uid": item.st_uid,
+                "gid": item.st_gid,
+                "user": pwd.getpwuid(item.st_uid).pw_name,
+                "group": grp.getgrgid(item.st_gid).gr_name,
+                "mode": oct(item.st_mode & 0o777),
+            }
+        )
+    except (OSError, KeyError):
+        pass
+    return result
+
+
+def mount_entry(target: str) -> dict[str, Any]:
+    result = run(
+        [
+            "/usr/bin/findmnt",
+            "--json",
+            "--target",
+            target,
+            "--output",
+            "TARGET,SOURCE,FSTYPE,OPTIONS,PROPAGATION",
+        ]
+    )
+    if not result["ok"]:
+        return {"ok": False, "error": result["stderr"]}
+    try:
+        filesystems = json.loads(result["stdout"]).get("filesystems", [])
+        return {"ok": True, **(filesystems[0] if filesystems else {})}
+    except (json.JSONDecodeError, IndexError, TypeError):
+        return {"ok": False, "error": "could not parse findmnt output"}
+
+
+def proc_status() -> dict[str, int | None]:
+    values: dict[str, int | None] = {
+        "no_new_privs": None,
+        "seccomp": None,
+        "seccomp_filters": None,
+    }
+    mapping = {
+        "NoNewPrivs": "no_new_privs",
+        "Seccomp": "seccomp",
+        "Seccomp_filters": "seccomp_filters",
+    }
+    for line in (read_text("/proc/self/status") or "").splitlines():
+        key, separator, raw = line.partition(":")
+        if separator and key in mapping:
+            try:
+                values[mapping[key]] = int(raw.strip())
+            except ValueError:
+                pass
+    return values
+
+
+def group_status() -> list[dict[str, Any]]:
+    groups = []
+    for gid in os.getgroups():
+        try:
+            name = grp.getgrgid(gid).gr_name
+        except KeyError:
+            name = None
+        groups.append({"gid": gid, "name": name})
+    return groups
+
+
+def resolve_bundled_bwrap() -> str | None:
+    matches = glob.glob(
+        "/opt/codex-cli/lib/node_modules/@openai/codex/"
+        "**/codex-resources/bwrap",
+        recursive=True,
+    )
+    return next((path for path in matches if os.access(path, os.X_OK)), None)
+
+
+def version_info(path: str | None, args: list[str]) -> dict[str, Any]:
+    if not path:
+        return {"path": None, "version": None}
+    result = run([path, *args])
+    output = result["stdout"] or result["stderr"]
+    return {
+        "path": path,
+        "version": output.splitlines()[0] if output else None,
+    }
+
+
+def memory_status() -> dict[str, int]:
+    values: dict[str, int] = {}
+    for line in (read_text("/proc/meminfo") or "").splitlines():
+        name, separator, raw = line.partition(":")
+        if not separator or name not in {"MemTotal", "MemAvailable", "SwapTotal"}:
+            continue
+        fields = raw.split()
+        if fields:
+            try:
+                values[f"{name.lower()}_bytes"] = int(fields[0]) * 1024
+            except ValueError:
+                pass
+    return values
+
+
+def device_inventory() -> list[dict[str, Any]]:
+    root = pathlib.Path("/dev")
+    entries: list[dict[str, Any]] = []
+    if not root.is_dir():
+        return entries
+    candidates = list(root.iterdir())
+    for nested in (root / "pts", root / "input"):
+        if nested.is_dir():
+            try:
+                candidates.extend(nested.iterdir())
+            except OSError:
+                pass
+    for path in sorted(set(candidates), key=lambda item: str(item)):
+        try:
+            item = path.lstat()
+        except OSError:
+            continue
+        kind = "other"
+        major = None
+        minor = None
+        target = None
+        if stat.S_ISDIR(item.st_mode):
+            kind = "directory"
+        elif stat.S_ISLNK(item.st_mode):
+            kind = "symlink"
+            try:
+                target = os.readlink(path)
+            except OSError:
+                pass
+        elif stat.S_ISCHR(item.st_mode):
+            kind = "character"
+            major = os.major(item.st_rdev)
+            minor = os.minor(item.st_rdev)
+        elif stat.S_ISBLK(item.st_mode):
+            kind = "block"
+            major = os.major(item.st_rdev)
+            minor = os.minor(item.st_rdev)
+        entries.append(
+            {
+                "path": str(path),
+                "kind": kind,
+                "mode": oct(item.st_mode & 0o777),
+                "major": major,
+                "minor": minor,
+                "target": target,
+            }
+        )
+    return entries
+
+
+def network_status() -> dict[str, Any]:
+    if os.environ.get("GROTTO_DOCTOR_SKIP_NETWORK") == "1":
+        skipped = {"ok": None, "skipped": True, "error": None}
+        return {"host": AUTH_HOST, "dns": skipped, "https": skipped}
+
+    addresses: list[str] = []
+    dns_error = None
+    try:
+        addresses = sorted(
+            {
+                item[4][0]
+                for item in socket.getaddrinfo(
+                    AUTH_HOST,
+                    443,
+                    type=socket.SOCK_STREAM,
+                )
+            }
+        )
+    except OSError as exc:
+        dns_error = str(exc)
+
+    https_status = None
+    https_error = None
+    try:
+        request = urllib.request.Request(
+            f"https://{AUTH_HOST}/",
+            method="HEAD",
+            headers={"User-Agent": "grotto-doctor/1"},
+        )
+        with urllib.request.urlopen(request, timeout=8) as response:
+            https_status = response.status
+    except urllib.error.HTTPError as exc:
+        https_status = exc.code
+    except (OSError, urllib.error.URLError) as exc:
+        https_error = str(exc)
+
+    return {
+        "host": AUTH_HOST,
+        "dns": {
+            "ok": bool(addresses),
+            "skipped": False,
+            "addresses": addresses,
+            "error": dns_error,
+        },
+        "https": {
+            "ok": https_status is not None,
+            "skipped": False,
+            "status": https_status,
+            "error": https_error,
+        },
+    }
+
+
+def effective_landlock_enabled() -> tuple[bool | None, dict[str, Any]]:
+    result = run([CODEX, "features", "list"])
+    if not result["ok"]:
+        return None, result
+    for line in result["stdout"].splitlines():
+        fields = line.split()
+        if fields and fields[0] == "use_legacy_landlock":
+            return fields[-1].lower() == "true", result
+    return None, result
+
+
+def missing_check(message: str) -> dict[str, Any]:
+    return {
+        "ok": False,
+        "returncode": None,
+        "stdout": "",
+        "stderr": message,
+    }
+
+
+def collect_sandbox_checks(
+    bwrap_helper: str | None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    if bwrap_helper:
+        canonical_bwrap = run(
+            [
+                bwrap_helper,
+                "--unshare-user",
+                "--unshare-pid",
+                "--ro-bind",
+                "/",
+                "/",
+                "--dev",
+                "/dev",
+                "/bin/true",
+            ]
+        )
+        with tempfile.TemporaryDirectory(
+            prefix=".grotto-doctor-bwrap-",
+            dir="/tmp",
+        ) as probe:
+            write_without_protected = run(
+                [
+                    bwrap_helper,
+                    "--unshare-user",
+                    "--unshare-pid",
+                    "--ro-bind",
+                    "/",
+                    "/",
+                    "--bind",
+                    probe,
+                    probe,
+                    "/bin/sh",
+                    "-c",
+                    'touch "$1/ordinary" && rm "$1/ordinary"',
+                    "sh",
+                    probe,
+                ]
+            )
+            protected_remount = run(
+                [
+                    bwrap_helper,
+                    "--unshare-user",
+                    "--unshare-pid",
+                    "--ro-bind",
+                    "/",
+                    "/",
+                    "--bind",
+                    probe,
+                    probe,
+                    "--perms",
+                    "555",
+                    "--tmpfs",
+                    f"{probe}/.git",
+                    "--remount-ro",
+                    f"{probe}/.git",
+                    "/bin/true",
+                ]
+            )
+    else:
+        canonical_bwrap = missing_check("Bubblewrap helper not found")
+        write_without_protected = missing_check("Bubblewrap helper not found")
+        protected_remount = missing_check("Bubblewrap helper not found")
+
+    probe_parent = WORKSPACE if os.access(WORKSPACE, os.W_OK) else "/tmp"
+    with tempfile.TemporaryDirectory(
+        prefix=".grotto-doctor-codex-",
+        dir=probe_parent,
+    ) as probe:
+        for name in (".git", ".agents", ".codex"):
+            protected = pathlib.Path(probe, name)
+            protected.mkdir()
+            pathlib.Path(protected, "seed").write_text("seed\n", encoding="utf-8")
+
+        codex_read_only = run(
+            [
+                CODEX,
+                "sandbox",
+                "-P",
+                ":read-only",
+                "-C",
+                probe,
+                "--",
+                "/bin/true",
+            ],
+            cwd=probe,
+        )
+        codex_workspace = run(
+            [
+                CODEX,
+                "sandbox",
+                "-P",
+                ":workspace",
+                "-C",
+                probe,
+                "--",
+                "/bin/sh",
+                "-c",
+                (
+                    'touch ordinary && rm ordinary && '
+                    'test -r .git/seed && test -r .agents/seed && '
+                    'test -r .codex/seed && '
+                    '! touch .git/blocked && ! touch .agents/blocked && '
+                    '! touch .codex/blocked && ! touch /etc/grotto-doctor-blocked'
+                ),
+            ],
+            cwd=probe,
+        )
+        landlock_read_only = run(
+            [
+                CODEX,
+                "sandbox",
+                "-P",
+                ":read-only",
+                "-C",
+                probe,
+                "--enable",
+                "use_legacy_landlock",
+                "--",
+                "/bin/true",
+            ],
+            cwd=probe,
+        )
+        landlock_workspace = run(
+            [
+                CODEX,
+                "sandbox",
+                "-P",
+                ":workspace",
+                "-C",
+                probe,
+                "--enable",
+                "use_legacy_landlock",
+                "--",
+                "/bin/true",
+            ],
+            cwd=probe,
+        )
+
+    checks = {
+        "direct_command": run(["/bin/true"]),
+        "user_namespace": run(
+            ["/usr/bin/unshare", "--user", "--map-root-user", "/bin/true"]
+        ),
+        "bubblewrap_fresh_dev": canonical_bwrap,
+        "bubblewrap_write_without_protected_child": write_without_protected,
+        "bubblewrap_protected_child_remount": protected_remount,
+        "codex_read_only": codex_read_only,
+        "codex_workspace_permissions": codex_workspace,
+        "landlock_read_only": landlock_read_only,
+        "landlock_workspace_profile": landlock_workspace,
+    }
+    probe_details = {
+        "root": "temporary directory removed after checks",
+        "protected_paths": [".git", ".agents", ".codex"],
+        "ordinary_write_checked": True,
+        "outside_write_checked": "/etc/grotto-doctor-blocked",
+    }
+    return checks, probe_details
+
+
+def collect() -> dict[str, Any]:
+    build_info = read_json("/opt/chatgpt/.codex-linux/build-info.json")
+    upstream = build_info.get("upstreamDmg", {})
+    source = build_info.get("source", {})
+
+    bundled_bwrap = resolve_bundled_bwrap()
+    system_bwrap = shutil.which("bwrap", path=DIAGNOSTIC_PATH)
+    selected_bwrap = system_bwrap or bundled_bwrap
+    selected_bwrap_source = (
+        "PATH" if system_bwrap else "codex-bundled" if bundled_bwrap else "missing"
+    )
+    landlock_enabled, feature_listing = effective_landlock_enabled()
+    selected_backend = "landlock" if landlock_enabled else "bubblewrap"
+    checks, probe_details = collect_sandbox_checks(selected_bwrap)
+
+    try:
+        statvfs = os.statvfs("/dev/shm")
+        shm_size_bytes = statvfs.f_frsize * statvfs.f_blocks
+    except OSError:
+        shm_size_bytes = None
+
+    command_paths = {
+        name: shutil.which(name, path=DIAGNOSTIC_PATH)
+        for name in (
+            "bash",
+            "git",
+            "curl",
+            "jq",
+            "gh",
+            "lsof",
+            "pkg-config",
+            "pip3",
+            "python3",
+            "rg",
+            "shellcheck",
+            "sqlite3",
+            "unzip",
+            "zip",
+        )
+    }
+    tools = {
+        "codex": version_info(CODEX, ["--version"]),
+        "node": version_info(f"{MANAGED_NODE_DIR}/node", ["--version"]),
+        "npm": version_info(f"{MANAGED_NODE_DIR}/npm", ["--version"]),
+        "python": version_info(command_paths["python3"], ["--version"]),
+        "pip": version_info(command_paths["pip3"], ["--version"]),
+        "git": version_info(command_paths["git"], ["--version"]),
+        "ripgrep": version_info(command_paths["rg"], ["--version"]),
+        "jq": version_info(command_paths["jq"], ["--version"]),
+        "gh": version_info(command_paths["gh"], ["--version"]),
+        "bubblewrap": version_info(selected_bwrap, ["--version"]),
+        "shellcheck": version_info(command_paths["shellcheck"], ["--version"]),
+        "sqlite3": version_info(command_paths["sqlite3"], ["--version"]),
+    }
+
+    remediation: list[str] = []
+    fresh_dev_error = checks["bubblewrap_fresh_dev"]["stderr"]
+    protected_error = checks["bubblewrap_protected_child_remount"]["stderr"]
+    if "Can't mount devpts" in fresh_dev_error:
+        remediation.append(
+            "Codex's fresh minimal /dev setup is blocked at the nested devpts "
+            "mount. Do not bind the complete outer /dev without reviewing the "
+            "additional device and shared-PTY exposure."
+        )
+    if "Can't remount readonly" in protected_error:
+        remediation.append(
+            "Bubblewrap cannot remount synthetic protected metadata paths "
+            "read-only in this container. Preserve .git, .agents, and .codex "
+            "protections while investigating an upstream-compatible mount path."
+        )
+    if not checks["landlock_workspace_profile"]["ok"]:
+        remediation.append(
+            "Legacy Landlock is a read-only diagnostic here; the installed "
+            "Codex rejects it for permission profiles requiring direct runtime "
+            "enforcement."
+        )
+    if not checks["codex_workspace_permissions"]["ok"]:
+        remediation.append(
+            "The Codex workspace sandbox is not ready. Keep SELinux and normal "
+            "Podman seccomp enabled; collect matching host AVC records before "
+            "attributing EACCES to SELinux."
+        )
+    if not pathlib.Path("/dev/dri").exists():
+        remediation.append(
+            "No /dev/dri device is available; the desktop will use its "
+            "configured software-rendering fallback."
+        )
+
+    report: dict[str, Any] = {
+        "schema_version": SCHEMA_VERSION,
+        "ok": bool(
+            checks["direct_command"]["ok"]
+            and checks["codex_workspace_permissions"]["ok"]
+        ),
+        "runtime": {
+            "name": os.environ.get("GROTTO_RUNTIME", "chatgpt-desktop"),
+            "build_revision": os.environ.get(
+                "GROTTO_BUILD_REVISION",
+                "unknown",
+            ),
+            "wrapper_revision": os.environ.get(
+                "GROTTO_CODEX_DESKTOP_LINUX_REF",
+                source.get("commit", "unknown"),
+            ),
+            "codex_cli_build_version": os.environ.get(
+                "GROTTO_CODEX_CLI_VERSION",
+                tools["codex"]["version"] or "unknown",
+            ),
+            "selkies_base_image": os.environ.get(
+                "GROTTO_SELKIES_BASE_IMAGE",
+                "unknown",
+            ),
+            "desktop": {
+                "app_version": upstream.get("appVersion"),
+                "dmg_sha256": upstream.get("sha256"),
+                "electron_version": build_info.get("electronVersion"),
+            },
+        },
+        "identity": {
+            "uid": os.getuid(),
+            "gid": os.getgid(),
+            "user": pwd.getpwuid(os.getuid()).pw_name,
+            "group": grp.getgrgid(os.getgid()).gr_name,
+            "supplementary_groups": group_status(),
+        },
+        "environment": {
+            key: os.environ.get(key)
+            for key in (
+                "HOME",
+                "CODEX_HOME",
+                "XDG_CONFIG_HOME",
+                "XDG_CACHE_HOME",
+                "XDG_STATE_HOME",
+                "PATH",
+            )
+        },
+        "paths": {
+            path: path_status(path)
+            for path in ("/config", "/workspace", "/tools", "/cache")
+        },
+        "mounts": {
+            "/": mount_entry("/"),
+            "/config": mount_entry("/config"),
+            "/workspace": mount_entry("/workspace"),
+            "/dev/pts": mount_entry("/dev/pts"),
+            "/dev/shm": {
+                **mount_entry("/dev/shm"),
+                "size_bytes": shm_size_bytes,
+            },
+        },
+        "security": {
+            **proc_status(),
+            "selinux_context": read_text("/proc/self/attr/current"),
+            "pid1_selinux_context": read_text("/proc/1/attr/current"),
+            "max_user_namespaces": read_text(
+                "/proc/sys/user/max_user_namespaces"
+            ),
+            "unprivileged_userns_clone": read_text(
+                "/proc/sys/kernel/unprivileged_userns_clone"
+            ),
+            "uid_map": read_text("/proc/self/uid_map"),
+            "gid_map": read_text("/proc/self/gid_map"),
+            "audit_visibility": {
+                "audit_log_readable": os.access(
+                    "/var/log/audit/audit.log",
+                    os.R_OK,
+                ),
+                "selinuxfs_enforce_readable": os.access(
+                    "/sys/fs/selinux/enforce",
+                    os.R_OK,
+                ),
+            },
+        },
+        "hardware": {
+            "dri_available": pathlib.Path("/dev/dri").is_dir(),
+            "dri_entries": sorted(
+                path.name for path in pathlib.Path("/dev/dri").iterdir()
+            )
+            if pathlib.Path("/dev/dri").is_dir()
+            else [],
+            "devices": device_inventory(),
+            "memory": memory_status(),
+        },
+        "command_paths": command_paths,
+        "tools": tools,
+        "sandbox": {
+            "selected_backend": selected_backend,
+            "selection_source": "effective Codex feature configuration",
+            "automatic_fallback_enabled": False,
+            "backend_working": checks["codex_workspace_permissions"]["ok"],
+            "feature_listing": feature_listing,
+            "selected_bwrap": selected_bwrap,
+            "selected_bwrap_source": selected_bwrap_source,
+            "system_bwrap": system_bwrap,
+            "bundled_bwrap": bundled_bwrap,
+            "probe": probe_details,
+            "limitations": [
+                "Legacy Landlock is not equivalent to Bubblewrap for split "
+                "filesystem profiles.",
+                "Managed proxy-only networking requires Bubblewrap.",
+                "No Grotto automatic backend fallback is installed while the "
+                "workspace-write investigation remains unresolved.",
+            ],
+        },
+        "checks": checks,
+        "network": network_status(),
+        "remediation": remediation,
+    }
+    return report
+
+
+def render_human(report: dict[str, Any]) -> str:
+    lines = [
+        "Grotto ChatGPT Desktop doctor",
+        f"overall: {'ok' if report['ok'] else 'attention required'}",
+        (
+            "sandbox: selected="
+            f"{report['sandbox']['selected_backend']} "
+            f"working={report['sandbox']['backend_working']} "
+            "automatic_fallback=false"
+        ),
+        f"codex: {report['tools']['codex']['version'] or 'unavailable'}",
+        f"wrapper: {report['runtime']['wrapper_revision']}",
+        (
+            "identity: "
+            f"{report['identity']['user']} "
+            f"uid={report['identity']['uid']} "
+            f"gid={report['identity']['gid']}"
+        ),
+    ]
+    for name, check in report["checks"].items():
+        detail = check["stderr"].splitlines()[0] if check["stderr"] else ""
+        lines.append(
+            f"check {name}: {'pass' if check['ok'] else 'fail'}"
+            + (f" ({detail})" if detail else "")
+        )
+    dns = report["network"]["dns"]["ok"]
+    https = report["network"]["https"]["ok"]
+    lines.append(f"network: dns={dns} https={https}")
+    for path, status in report["paths"].items():
+        lines.append(
+            f"path {path}: exists={status['exists']} "
+            f"writable={status['writable']}"
+        )
+    for item in report["remediation"]:
+        lines.append(f"remediation: {item}")
+    return "\n".join(lines)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="emit stable machine-readable JSON",
+    )
+    args = parser.parse_args()
+    report = collect()
+    if args.json:
+        json.dump(report, sys.stdout, indent=2, sort_keys=True)
+        sys.stdout.write("\n")
+    else:
+        print(render_human(report))
+    return 0 if report["ok"] else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
