@@ -78,8 +78,9 @@ RUN set -eux; \
         /tmp/*
 
 # Install the Codex CLI and its platform-specific optional dependency into the
-# image. npm and the installed codex launcher both use `#!/usr/bin/env node`,
-# so the managed Node runtime must be on PATH before either command starts.
+# image. Electron resolves the npm launcher to codex.js before spawning it, so
+# make that script independent of the child process PATH by pinning its shebang
+# to the managed Node runtime shipped in the same image.
 RUN set -eux; \
     export PATH="/opt/chatgpt/resources/node-runtime/bin:/opt/codex-cli/bin:${PATH}"; \
     command -v node; \
@@ -91,13 +92,20 @@ RUN set -eux; \
         --prefix /opt/codex-cli \
         --include=optional \
         "@openai/codex@${CODEX_CLI_VERSION}"; \
+    codex_js=/opt/codex-cli/lib/node_modules/@openai/codex/bin/codex.js; \
+    test -f "$codex_js"; \
+    sed -i '1c #!/opt/chatgpt/resources/node-runtime/bin/node' "$codex_js"; \
+    chmod 0755 "$codex_js"; \
+    test "$(head -n 1 "$codex_js")" = '#!/opt/chatgpt/resources/node-runtime/bin/node'; \
     test -x /opt/codex-cli/bin/codex; \
-    codex --version; \
+    env -i HOME=/tmp PATH=/usr/bin:/bin /opt/codex-cli/bin/codex --version; \
     npm cache clean --force; \
     rm -rf /root/.npm
 
 FROM ${SELKIES_BASE_IMAGE}
 
+# LinuxServer installs the Selkies backend in /lsiopy. Keep that venv on PATH;
+# its s6 service invokes the bare `selkies` command during container startup.
 ENV TITLE="ChatGPT Desktop" \
     START_DOCKER=false \
     PIXELFLUX_WAYLAND=true \
@@ -108,11 +116,12 @@ ENV TITLE="ChatGPT Desktop" \
     GROTTO_RUNTIME=chatgpt-desktop \
     CODEX_HOME=/config/.codex \
     CODEX_CLI_PATH=/opt/codex-cli/bin/codex \
+    CODEX_MANAGED_NODE_RUNTIME_DIR=/opt/chatgpt/resources/node-runtime \
     XDG_CONFIG_HOME=/config/.config \
     XDG_CACHE_HOME=/config/.cache \
     XDG_STATE_HOME=/config/.local/state \
     CODEX_FORCE_DEVICE_SCALE_FACTOR=1 \
-    PATH=/opt/codex-cli/bin:/opt/chatgpt/resources/node-runtime/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    PATH=/opt/codex-cli/bin:/opt/chatgpt/resources/node-runtime/bin:/lsiopy/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 RUN set -eux; \
     apt-get update -o Acquire::Retries=5; \
@@ -161,9 +170,12 @@ RUN set -eux; \
             /opt/chatgpt/.codex-linux/codex-desktop.png \
             /usr/share/selkies/www/icon.png; \
     fi; \
+    test -x /lsiopy/bin/selkies; \
+    test "$(command -v selkies)" = /lsiopy/bin/selkies; \
     test -x /opt/chatgpt/start.sh; \
     test -x /opt/codex-cli/bin/codex; \
-    /opt/codex-cli/bin/codex --version
+    test "$(head -n 1 /opt/codex-cli/lib/node_modules/@openai/codex/bin/codex.js)" = '#!/opt/chatgpt/resources/node-runtime/bin/node'; \
+    env -i HOME=/tmp PATH=/usr/bin:/bin /opt/codex-cli/bin/codex --version
 
 WORKDIR /workspace
 
