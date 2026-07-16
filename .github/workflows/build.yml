@@ -50,7 +50,7 @@ jobs:
             description: Selkies-streamed ChatGPT and Codex desktop workbench
             file: ./Containerfile.chatgpt-desktop
             wrapper_ref: 52e9701e3f1be291821cff904b6cd4bdce30998d
-            codex_cli_version: latest
+            codex_cli_version: 0.144.5
 
     steps:
       - name: Check out repository
@@ -123,13 +123,32 @@ jobs:
           file: ${{ matrix.file }}
           platforms: linux/amd64
           push: ${{ github.event_name != 'pull_request' }}
+          load: ${{ github.event_name == 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             CODEX_DESKTOP_LINUX_REF=${{ matrix.wrapper_ref }}
             CODEX_CLI_VERSION=${{ matrix.codex_cli_version }}
+            GROTTO_BUILD_REVISION=${{ github.sha }}
             MAX_BUILD_THREADS=4
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=min,scope=${{ matrix.name }}
-          provenance: false
-          sbom: false
+          provenance: ${{ github.event_name != 'pull_request' }}
+          sbom: ${{ github.event_name != 'pull_request' }}
+
+      - name: Smoke test desktop runtime
+        if: matrix.kind == 'desktop' && github.event_name == 'pull_request'
+        shell: bash
+        env:
+          IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          image="$(head -n 1 <<< "$IMAGE_TAGS")"
+          docker run --rm \
+            --user abc \
+            --shm-size=2g \
+            --env HOME=/config \
+            --env CODEX_HOME=/config/.codex \
+            --env GROTTO_EXPECT_CODEX_SANDBOX=record \
+            --entrypoint /usr/local/libexec/grotto-chatgpt-desktop-smoke \
+            "$image"

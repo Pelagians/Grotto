@@ -51,6 +51,13 @@ building because the DMG and expanded Electron application require substantial
 temporary storage. That cleanup is conditional and does not run for the smaller
 agent images.
 
+Pull-request builds load the completed desktop image and run
+`grotto-chatgpt-desktop-smoke` as the effective `abc` desktop user. The smoke
+test runs `/bin/true`, validates the stable `grotto-doctor --json` schema, checks
+the persistent roots, and records Bubblewrap and Landlock results. GitHub's
+Docker runner does not validate Fedora SELinux or rootless Podman behavior; use
+the separate Fedora procedure below for that boundary.
+
 The wrapper is open source, while the upstream ChatGPT Desktop payload retains
 its own license and distribution terms.
 
@@ -72,15 +79,30 @@ Override the pinned wrapper revision or Codex CLI version:
 podman build \
   --file Containerfile.chatgpt-desktop \
   --build-arg CODEX_DESKTOP_LINUX_REF=52e9701e3f1be291821cff904b6cd4bdce30998d \
-  --build-arg CODEX_CLI_VERSION=latest \
+  --build-arg CODEX_CLI_VERSION=0.144.5 \
   --tag localhost/grotto-chatgpt-desktop:dev \
   .
 ```
 
+Component updates are intentional and reviewable:
+
+1. Check the current Codex release with `npm view @openai/codex version` and
+   update both the Containerfile default and CI matrix value.
+2. Resolve the Selkies index digest with
+   `docker buildx imagetools inspect ghcr.io/linuxserver/baseimage-selkies:debiantrixie`.
+3. When changing 7-Zip, update the architecture-specific checksums from the
+   publisher and verify every supported archive.
+4. Build the image, run `grotto-doctor --json`, and review the recorded wrapper,
+   Codex, base-image, desktop, Electron, and DMG metadata.
+
+Published builds attach SBOM and provenance attestations. Pull-request image
+loads disable attestations because the local Docker image exporter does not
+retain registry attestations.
+
 ## Run with Intel or AMD graphics
 
 ```bash
-mkdir -p chatgpt-config workspace
+mkdir -p chatgpt-config workspace tools cache
 
 podman run --rm \
   --name grotto-chatgpt-desktop \
@@ -97,6 +119,8 @@ podman run --rm \
   --env AUTO_GPU=true \
   --volume "$PWD/chatgpt-config:/config:Z" \
   --volume "$PWD/workspace:/workspace:Z" \
+  --volume "$PWD/tools:/tools:Z" \
+  --volume "$PWD/cache:/cache:Z" \
   ghcr.io/pelagians/grotto-chatgpt-desktop:latest
 ```
 
@@ -182,9 +206,77 @@ servers instead of hard-coded public resolvers.
 - `/config/.local/state` contains launcher state.
 - `/config/.codex` contains Codex credentials and project state.
 - `/workspace` is the project workspace.
+- `/tools` contains persistent user-installed tools and language environments.
+- `/cache` contains disposable npm, pip, and uv package caches.
 
 Treat `/config` as sensitive. It can contain authenticated application and
 Codex state.
+
+## Workbench tools and persistent paths
+
+Live inventory confirmed that Selkies already supplies the compiler, shell,
+Git, curl, jq, Python, and standard system utilities. The desktop image adds
+only the missing baseline tools: `gh`, `lsof`, `pkg-config`, `pip3`,
+`ripgrep`, `shellcheck`, `sqlite3`, `unzip`, and `zip`.
+
+Persistent installation paths are configured as follows:
+
+| Purpose | Path |
+| --- | --- |
+| General executables | `/tools/bin` |
+| npm global prefix | `/tools/npm` |
+| pnpm home | `/tools/pnpm` |
+| Cargo home | `/tools/cargo` |
+| mise data and shims | `/tools/mise` |
+| Python user base and virtual environments | `/tools/python` and `/tools/venvs` |
+| pipx state | `/tools/pipx` |
+| npm, pip, and uv caches | `/cache/npm`, `/cache/pip`, and `/cache/uv` |
+
+The init script creates only Grotto-managed directories, assigns them to
+`abc`, and does not recursively change project ownership. The graphical
+terminal can install tools into these locations. Codex sandbox commands receive
+the active permission profile: `/tools` remains read/execute unless a profile
+explicitly grants a tool-installation task write access. Grotto does not make
+`/tools` writable in every sandbox.
+
+## Runtime diagnostics
+
+Run the non-destructive doctor inside the image:
+
+```bash
+podman exec \
+  --user abc \
+  --env HOME=/config \
+  --env CODEX_HOME=/config/.codex \
+  grotto-chatgpt-desktop \
+  grotto-doctor
+
+podman exec \
+  --user abc \
+  --env HOME=/config \
+  --env CODEX_HOME=/config/.codex \
+  grotto-chatgpt-desktop \
+  grotto-doctor --json
+```
+
+The JSON schema reports component versions, identity and groups, environment
+paths, mount and device state, SELinux and seccomp status, user namespaces,
+direct execution, Bubblewrap primitives, Codex permission profiles, Landlock
+diagnostics, and OpenAI authentication-host DNS and HTTPS connectivity.
+
+The current rootless Fedora container has an unresolved nested Bubblewrap
+limitation. Direct terminal commands work, while fresh devpts setup and
+synthetic protected-path remounts fail. Grotto does not install an automatic
+fallback, bind the complete outer `/dev`, or weaken `.git`, `.agents`, or
+`.codex` protections. See
+[ChatGPT Desktop sandbox investigation](chatgpt-desktop-sandbox.md) for exact
+commands, timestamps, syscall traces, device differences, and remaining
+architecture candidates.
+
+For Fedora validation, run the image with rootless Podman, normal seccomp,
+SELinux enforcing, and `:Z` volume labels. Capture host AVC records for the
+doctor interval. Do not infer Fedora SELinux behavior from GitHub-hosted Docker
+CI.
 
 ## Remove the local runtime completely
 

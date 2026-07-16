@@ -1,8 +1,9 @@
 # syntax=docker/dockerfile:1.7
 
 ARG CODEX_DESKTOP_LINUX_REF=52e9701e3f1be291821cff904b6cd4bdce30998d
-ARG CODEX_CLI_VERSION=latest
-ARG SELKIES_BASE_IMAGE=ghcr.io/linuxserver/baseimage-selkies:debiantrixie
+ARG CODEX_CLI_VERSION=0.144.5
+ARG SELKIES_BASE_IMAGE=ghcr.io/linuxserver/baseimage-selkies:debiantrixie@sha256:ac7fd6d182238b4a99e66554c5e75be48a714e2a0c9da81bd18e171ff9ba3dd5
+ARG GROTTO_BUILD_REVISION=unknown
 
 FROM docker.io/library/debian:trixie-slim AS builder
 
@@ -36,13 +37,22 @@ RUN set -eux; \
 # them, so install a modern standalone 7zz before invoking the wrapper.
 RUN set -eux; \
     case "$(dpkg --print-architecture)" in \
-        amd64) sevenzip_arch=x64 ;; \
-        arm64) sevenzip_arch=arm64 ;; \
-        armhf) sevenzip_arch=arm ;; \
+        amd64) \
+            sevenzip_arch=x64; \
+            sevenzip_sha256=c74dc4a48492cde43f5fec10d53fb2a66f520e4a62a69d630c44cb22c477edc6 ;; \
+        arm64) \
+            sevenzip_arch=arm64; \
+            sevenzip_sha256=aa8f3d0a19af9674d3af0ec788b4e261501071e626cd75ad149f1c2c176cc87d ;; \
+        armhf) \
+            sevenzip_arch=arm; \
+            sevenzip_sha256=54755c32564c5966ab6ddeca376472e1d146b3b76648184f6a7797a7fab3af52 ;; \
         *) echo "Unsupported build architecture: $(dpkg --print-architecture)" >&2; exit 1 ;; \
     esac; \
-    curl -fsSL "https://www.7-zip.org/a/7z2600-linux-${sevenzip_arch}.tar.xz" \
-        | tar -xJ -C /usr/local/bin 7zz; \
+    archive=/tmp/7zip.tar.xz; \
+    curl -fsSL "https://www.7-zip.org/a/7z2600-linux-${sevenzip_arch}.tar.xz" -o "$archive"; \
+    printf '%s  %s\n' "$sevenzip_sha256" "$archive" | sha256sum -c -; \
+    tar -xJf "$archive" -C /usr/local/bin 7zz; \
+    rm -f "$archive"; \
     chmod 0755 /usr/local/bin/7zz; \
     7zz | head -n 2
 
@@ -104,6 +114,16 @@ RUN set -eux; \
 
 FROM ${SELKIES_BASE_IMAGE}
 
+ARG CODEX_DESKTOP_LINUX_REF
+ARG CODEX_CLI_VERSION
+ARG SELKIES_BASE_IMAGE
+ARG GROTTO_BUILD_REVISION
+
+LABEL io.pelagians.grotto.wrapper-revision="$CODEX_DESKTOP_LINUX_REF" \
+      io.pelagians.grotto.codex-cli-version="$CODEX_CLI_VERSION" \
+      io.pelagians.grotto.selkies-base-image="$SELKIES_BASE_IMAGE" \
+      org.opencontainers.image.revision="$GROTTO_BUILD_REVISION"
+
 # LinuxServer installs the Selkies backend in /lsiopy. Keep that venv on PATH;
 # its s6 service invokes the bare `selkies` command during container startup.
 ENV TITLE="ChatGPT Desktop" \
@@ -115,6 +135,10 @@ ENV TITLE="ChatGPT Desktop" \
     FILE_MANAGER_PATH=/workspace \
     GROTTO_RUNTIME=chatgpt-desktop \
     GROTTO_CHATGPT_AUTH_MODE=device \
+    GROTTO_BUILD_REVISION="$GROTTO_BUILD_REVISION" \
+    GROTTO_CODEX_DESKTOP_LINUX_REF="$CODEX_DESKTOP_LINUX_REF" \
+    GROTTO_CODEX_CLI_VERSION="$CODEX_CLI_VERSION" \
+    GROTTO_SELKIES_BASE_IMAGE="$SELKIES_BASE_IMAGE" \
     CODEX_HOME=/config/.codex \
     CODEX_CLI_PATH=/opt/codex-cli/bin/codex \
     CODEX_MANAGED_NODE_RUNTIME_DIR=/opt/chatgpt/resources/node-runtime \
@@ -122,13 +146,24 @@ ENV TITLE="ChatGPT Desktop" \
     XDG_CACHE_HOME=/config/.cache \
     XDG_STATE_HOME=/config/.local/state \
     CODEX_FORCE_DEVICE_SCALE_FACTOR=1 \
-    PATH=/opt/codex-cli/bin:/opt/chatgpt/resources/node-runtime/bin:/lsiopy/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    CARGO_HOME=/tools/cargo \
+    MISE_DATA_DIR=/tools/mise \
+    NPM_CONFIG_CACHE=/cache/npm \
+    NPM_CONFIG_PREFIX=/tools/npm \
+    PIP_CACHE_DIR=/cache/pip \
+    PIPX_BIN_DIR=/tools/bin \
+    PIPX_HOME=/tools/pipx \
+    PNPM_HOME=/tools/pnpm \
+    PYTHONUSERBASE=/tools/python \
+    UV_CACHE_DIR=/cache/uv \
+    PATH=/tools/bin:/tools/npm/bin:/tools/pnpm:/tools/cargo/bin:/tools/mise/shims:/opt/codex-cli/bin:/opt/chatgpt/resources/node-runtime/bin:/lsiopy/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 RUN set -eux; \
     apt-get update -o Acquire::Retries=5; \
     apt-get install --no-install-recommends -y \
         at-spi2-core \
         ca-certificates \
+        gh \
         libasound2t64 \
         libatk-bridge2.0-0 \
         libatk1.0-0 \
@@ -154,25 +189,57 @@ RUN set -eux; \
         libxfixes3 \
         libxkbcommon0 \
         libxrandr2 \
+        lsof \
+        pkg-config \
         python3 \
+        python3-pip \
+        ripgrep \
+        shellcheck \
+        sqlite3 \
+        unzip \
         xdg-utils \
-        xterm; \
+        xterm \
+        zip; \
     rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /opt/chatgpt /opt/chatgpt
 COPY --from=builder /opt/codex-cli /opt/codex-cli
 COPY runtimes/chatgpt-desktop/root/ /
+COPY tests/chatgpt-desktop-runtime.sh /usr/local/libexec/grotto-chatgpt-desktop-smoke
 
 RUN set -eux; \
     chmod 0755 \
         /defaults/autostart \
+        /usr/local/bin/grotto-doctor \
         /usr/local/bin/grotto-chatgpt-auth \
+        /usr/local/libexec/grotto-chatgpt-desktop-smoke \
         /custom-cont-init.d/10-grotto-chatgpt-permissions; \
     bash -n /defaults/autostart; \
     bash -n /usr/local/bin/grotto-chatgpt-auth; \
     bash -n /custom-cont-init.d/10-grotto-chatgpt-permissions; \
+    bash -n /usr/local/libexec/grotto-chatgpt-desktop-smoke; \
+    python3 -m py_compile /usr/local/bin/grotto-doctor; \
+    rm -rf /usr/local/bin/__pycache__; \
+    shellcheck \
+        /defaults/autostart \
+        /custom-cont-init.d/10-grotto-chatgpt-permissions \
+        /usr/local/libexec/grotto-chatgpt-desktop-smoke; \
     chmod -R a+rX /opt/chatgpt /opt/codex-cli; \
-    install -d -o abc -g abc -m 0755 /workspace; \
+    install -d -o abc -g abc -m 0755 \
+        /workspace \
+        /tools \
+        /tools/bin \
+        /tools/cargo \
+        /tools/mise \
+        /tools/npm \
+        /tools/pnpm \
+        /tools/python \
+        /tools/pipx \
+        /tools/venvs \
+        /cache \
+        /cache/npm \
+        /cache/pip \
+        /cache/uv; \
     if [ -f /opt/chatgpt/.codex-linux/codex-desktop.png ]; then \
         install -m 0644 \
             /opt/chatgpt/.codex-linux/codex-desktop.png \
@@ -190,4 +257,4 @@ WORKDIR /workspace
 
 EXPOSE 3001
 
-VOLUME ["/config", "/workspace"]
+VOLUME ["/config", "/workspace", "/tools", "/cache"]
