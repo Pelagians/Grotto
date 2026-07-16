@@ -1,1 +1,0 @@
-"""OpenQuad worker daemon package."""
