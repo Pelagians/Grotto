@@ -1,0 +1,15 @@
+#!/usr/bin/with-contenv bash
+set -Eeuo pipefail
+
+# LinuxServer adjusts the abc account to PUID/PGID before custom init scripts run.
+# Keep Codex credentials owned by the same account that launches the desktop app.
+install -d -o abc -g abc -m 0700 /config/.codex
+
+if [[ -d /config/.codex ]]; then
+    chown -R abc:abc /config/.codex
+    chmod 0700 /config/.codex
+fi
+
+if [[ -f /config/.codex/auth.json ]]; then
+    chmod 0600 /config/.codex/auth.json
+fi
