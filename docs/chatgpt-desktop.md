@@ -138,16 +138,23 @@ For a CPU/X11 fallback, omit `/dev/dri` and use:
 ## First-run authentication
 
 The image does not install a full web browser. When no readable Codex session
-exists, Grotto opens a small terminal before launching ChatGPT Desktop and runs:
+exists, Grotto opens a dedicated authentication window before ChatGPT Desktop.
+It starts the supported Codex device-code flow with stdin disconnected, so
+ordinary keyboard input cannot dismiss the window or accidentally skip sign-in.
 
-```bash
-codex login --device-auth
-```
+The window provides:
 
-The terminal displays an OpenAI verification URL and one-time code. Open the
-URL in the normal host browser or on another device, enter the code, and leave
-the terminal open until Codex reports success. The terminal then closes and
-ChatGPT Desktop starts with the same authenticated Codex state.
+- a scannable QR code for the OpenAI device page
+- an `Open sign-in page` action that also falls back to copying the URL
+- explicit `Copy link` and `Copy code` buttons
+- a selectable URL and one-time code
+- a 15-minute expiration countdown
+- explicit retry and confirmed skip actions
+- clear DNS and timeout errors
+
+Complete authentication in the normal host browser or on another device. The
+dialog closes only after Codex confirms the session, then ChatGPT Desktop starts
+using the same persisted state.
 
 The bootstrap runs as LinuxServer's `abc` account. Its credentials are written
 to `/config/.codex/auth.json` with restrictive permissions and are readable by
@@ -322,7 +329,7 @@ The image provides:
 
 - ChatGPT Desktop UI
 - Codex CLI
-- browserless device-code authentication bootstrap
+- browserless graphical device-code authentication
 - Selkies HTTPS desktop streaming
 - persistent application state
 - a mounted project workspace

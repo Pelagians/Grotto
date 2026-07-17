@@ -169,6 +169,8 @@ RUN set -eux; \
         gh \
         git \
         jq \
+        gir1.2-gdkpixbuf-2.0 \
+        gir1.2-gtk-3.0 \
         libasound2t64 \
         libatk-bridge2.0-0 \
         libatk1.0-0 \
@@ -197,13 +199,15 @@ RUN set -eux; \
         lsof \
         pkg-config \
         python3 \
+        python3-cairo \
+        python3-gi \
         python3-pip \
+        qrencode \
         ripgrep \
         shellcheck \
         sqlite3 \
         unzip \
         xdg-utils \
-        xterm \
         zip; \
     rm -rf /var/lib/apt/lists/*
 
@@ -220,7 +224,8 @@ RUN set -eux; \
         /usr/local/libexec/grotto-chatgpt-desktop-smoke \
         /custom-cont-init.d/10-grotto-chatgpt-permissions; \
     bash -n /defaults/autostart; \
-    bash -n /usr/local/bin/grotto-chatgpt-auth; \
+    python3 -m py_compile /usr/local/bin/grotto-chatgpt-auth; \
+    python3 /usr/local/bin/grotto-chatgpt-auth --self-test; \
     bash -n /custom-cont-init.d/10-grotto-chatgpt-permissions; \
     bash -n /usr/local/libexec/grotto-chatgpt-desktop-smoke; \
     python3 -m py_compile /usr/local/bin/grotto-doctor; \
@@ -235,6 +240,8 @@ RUN set -eux; \
     do \
         command -v "$command_name"; \
     done; \
+    python3 -c 'import gi; gi.require_version("Gtk", "3.0"); gi.require_version("GdkPixbuf", "2.0"); from gi.repository import GdkPixbuf, Gtk'; \
+    command -v qrencode; \
     chmod -R a+rX /opt/chatgpt /opt/codex-cli; \
     install -d -o abc -g abc -m 0755 \
         /config \
@@ -260,7 +267,6 @@ RUN set -eux; \
     fi; \
     test -x /lsiopy/bin/selkies; \
     test "$(command -v selkies)" = /lsiopy/bin/selkies; \
-    test -x /usr/bin/xterm; \
     test -x /opt/chatgpt/start.sh; \
     test -x /opt/codex-cli/bin/codex; \
     test "$(head -n 1 /opt/codex-cli/lib/node_modules/@openai/codex/bin/codex.js)" = '#!/opt/chatgpt/resources/node-runtime/bin/node'; \
