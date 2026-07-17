@@ -9,6 +9,7 @@ fi
 required=(
     bash
     curl
+    find
     gh
     git
     jq
@@ -25,7 +26,10 @@ required=(
     zip
 )
 for command_name in "${required[@]}"; do
-    command -v "$command_name" >/dev/null
+    if ! command -v "$command_name" >/dev/null; then
+        echo "required command not found on PATH: $command_name" >&2
+        exit 1
+    fi
 done
 
 bundled_bwrap="$(find /opt/codex-cli/lib/node_modules/@openai/codex \
@@ -36,8 +40,11 @@ test -x "$bundled_bwrap"
 /bin/true
 
 for path in /config /workspace /tools /cache; do
-    test -d "$path"
-    test -w "$path"
+    if [[ ! -d "$path" || ! -w "$path" ]]; then
+        echo "required writable directory is unavailable: $path" >&2
+        ls -ld "$path" >&2 || true
+        exit 1
+    fi
 done
 
 report="$(mktemp)"

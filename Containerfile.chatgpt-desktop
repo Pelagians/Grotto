@@ -162,8 +162,13 @@ RUN set -eux; \
     apt-get update -o Acquire::Retries=5; \
     apt-get install --no-install-recommends -y \
         at-spi2-core \
+        bash \
         ca-certificates \
+        curl \
+        findutils \
         gh \
+        git \
+        jq \
         libasound2t64 \
         libatk-bridge2.0-0 \
         libatk1.0-0 \
@@ -224,6 +229,12 @@ RUN set -eux; \
         /defaults/autostart \
         /custom-cont-init.d/10-grotto-chatgpt-permissions \
         /usr/local/libexec/grotto-chatgpt-desktop-smoke; \
+    for command_name in \
+        bash curl find gh git jq lsof node npm pip3 pkg-config python3 rg \
+        shellcheck sqlite3 unzip zip; \
+    do \
+        command -v "$command_name"; \
+    done; \
     chmod -R a+rX /opt/chatgpt /opt/codex-cli; \
     install -d -o abc -g abc -m 0755 \
         /workspace \
