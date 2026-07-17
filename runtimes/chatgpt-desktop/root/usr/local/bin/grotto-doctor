@@ -117,9 +117,9 @@ def probe_cache_path() -> pathlib.Path:
 
 
 def read_probe_cache(path: pathlib.Path) -> tuple[dict[str, Any] | None, str | None]:
-    if not path.exists():
-        return None, None
     try:
+        if not path.exists():
+            return None, None
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         return None, str(exc)

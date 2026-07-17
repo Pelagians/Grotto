@@ -214,6 +214,15 @@ class DoctorTest(unittest.TestCase):
             self.assertEqual(cached, record)
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
 
+    def test_unreadable_probe_cache_is_reported_without_crashing(self) -> None:
+        path = mock.Mock()
+        path.exists.side_effect = PermissionError("cache is not traversable")
+
+        cached, error = doctor.read_probe_cache(path)
+
+        self.assertIsNone(cached)
+        self.assertIn("cache is not traversable", error)
+
 
 if __name__ == "__main__":
     unittest.main()
