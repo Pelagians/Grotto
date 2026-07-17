@@ -5,7 +5,7 @@ Grotto currently publishes two OCI images.
 | Image | Type | Purpose | Persistent paths | Ports |
 | --- | --- | --- | --- | --- |
 | `ghcr.io/pelagians/grotto-openclaw:latest` | Agent application | General OpenClaw gateway with curated baseline tools and a persistent user toolchain | `/config`, `/workspace`, `/tools`, `/cache` | `18789` |
-| `ghcr.io/pelagians/grotto-chatgpt-desktop:latest` | Interactive workbench | Selkies-streamed ChatGPT Desktop and Codex workspace | `/config`, `/workspace` | `3001` |
+| `ghcr.io/pelagians/grotto-chatgpt-desktop:latest` | Interactive workbench | Selkies-streamed ChatGPT Desktop and Codex workspace | `/config`, `/workspace`, `/tools`, `/cache` | `3001` |
 
 ## Grotto OpenClaw
 

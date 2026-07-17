@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 export HOME="${HOME:-/config}"
 export CODEX_HOME="${CODEX_HOME:-/config/.codex}"
-export PATH="/opt/codex-cli/bin:/opt/chatgpt/resources/node-runtime/bin:/lsiopy/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+export PATH="/tools/bin:/tools/npm/bin:/tools/pnpm:/tools/cargo/bin:/tools/mise/shims:/opt/codex-cli/bin:/opt/chatgpt/resources/node-runtime/bin:/lsiopy/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 install -d -m 0755 \
     /config/.cache \
