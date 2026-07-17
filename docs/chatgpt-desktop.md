@@ -78,7 +78,7 @@ Override the pinned wrapper revision or Codex CLI version:
 ```bash
 podman build \
   --file Containerfile.chatgpt-desktop \
-  --build-arg CODEX_DESKTOP_LINUX_REF=52e9701e3f1be291821cff904b6cd4bdce30998d \
+  --build-arg CODEX_DESKTOP_LINUX_REF=7d4049b68b17bc663b8a934326fefcaca99e8ceb \
   --build-arg CODEX_CLI_VERSION=0.144.5 \
   --tag localhost/grotto-chatgpt-desktop:dev \
   .

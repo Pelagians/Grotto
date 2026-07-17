@@ -8,7 +8,7 @@ endif
 
 GROTTO_OPENCLAW_IMAGE ?= grotto-openclaw:dev
 GROTTO_CHATGPT_DESKTOP_IMAGE ?= grotto-chatgpt-desktop:dev
-CODEX_DESKTOP_LINUX_REF ?= 52e9701e3f1be291821cff904b6cd4bdce30998d
+CODEX_DESKTOP_LINUX_REF ?= 7d4049b68b17bc663b8a934326fefcaca99e8ceb
 CODEX_CLI_VERSION ?= latest
 
 check:

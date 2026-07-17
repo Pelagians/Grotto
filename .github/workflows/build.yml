@@ -49,7 +49,7 @@ jobs:
             title: Grotto ChatGPT Desktop
             description: Selkies-streamed ChatGPT and Codex desktop workbench
             file: ./Containerfile.chatgpt-desktop
-            wrapper_ref: 52e9701e3f1be291821cff904b6cd4bdce30998d
+            wrapper_ref: 7d4049b68b17bc663b8a934326fefcaca99e8ceb
             codex_cli_version: 0.144.5
 
     steps:
