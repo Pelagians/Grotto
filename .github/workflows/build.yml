@@ -149,6 +149,5 @@ jobs:
             --shm-size=2g \
             --env HOME=/config \
             --env CODEX_HOME=/config/.codex \
-            --env GROTTO_EXPECT_CODEX_SANDBOX=record \
             --entrypoint /usr/local/libexec/grotto-chatgpt-desktop-smoke \
             "$image"

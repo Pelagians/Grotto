@@ -215,6 +215,7 @@ COPY --from=builder /opt/chatgpt /opt/chatgpt
 COPY --from=builder /opt/codex-cli /opt/codex-cli
 COPY runtimes/chatgpt-desktop/root/ /
 COPY tests/chatgpt-desktop-runtime.sh /usr/local/libexec/grotto-chatgpt-desktop-smoke
+COPY tests/test_grotto_doctor.py /usr/local/libexec/test-grotto-doctor.py
 
 RUN set -eux; \
     chmod 0755 \
@@ -228,8 +229,13 @@ RUN set -eux; \
     python3 /usr/local/bin/grotto-chatgpt-auth --self-test; \
     bash -n /custom-cont-init.d/10-grotto-chatgpt-permissions; \
     bash -n /usr/local/libexec/grotto-chatgpt-desktop-smoke; \
-    python3 -m py_compile /usr/local/bin/grotto-doctor; \
-    rm -rf /usr/local/bin/__pycache__; \
+    python3 -m py_compile \
+        /usr/local/bin/grotto-doctor \
+        /usr/local/libexec/test-grotto-doctor.py; \
+    GROTTO_DOCTOR_UNDER_TEST=/usr/local/bin/grotto-doctor \
+        python3 /usr/local/libexec/test-grotto-doctor.py; \
+    rm -f /usr/local/libexec/test-grotto-doctor.py; \
+    rm -rf /usr/local/bin/__pycache__ /usr/local/libexec/__pycache__; \
     shellcheck \
         /defaults/autostart \
         /custom-cont-init.d/10-grotto-chatgpt-permissions \

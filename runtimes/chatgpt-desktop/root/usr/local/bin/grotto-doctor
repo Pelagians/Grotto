@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime
 import glob
 import grp
 import json
@@ -21,6 +22,13 @@ import urllib.request
 from typing import Any
 
 SCHEMA_VERSION = 1
+PROBE_CACHE_SCHEMA_VERSION = 1
+PROBE_NOT_RUN_REASON = "active probe requires --probe-sandbox"
+PROBE_WARNING = (
+    "WARNING: --probe-sandbox will intentionally trigger host SELinux AVCs "
+    "on known-incompatible rootless Fedora hosts while it runs nested "
+    "sandbox mount and remount tests."
+)
 AUTH_HOST = "auth.openai.com"
 CODEX = "/opt/codex-cli/bin/codex"
 MANAGED_NODE_DIR = "/opt/chatgpt/resources/node-runtime/bin"
@@ -89,6 +97,65 @@ def read_json(path: str) -> dict[str, Any]:
         return value if isinstance(value, dict) else {}
     except (OSError, UnicodeError, json.JSONDecodeError):
         return {}
+
+
+def utc_timestamp() -> str:
+    return (
+        datetime.datetime.now(datetime.timezone.utc)
+        .isoformat(timespec="seconds")
+        .replace("+00:00", "Z")
+    )
+
+
+def probe_cache_path() -> pathlib.Path:
+    cache_home = os.environ.get("XDG_CACHE_HOME")
+    if not cache_home:
+        cache_home = str(
+            pathlib.Path(os.environ.get("HOME", "/config")) / ".cache"
+        )
+    return pathlib.Path(cache_home) / "grotto" / "doctor-sandbox-probe.json"
+
+
+def read_probe_cache(path: pathlib.Path) -> tuple[dict[str, Any] | None, str | None]:
+    try:
+        if not path.exists():
+            return None, None
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        return None, str(exc)
+    if not isinstance(value, dict):
+        return None, "cached probe is not a JSON object"
+    if value.get("schema_version") != PROBE_CACHE_SCHEMA_VERSION:
+        return None, "cached probe schema version is unsupported"
+    return value, None
+
+
+def write_probe_cache(path: pathlib.Path, value: dict[str, Any]) -> str | None:
+    temporary_path: pathlib.Path | None = None
+    try:
+        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            prefix=f".{path.name}.",
+            dir=path.parent,
+            delete=False,
+        ) as handle:
+            temporary_path = pathlib.Path(handle.name)
+            os.chmod(temporary_path, 0o600)
+            json.dump(value, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_path, path)
+        return None
+    except (OSError, TypeError, ValueError) as exc:
+        if temporary_path is not None:
+            try:
+                temporary_path.unlink()
+            except OSError:
+                pass
+        return str(exc)
 
 
 def path_status(path: str) -> dict[str, Any]:
@@ -183,6 +250,51 @@ def version_info(path: str | None, args: list[str]) -> dict[str, Any]:
         "path": path,
         "version": output.splitlines()[0] if output else None,
     }
+
+
+def bubblewrap_version_info(
+    path: str | None,
+    system_bwrap: str | None,
+) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "path": path,
+        "version": None,
+        "version_source": None,
+    }
+    if not path:
+        return result
+    if path != system_bwrap:
+        result["version_source"] = "bundled binary not executed by default"
+        return result
+
+    package_queries = (
+        (
+            "/usr/bin/dpkg-query",
+            [
+                "/usr/bin/dpkg-query",
+                "-W",
+                "-f=$" + "{Version}",
+                "bubblewrap",
+            ],
+            "dpkg",
+        ),
+        (
+            shutil.which("rpm", path=DIAGNOSTIC_PATH),
+            ["rpm", "-q", "--qf", "%{VERSION}-%{RELEASE}", "bubblewrap"],
+            "rpm",
+        ),
+    )
+    for executable, command, source in package_queries:
+        if not executable or not os.access(executable, os.X_OK):
+            continue
+        command[0] = executable
+        query = run(command)
+        if query["ok"] and query["stdout"]:
+            result["version"] = query["stdout"].splitlines()[0]
+            result["version_source"] = source
+            return result
+    result["version_source"] = "package metadata unavailable"
+    return result
 
 
 def memory_status() -> dict[str, int]:
@@ -484,7 +596,34 @@ def collect_sandbox_checks(
     return checks, probe_details
 
 
-def collect() -> dict[str, Any]:
+def run_sandbox_probe(
+    bwrap_helper: str | None,
+    selected_backend: str,
+) -> dict[str, Any]:
+    started_at = utc_timestamp()
+    checks, details = collect_sandbox_checks(bwrap_helper)
+    completed_at = utc_timestamp()
+    probe_ok = bool(
+        checks["direct_command"]["ok"]
+        and checks["codex_workspace_permissions"]["ok"]
+    )
+    return {
+        "schema_version": PROBE_CACHE_SCHEMA_VERSION,
+        "status": "completed",
+        "reason": None,
+        "active_probe": True,
+        "may_generate_host_avcs": True,
+        "probe_started_at": started_at,
+        "probe_completed_at": completed_at,
+        "selected_backend": selected_backend,
+        "selected_bwrap": bwrap_helper,
+        "ok": probe_ok,
+        "checks": checks,
+        "details": details,
+    }
+
+
+def collect(*, active_probe: bool = False) -> dict[str, Any]:
     build_info = read_json("/opt/chatgpt/.codex-linux/build-info.json")
     upstream = build_info.get("upstreamDmg", {})
     source = build_info.get("source", {})
@@ -497,7 +636,25 @@ def collect() -> dict[str, Any]:
     )
     landlock_enabled, feature_listing = effective_landlock_enabled()
     selected_backend = "landlock" if landlock_enabled else "bubblewrap"
-    checks, probe_details = collect_sandbox_checks(selected_bwrap)
+    cache_path = probe_cache_path()
+    cached_probe, cache_read_error = read_probe_cache(cache_path)
+    cache_write_error = None
+    if active_probe:
+        sandbox_probe = run_sandbox_probe(selected_bwrap, selected_backend)
+        cache_write_error = write_probe_cache(cache_path, sandbox_probe)
+        if cache_write_error is None:
+            cached_probe = sandbox_probe
+            cache_read_error = None
+    else:
+        sandbox_probe = {
+            "status": "not_run",
+            "reason": PROBE_NOT_RUN_REASON,
+            "ok": None,
+            "checks": {},
+            "details": None,
+        }
+    checks = sandbox_probe["checks"]
+    probe_details = sandbox_probe["details"]
 
     try:
         statvfs = os.statvfs("/dev/shm")
@@ -534,7 +691,7 @@ def collect() -> dict[str, Any]:
         "ripgrep": version_info(command_paths["rg"], ["--version"]),
         "jq": version_info(command_paths["jq"], ["--version"]),
         "gh": version_info(command_paths["gh"], ["--version"]),
-        "bubblewrap": version_info(selected_bwrap, ["--version"]),
+        "bubblewrap": bubblewrap_version_info(selected_bwrap, system_bwrap),
         "shellcheck": version_info(command_paths["shellcheck"], ["--version"]),
         "sqlite3": version_info(command_paths["sqlite3"], ["--version"]),
     }
@@ -547,33 +704,34 @@ def collect() -> dict[str, Any]:
     )
 
     remediation: list[str] = []
-    fresh_dev_error = checks["bubblewrap_fresh_dev"]["stderr"]
-    protected_error = checks["bubblewrap_protected_child_remount"]["stderr"]
-    if "Can't mount devpts" in fresh_dev_error:
-        remediation.append(
-            "Codex's fresh minimal /dev setup is blocked at the nested devpts "
-            "mount. Do not bind the complete outer /dev without reviewing the "
-            "additional device and shared-PTY exposure."
-        )
-    if "Can't remount readonly" in protected_error:
-        remediation.append(
-            "Bubblewrap cannot remount synthetic protected metadata paths "
-            "read-only in this container. Preserve .git, .agents, and .codex "
-            "protections while investigating an upstream-compatible mount path."
-        )
-    if not checks["landlock_workspace_profile"]["ok"]:
-        remediation.append(
-            "Legacy Landlock is a read-only diagnostic here; the installed "
-            "Codex rejects it for permission profiles requiring direct runtime "
-            "enforcement."
-        )
-    if not checks["codex_workspace_permissions"]["ok"]:
-        remediation.append(
-            "The Codex workspace sandbox is not ready. Keep SELinux and normal "
-            "Podman seccomp enabled. An unavailable container audit stream is "
-            "not evidence that SELinux was uninvolved; correlate matching AVC "
-            "records from the host."
-        )
+    if active_probe:
+        fresh_dev_error = checks["bubblewrap_fresh_dev"]["stderr"]
+        protected_error = checks["bubblewrap_protected_child_remount"]["stderr"]
+        if "Can't mount devpts" in fresh_dev_error:
+            remediation.append(
+                "Codex's fresh minimal /dev setup is blocked at the nested devpts "
+                "mount. Do not bind the complete outer /dev without reviewing the "
+                "additional device and shared-PTY exposure."
+            )
+        if "Can't remount readonly" in protected_error:
+            remediation.append(
+                "Bubblewrap cannot remount synthetic protected metadata paths "
+                "read-only in this container. Preserve .git, .agents, and .codex "
+                "protections while investigating an upstream-compatible mount path."
+            )
+        if not checks["landlock_workspace_profile"]["ok"]:
+            remediation.append(
+                "Legacy Landlock is a read-only diagnostic here; the installed "
+                "Codex rejects it for permission profiles requiring direct runtime "
+                "enforcement."
+            )
+        if not checks["codex_workspace_permissions"]["ok"]:
+            remediation.append(
+                "The Codex workspace sandbox is not ready. Keep SELinux and normal "
+                "Podman seccomp enabled. An unavailable container audit stream is "
+                "not evidence that SELinux was uninvolved; correlate matching AVC "
+                "records from the host."
+            )
     if not pathlib.Path("/dev/dri").exists():
         remediation.append(
             "No /dev/dri device is available; the desktop will use its "
@@ -582,10 +740,18 @@ def collect() -> dict[str, Any]:
 
     report: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
-        "ok": bool(
-            checks["direct_command"]["ok"]
-            and checks["codex_workspace_permissions"]["ok"]
-        ),
+        "ok": sandbox_probe["ok"],
+        "active_probe": active_probe,
+        "may_generate_host_avcs": active_probe,
+        "probe_started_at": sandbox_probe.get("probe_started_at"),
+        "probe_completed_at": sandbox_probe.get("probe_completed_at"),
+        "sandbox_probe": sandbox_probe,
+        "cached_sandbox_probe": {
+            "path": str(cache_path),
+            "result": cached_probe,
+            "read_error": cache_read_error,
+            "write_error": cache_write_error,
+        },
         "runtime": {
             "name": os.environ.get("GROTTO_RUNTIME", "chatgpt-desktop"),
             "build_revision": os.environ.get(
@@ -684,13 +850,30 @@ def collect() -> dict[str, Any]:
             "selected_backend": selected_backend,
             "selection_source": "effective Codex feature configuration",
             "automatic_fallback_enabled": False,
-            "backend_working": checks["codex_workspace_permissions"]["ok"],
+            "backend_working": (
+                checks["codex_workspace_permissions"]["ok"]
+                if active_probe
+                else None
+            ),
             "feature_listing": feature_listing,
             "selected_bwrap": selected_bwrap,
             "selected_bwrap_source": selected_bwrap_source,
             "system_bwrap": system_bwrap,
             "bundled_bwrap": bundled_bwrap,
-            "probe": probe_details,
+            "probe": {
+                "status": sandbox_probe["status"],
+                "reason": sandbox_probe["reason"],
+                "details": probe_details,
+            },
+            "known_fedora_compatibility": {
+                "status": "known_incompatible",
+                "scope": (
+                    "nested Bubblewrap devpts mounts and protected-path "
+                    "remounts under rootless Fedora SELinux"
+                ),
+                "ordinary_runtime_denials_observed": False,
+                "security_boundaries_unchanged": True,
+            },
             "limitations": [
                 "Legacy Landlock is not equivalent to Bubblewrap for split "
                 "filesystem profiles.",
@@ -707,14 +890,29 @@ def collect() -> dict[str, Any]:
 
 
 def render_human(report: dict[str, Any]) -> str:
+    if report["active_probe"]:
+        overall = "ok" if report["ok"] else "attention required"
+        working = str(report["sandbox"]["backend_working"])
+    else:
+        overall = "static diagnostics collected; sandbox probe not run"
+        working = "untested"
     lines = [
         "Grotto ChatGPT Desktop doctor",
-        f"overall: {'ok' if report['ok'] else 'attention required'}",
+        f"overall: {overall}",
         (
             "sandbox: selected="
             f"{report['sandbox']['selected_backend']} "
-            f"working={report['sandbox']['backend_working']} "
+            f"working={working} "
             "automatic_fallback=false"
+        ),
+        (
+            "sandbox probe: "
+            f"{report['sandbox_probe']['status']}"
+            + (
+                f" ({report['sandbox_probe']['reason']})"
+                if report["sandbox_probe"]["reason"]
+                else ""
+            )
         ),
         f"codex: {report['tools']['codex']['version'] or 'unavailable'}",
         f"wrapper: {report['runtime']['wrapper_revision']}",
@@ -731,6 +929,23 @@ def render_human(report: dict[str, Any]) -> str:
             f"{report['security']['selinux']['attribution']}"
         ),
     ]
+    if report["active_probe"]:
+        lines.extend(
+            (
+                "sandbox probe may generate host AVCs: true",
+                f"sandbox probe started: {report['probe_started_at']}",
+                f"sandbox probe completed: {report['probe_completed_at']}",
+            )
+        )
+    cached_probe = report["cached_sandbox_probe"]["result"]
+    if cached_probe:
+        lines.append(
+            "cached sandbox probe: "
+            f"completed={cached_probe.get('probe_completed_at')} "
+            f"ok={cached_probe.get('ok')}"
+        )
+    else:
+        lines.append("cached sandbox probe: unavailable")
     for name, check in report["checks"].items():
         detail = check["stderr"].splitlines()[0] if check["stderr"] else ""
         lines.append(
@@ -750,20 +965,32 @@ def render_human(report: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--json",
         action="store_true",
         help="emit stable machine-readable JSON",
     )
-    args = parser.parse_args()
-    report = collect()
+    parser.add_argument(
+        "--probe-sandbox",
+        action="store_true",
+        help=(
+            "actively execute Bubblewrap, devpts, protected-remount, "
+            "permission-profile, and Landlock tests; may generate host AVCs"
+        ),
+    )
+    args = parser.parse_args(argv)
+    if args.probe_sandbox:
+        print(PROBE_WARNING, file=sys.stderr)
+    report = collect(active_probe=args.probe_sandbox)
     if args.json:
         json.dump(report, sys.stdout, indent=2, sort_keys=True)
         sys.stdout.write("\n")
     else:
         print(render_human(report))
+    if not args.probe_sandbox:
+        return 0
     return 0 if report["ok"] else 1
 
 

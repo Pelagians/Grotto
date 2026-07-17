@@ -53,10 +53,10 @@ agent images.
 
 Pull-request builds load the completed desktop image and run
 `grotto-chatgpt-desktop-smoke` as the effective `abc` desktop user. The smoke
-test runs `/bin/true`, validates the stable `grotto-doctor --json` schema, checks
-the persistent roots, and records Bubblewrap and Landlock results. GitHub's
-Docker runner does not validate Fedora SELinux or rootless Podman behavior; use
-the separate Fedora procedure below for that boundary.
+test runs `/bin/true`, validates that the stable `grotto-doctor --json` schema is
+non-invasive by default, and checks the persistent roots. GitHub's Docker runner
+does not validate Fedora SELinux or rootless Podman behavior; use the separate
+Fedora procedure below for that boundary.
 
 The wrapper is open source, while the upstream ChatGPT Desktop payload retains
 its own license and distribution terms.
@@ -266,10 +266,35 @@ podman exec \
   grotto-doctor --json
 ```
 
-The JSON schema reports component versions, identity and groups, environment
+Both commands collect the same static state; `--json` changes only formatting.
+The default report records component versions, identity and groups, environment
 paths, mount and device state, SELinux and seccomp status, user namespaces,
-direct execution, Bubblewrap primitives, Codex permission profiles, Landlock
-diagnostics, and OpenAI authentication-host DNS and HTTPS connectivity.
+known Fedora compatibility, and the cached result of the most recent explicit
+sandbox probe. It reports the current sandbox probe as `not_run` rather than
+claiming success or failure.
+
+Run the active Bubblewrap, devpts, protected-remount, Codex permission-profile,
+and Landlock matrix only when host AVC generation is intentional:
+
+```bash
+podman exec \
+  --user abc \
+  --env HOME=/config \
+  --env CODEX_HOME=/config/.codex \
+  grotto-chatgpt-desktop \
+  grotto-doctor --probe-sandbox
+
+podman exec \
+  --user abc \
+  --env HOME=/config \
+  --env CODEX_HOME=/config/.codex \
+  grotto-chatgpt-desktop \
+  grotto-doctor --probe-sandbox --json
+```
+
+The explicit option prints a warning, runs the matrix once, timestamps the
+result, and updates the persistent probe cache. On the known rootless Fedora
+configuration it intentionally reproduces the nested Bubblewrap SELinux AVCs.
 
 The current rootless Fedora container has an unresolved nested Bubblewrap
 limitation. Direct terminal commands work, while fresh devpts setup and
