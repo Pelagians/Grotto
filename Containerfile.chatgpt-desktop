@@ -237,6 +237,7 @@ RUN set -eux; \
     done; \
     chmod -R a+rX /opt/chatgpt /opt/codex-cli; \
     install -d -o abc -g abc -m 0755 \
+        /config \
         /workspace \
         /tools \
         /tools/bin \
@@ -251,6 +252,7 @@ RUN set -eux; \
         /cache/npm \
         /cache/pip \
         /cache/uv; \
+    test "$(stat -c '%U:%G:%a' /config)" = 'abc:abc:755'; \
     if [ -f /opt/chatgpt/.codex-linux/codex-desktop.png ]; then \
         install -m 0644 \
             /opt/chatgpt/.codex-linux/codex-desktop.png \
