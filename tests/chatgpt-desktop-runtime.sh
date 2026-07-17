@@ -55,42 +55,31 @@ grotto-doctor --json > "$report" || doctor_rc=$?
 
 jq -e '.schema_version == 1' "$report" >/dev/null
 jq -e '.identity.user == "abc"' "$report" >/dev/null
-jq -e '.checks.direct_command.ok == true' "$report" >/dev/null
-jq -e '.checks | has("bubblewrap_fresh_dev")' "$report" >/dev/null
-jq -e '.checks | has("bubblewrap_protected_child_remount")' "$report" >/dev/null
-jq -e '.checks | has("codex_workspace_permissions")' "$report" >/dev/null
-jq -e '.checks | has("landlock_read_only")' "$report" >/dev/null
+jq -e '.ok == null' "$report" >/dev/null
+jq -e '.active_probe == false' "$report" >/dev/null
+jq -e '.may_generate_host_avcs == false' "$report" >/dev/null
+jq -e '.probe_started_at == null and .probe_completed_at == null' "$report" >/dev/null
+jq -e '.sandbox_probe.status == "not_run"' "$report" >/dev/null
+jq -e '.sandbox_probe.reason == "active probe requires --probe-sandbox"' "$report" >/dev/null
+jq -e '.checks == {}' "$report" >/dev/null
 jq -e '.security.selinux | has("host_audit_access") and has("attribution")' \
     "$report" >/dev/null
 jq -e '.sandbox.automatic_fallback_enabled == false' "$report" >/dev/null
+jq -e '.sandbox.backend_working == null' "$report" >/dev/null
+jq -e '.sandbox.known_fedora_compatibility.status == "known_incompatible"' \
+    "$report" >/dev/null
 jq -e '.paths["/config"].writable == true' "$report" >/dev/null
 jq -e '.paths["/workspace"].writable == true' "$report" >/dev/null
 jq -e '.paths["/tools"].writable == true' "$report" >/dev/null
 jq -e '.paths["/cache"].writable == true' "$report" >/dev/null
 
-case "${GROTTO_EXPECT_CODEX_SANDBOX:-record}" in
-    pass)
-        jq -e '.checks.codex_workspace_permissions.ok == true' "$report" >/dev/null
-        test "$doctor_rc" -eq 0
-        ;;
-    fail)
-        jq -e '.checks.codex_workspace_permissions.ok == false' "$report" >/dev/null
-        test "$doctor_rc" -ne 0
-        ;;
-    record)
-        ;;
-    *)
-        echo "invalid GROTTO_EXPECT_CODEX_SANDBOX value" >&2
-        exit 64
-        ;;
-esac
+test "$doctor_rc" -eq 0
 
 jq -c '{
   doctor_ok: .ok,
+  active_probe: .active_probe,
+  sandbox_probe: .sandbox_probe.status,
   selected_backend: .sandbox.selected_backend,
-  direct: .checks.direct_command.ok,
-  bubblewrap: .checks.bubblewrap_fresh_dev.ok,
-  protected_remount: .checks.bubblewrap_protected_child_remount.ok,
-  codex_workspace: .checks.codex_workspace_permissions.ok,
-  landlock_read_only: .checks.landlock_read_only.ok
+  backend_working: .sandbox.backend_working,
+  cached_probe_available: (.cached_sandbox_probe.result != null)
 }' "$report"
