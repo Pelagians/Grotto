@@ -25,6 +25,7 @@ ENV TITLE="Claude Desktop" \
     XDG_CACHE_HOME=/config/.cache \
     XDG_DATA_HOME=/config/.local/share \
     XDG_STATE_HOME=/config/.local/state \
+    BROWSER=/usr/local/bin/grotto-claude-browser \
     ELECTRON_OZONE_PLATFORM_HINT=auto \
     GTK_USE_PORTAL=1 \
     CARGO_HOME=/tools/cargo \
@@ -46,7 +47,9 @@ RUN set -eux; \
         ca-certificates \
         curl \
         dbus-x11 \
+        desktop-file-utils \
         findutils \
+        firefox-esr \
         gh \
         git \
         gnome-keyring \
@@ -109,15 +112,24 @@ RUN set -eux; \
         /defaults/autostart \
         /defaults/autostart_wayland \
         /custom-cont-init.d/10-grotto-claude-permissions \
+        /usr/local/bin/grotto-claude-browser \
+        /usr/local/bin/grotto-claude-url-handler \
         /usr/local/libexec/grotto-claude-desktop-smoke; \
     bash -n /defaults/autostart; \
     bash -n /defaults/autostart_wayland; \
     bash -n /custom-cont-init.d/10-grotto-claude-permissions; \
+    bash -n /usr/local/bin/grotto-claude-browser; \
+    bash -n /usr/local/bin/grotto-claude-url-handler; \
     bash -n /usr/local/libexec/grotto-claude-desktop-smoke; \
+    desktop-file-validate \
+        /usr/share/applications/grotto-claude-browser.desktop \
+        /usr/share/applications/grotto-claude-url-handler.desktop; \
+    update-desktop-database /usr/share/applications; \
     for command_name in \
-        bash claude-desktop curl dbus-launch find gh git \
-        gnome-keyring-daemon gpg jq lsof pip3 pkg-config python3 rg \
-        shellcheck sqlite3 unzip xdg-open zip; \
+        bash claude-desktop curl dbus-launch desktop-file-validate find \
+        firefox-esr gh git gnome-keyring-daemon gpg jq lsof pip3 pkg-config \
+        python3 rg shellcheck sqlite3 unzip update-desktop-database \
+        xdg-mime xdg-open zip; \
     do \
         command -v "$command_name"; \
     done; \
@@ -152,6 +164,9 @@ RUN set -eux; \
     test -x /lsiopy/bin/selkies; \
     test "$(command -v selkies)" = /lsiopy/bin/selkies; \
     test -x /usr/bin/claude-desktop; \
+    test -x /usr/bin/firefox-esr; \
+    test -r /usr/share/applications/grotto-claude-browser.desktop; \
+    test -r /usr/share/applications/grotto-claude-url-handler.desktop; \
     test -r /usr/share/grotto/claude-desktop-version
 
 WORKDIR /workspace
