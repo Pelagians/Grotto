@@ -1,2 +1,2 @@
 # Unified patch context uses a single leading space for blank context lines.
-*.patch -whitespace
+patches/codex-desktop-linux/*.patch -whitespace
