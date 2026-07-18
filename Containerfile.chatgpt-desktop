@@ -293,7 +293,8 @@ RUN set -eux; \
     GROTTO_OPENBOX_CONFIG=/etc/xdg/openbox/rc.xml \
     GROTTO_LABWC_CONFIG=/defaults/labwc.xml \
     GROTTO_WINDOW_CONFIGURATOR=/usr/local/libexec/grotto-configure-openbox \
-        python3 /usr/local/libexec/test-window-manager-config.py; \
+        python3 /usr/local/libexec/test-window-manager-config.py \
+            --installed-image; \
     GROTTO_DOCTOR_UNDER_TEST=/usr/local/bin/grotto-doctor \
         python3 /usr/local/libexec/test-grotto-doctor.py; \
     rm -f \

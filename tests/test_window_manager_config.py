@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import importlib.machinery
 import importlib.util
 import json
@@ -195,7 +196,7 @@ def load_configurator():
     return module
 
 
-def main() -> None:
+def main(*, installed_image: bool = False) -> None:
     configurator = load_configurator()
     fixture = """<?xml version="1.0"?>
 <openbox_config xmlns="http://openbox.org/3.4/rc">
@@ -215,9 +216,17 @@ def main() -> None:
     if actual_openbox:
         assert_openbox_policy(Path(actual_openbox))
     assert_labwc_policy(LABWC_CONFIG)
-    assert_client_window_chrome_policy()
+    if not installed_image:
+        assert_client_window_chrome_policy()
     print("window-manager policy tests passed")
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--installed-image",
+        action="store_true",
+        help="skip repository-only client build-policy checks",
+    )
+    arguments = parser.parse_args()
+    main(installed_image=arguments.installed_image)
