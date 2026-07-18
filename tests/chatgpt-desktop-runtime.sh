@@ -52,6 +52,18 @@ for path in /config /workspace /tools /cache; do
     fi
 done
 
+security_manifest=/usr/share/grotto/chatgpt-desktop-security.json
+test -r "$security_manifest"
+test "$(stat -c '%a' "$security_manifest")" = 444
+jq -e '
+  .schema_version == 1 and
+  (.wrapper_revision | test("^[0-9a-f]{40}$")) and
+  .node_repl.verified == true and
+  .node_repl.auto_approved == false and
+  .node_repl.verification_source == "installed-electron-bundle" and
+  .browser_use.verified == true
+' "$security_manifest" >/dev/null
+
 report="$(mktemp)"
 trap 'rm -f "$report"' EXIT
 
@@ -62,9 +74,17 @@ jq -e '.schema_version == 1' "$report" >/dev/null
 jq -e '.identity.user == "abc"' "$report" >/dev/null
 jq -e '.ok == null' "$report" >/dev/null
 jq -e '.active_probe == false' "$report" >/dev/null
-jq -e '.node_repl_exposed == true' "$report" >/dev/null
-jq -e '.node_repl_auto_approved == false' "$report" >/dev/null
-jq -e '.node_repl_policy_source | contains("Grotto build patch")' "$report" >/dev/null
+jq --slurpfile security "$security_manifest" -e '
+  $security[0] as $policy |
+  .node_repl_exposed == $policy.node_repl.exposed and
+  .node_repl_auto_approved == $policy.node_repl.auto_approved and
+  .node_repl_verified == $policy.node_repl.verified and
+  .node_repl_policy_source == $policy.node_repl.verification_source and
+  .browser_use_trusted_client_hash_patch ==
+    $policy.browser_use.trusted_client_hash_patch and
+  .browser_use_policy_verified == $policy.browser_use.verified and
+  .chatgpt_desktop_security.manifest_error == null
+' "$report" >/dev/null
 jq -e '.may_generate_host_avcs == false' "$report" >/dev/null
 jq -e '.probe_started_at == null and .probe_completed_at == null' "$report" >/dev/null
 jq -e '.sandbox_probe.status == "not_run"' "$report" >/dev/null
@@ -89,5 +109,8 @@ jq -c '{
   sandbox_probe: .sandbox_probe.status,
   selected_backend: .sandbox.selected_backend,
   backend_working: .sandbox.backend_working,
+  node_repl_exposed: .node_repl_exposed,
+  node_repl_verified: .node_repl_verified,
+  browser_use_policy_verified: .browser_use_policy_verified,
   cached_probe_available: (.cached_sandbox_probe.result != null)
 }' "$report"
