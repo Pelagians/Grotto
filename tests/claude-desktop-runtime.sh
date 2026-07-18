@@ -13,6 +13,9 @@ keyring=/usr/share/keyrings/claude-desktop-archive-keyring.asc
 repository=/etc/apt/sources.list.d/claude-desktop.list
 version_file=/usr/share/grotto/claude-desktop-version
 architecture="$(dpkg --print-architecture)"
+gnupg_home="$(mktemp -d)"
+chmod 0700 "$gnupg_home"
+trap 'rm -rf "$gnupg_home"' EXIT
 
 case "$architecture" in
     amd64|arm64) ;;
@@ -28,7 +31,7 @@ test -r "$keyring"
 test -r "$repository"
 test -s "$version_file"
 
-gpg --batch --show-keys --with-colons "$keyring" \
+gpg --batch --homedir "$gnupg_home" --show-keys --with-colons "$keyring" \
     | awk -F: '$1 == "fpr" { print $10; exit }' \
     | grep -Fx "$expected_fingerprint"
 
