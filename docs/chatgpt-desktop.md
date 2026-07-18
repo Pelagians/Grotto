@@ -142,6 +142,13 @@ open. ChatGPT ignores client-generated focus requests in Labwc; direct user
 clicks still focus it normally. The equivalent Openbox rule declines initial
 focus and keeps ChatGPT below dialog windows.
 
+The client itself is built with Grotto's `grotto-single-window-chrome` Linux
+feature. It removes Electron's minimize, maximize, and close overlay from the
+primary surface while retaining the application menus. The same required
+build-time patch omits only File -> New Window on Linux. If either pinned
+main-bundle source shape drifts, the image build fails rather than silently
+restoring multi-window controls.
+
 The image supplies policies for both the default Wayland/Labwc path and the
 X11/Openbox fallback. It also refreshes the persistent autostart files on every
 container initialization so switching session modes or upgrading from an older

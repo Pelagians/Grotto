@@ -71,10 +71,24 @@ RUN set -eux; \
     git checkout --detach FETCH_HEAD; \
     git rev-parse HEAD
 
+COPY runtimes/chatgpt-desktop/codex-desktop-linux-features/ \
+    /src/linux-features/
 COPY patches/codex-desktop-linux/disable-auto-approved-node-repl.patch \
     /tmp/disable-auto-approved-node-repl.patch
 COPY runtimes/chatgpt-desktop/verify-installed-policy.py \
     /usr/local/libexec/grotto-verify-installed-chatgpt-policy
+
+# Keep the primary surface single-window while retaining the useful
+# application menus: remove Electron's Linux window-control overlay and omit
+# only File -> New Window. The local feature uses required patch descriptors,
+# so upstream main-bundle drift fails the image build.
+RUN set -eux; \
+    python3 -m json.tool linux-features/features.json >/dev/null; \
+    grep -q '"grotto-single-window-chrome"' linux-features/features.json; \
+    test -f \
+        linux-features/local/grotto-single-window-chrome/feature.json; \
+    test -f \
+        linux-features/local/grotto-single-window-chrome/patch.js
 
 # Keep the wrapper pinned while retaining its Browser Use trusted-client hash
 # adjustment and removing only automatic node_repl JavaScript approval. Both
@@ -104,6 +118,9 @@ RUN set -eux; \
         ./install.sh --fresh; \
     test -x /opt/chatgpt/start.sh; \
     test -x /opt/chatgpt/resources/node-runtime/bin/node; \
+    /opt/chatgpt/resources/node-runtime/bin/node --test \
+        linux-features/local/grotto-single-window-chrome/test.js; \
+    python3 -c 'import json; report=json.load(open("/opt/chatgpt/.codex-linux/patch-report.json", encoding="utf-8")); assert report.get("enabledFeatures") == ["grotto-single-window-chrome"], report.get("enabledFeatures"); statuses={entry["name"]:entry["status"] for entry in report.get("patches", [])}; required=("feature:grotto-single-window-chrome:frameless-linux-window-controls", "feature:grotto-single-window-chrome:linux-single-window-menu"); assert all(statuses.get(name) in {"applied", "already-applied"} for name in required), statuses'; \
     install -d -m 0755 /opt/grotto-build; \
     python3 /usr/local/libexec/grotto-verify-installed-chatgpt-policy \
         --root /opt/chatgpt \

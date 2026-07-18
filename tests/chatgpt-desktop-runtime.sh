@@ -64,6 +64,24 @@ jq -e '
   .browser_use.verified == true
 ' "$security_manifest" >/dev/null
 
+patch_report=/opt/chatgpt/.codex-linux/patch-report.json
+test -r "$patch_report"
+jq -e '
+  .enabledFeatures == ["grotto-single-window-chrome"] and
+  (
+    [
+      .patches[] |
+      select(
+        (
+          .name == "feature:grotto-single-window-chrome:frameless-linux-window-controls" or
+          .name == "feature:grotto-single-window-chrome:linux-single-window-menu"
+        ) and
+        (.status == "applied" or .status == "already-applied")
+      )
+    ] | length == 2
+  )
+' "$patch_report" >/dev/null
+
 report="$(mktemp)"
 trap 'rm -f "$report"' EXIT
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import importlib.machinery
 import importlib.util
+import json
 import os
 from pathlib import Path
 import tempfile
@@ -25,6 +26,13 @@ LABWC_CONFIG = Path(
         REPOSITORY / "runtimes/chatgpt-desktop/root/defaults/labwc.xml",
     )
 )
+FEATURES_CONFIG = REPOSITORY / (
+    "runtimes/chatgpt-desktop/codex-desktop-linux-features/features.json"
+)
+LOCAL_FEATURE = FEATURES_CONFIG.parent / (
+    "local/grotto-single-window-chrome"
+)
+CONTAINERFILE = REPOSITORY / "Containerfile.chatgpt-desktop"
 
 
 def local_name(tag: object) -> str:
@@ -134,6 +142,33 @@ def assert_labwc_policy(config: Path) -> None:
         ]
 
 
+def assert_client_window_chrome_policy() -> None:
+    feature_config = json.loads(FEATURES_CONFIG.read_text(encoding="utf-8"))
+    assert feature_config == {"enabled": ["grotto-single-window-chrome"]}
+
+    manifest = json.loads(
+        (LOCAL_FEATURE / "feature.json").read_text(encoding="utf-8")
+    )
+    assert manifest["id"] == "grotto-single-window-chrome"
+    assert manifest["defaultEnabled"] is False
+    assert manifest["entrypoints"] == {"patchDescriptors": "./patch.js"}
+
+    patch_source = (LOCAL_FEATURE / "patch.js").read_text(encoding="utf-8")
+    assert "applyFramelessTitlebarMainPatch" in patch_source
+    assert "process.platform!==`linux`&&" in patch_source
+    assert patch_source.count('ciPolicy: "required-upstream"') == 2
+
+    containerfile = CONTAINERFILE.read_text(encoding="utf-8")
+    feature_copy = containerfile.index(
+        "runtimes/chatgpt-desktop/codex-desktop-linux-features/"
+    )
+    install = containerfile.index("./install.sh --fresh")
+    report_check = containerfile.index(
+        'report.get("enabledFeatures") == ["grotto-single-window-chrome"]'
+    )
+    assert feature_copy < install < report_check
+
+
 def load_configurator():
     loader = importlib.machinery.SourceFileLoader(
         "grotto_configure_openbox",
@@ -166,6 +201,7 @@ def main() -> None:
     if actual_openbox:
         assert_openbox_policy(Path(actual_openbox))
     assert_labwc_policy(LABWC_CONFIG)
+    assert_client_window_chrome_policy()
     print("window-manager policy tests passed")
 
 
