@@ -56,12 +56,14 @@ The image provides:
 - Selkies HTTPS streaming
 - persistent application, keyring, and Claude state
 - a mounted project workspace and persistent user toolchain
-- an image-contained viewer bridge that presents HTTPS authentication links in the browser viewing the Selkies session
+- an image-contained viewer bridge that opens HTTPS authentication in the browser viewing Selkies
+- a same-origin callback relay that returns a copied `claude://` login link to Claude Desktop inside the graphical session
 
 The image does not provide:
 
 - a bundled web browser
 - a host-side browser service or callback daemon
+- a browser extension or extra bind mount for authentication
 - the separate `claude-code` CLI package
 - validated Cowork KVM/QEMU passthrough
 - workflow orchestration
