@@ -23,6 +23,8 @@ from typing import Any
 
 SCHEMA_VERSION = 1
 PROBE_CACHE_SCHEMA_VERSION = 1
+CHATGPT_SECURITY_MANIFEST_SCHEMA_VERSION = 1
+CHATGPT_SECURITY_MANIFEST = "/usr/share/grotto/chatgpt-desktop-security.json"
 PROBE_NOT_RUN_REASON = "active probe requires --probe-sandbox"
 PROBE_WARNING = (
     "WARNING: --probe-sandbox will intentionally trigger host SELinux AVCs "
@@ -31,11 +33,6 @@ PROBE_WARNING = (
 )
 AUTH_HOST = "auth.openai.com"
 CODEX = "/opt/codex-cli/bin/codex"
-NODE_REPL_EXPOSED = True
-NODE_REPL_AUTO_APPROVED = False
-NODE_REPL_POLICY_SOURCE = (
-    "Grotto build patch disables browser-use-node-repl-approval"
-)
 MANAGED_NODE_DIR = "/opt/chatgpt/resources/node-runtime/bin"
 WORKSPACE = "/workspace"
 DIAGNOSTIC_PATH = ":".join(
@@ -104,6 +101,85 @@ def read_json(path: str) -> dict[str, Any]:
         return {}
 
 
+def unverified_security_policy(path: pathlib.Path, reason: str) -> dict[str, Any]:
+    return {
+        "node_repl_exposed": None,
+        "node_repl_auto_approved": None,
+        "node_repl_verified": False,
+        "node_repl_policy_source": None,
+        "browser_use_trusted_client_hash_patch": None,
+        "browser_use_policy_verified": False,
+        "manifest_path": str(path),
+        "manifest_wrapper_revision": None,
+        "manifest_error": reason,
+    }
+
+
+def read_chatgpt_desktop_security_policy(
+    path: pathlib.Path | None = None,
+    *,
+    expected_wrapper_revision: str | None = None,
+) -> dict[str, Any]:
+    candidate = path or pathlib.Path(
+        os.environ.get("GROTTO_CHATGPT_SECURITY_MANIFEST", CHATGPT_SECURITY_MANIFEST)
+    )
+    try:
+        value = json.loads(candidate.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return unverified_security_policy(candidate, "security manifest is missing")
+    except json.JSONDecodeError as exc:
+        return unverified_security_policy(candidate, f"security manifest is malformed: {exc}")
+    except (OSError, UnicodeError) as exc:
+        return unverified_security_policy(candidate, f"security manifest is invalid: {exc}")
+
+    if (
+        not isinstance(value, dict)
+        or value.get("schema_version") != CHATGPT_SECURITY_MANIFEST_SCHEMA_VERSION
+    ):
+        return unverified_security_policy(
+            candidate, "security manifest schema is unsupported"
+        )
+    node_repl = value.get("node_repl")
+    browser_use = value.get("browser_use")
+    wrapper_revision = value.get("wrapper_revision")
+    if not isinstance(node_repl, dict) or not isinstance(browser_use, dict):
+        return unverified_security_policy(candidate, "security manifest sections are invalid")
+    fields = (
+        node_repl.get("exposed"),
+        node_repl.get("auto_approved"),
+        node_repl.get("verified"),
+        browser_use.get("trusted_client_hash_patch"),
+        browser_use.get("verified"),
+    )
+    if any(type(field) is not bool for field in fields):
+        return unverified_security_policy(candidate, "security manifest fields are invalid")
+    if not isinstance(wrapper_revision, str) or not wrapper_revision:
+        return unverified_security_policy(candidate, "security manifest wrapper is invalid")
+    if expected_wrapper_revision not in (None, "unknown", wrapper_revision):
+        return unverified_security_policy(
+            candidate, "security manifest wrapper does not match runtime"
+        )
+    source = node_repl.get("verification_source")
+    if source != "installed-electron-bundle":
+        return unverified_security_policy(candidate, "security manifest source is invalid")
+    if not node_repl["verified"] or not browser_use["verified"]:
+        return unverified_security_policy(candidate, "security manifest is unverified")
+
+    return {
+        "node_repl_exposed": node_repl["exposed"],
+        "node_repl_auto_approved": node_repl["auto_approved"],
+        "node_repl_verified": node_repl["verified"],
+        "node_repl_policy_source": source,
+        "browser_use_trusted_client_hash_patch": browser_use[
+            "trusted_client_hash_patch"
+        ],
+        "browser_use_policy_verified": browser_use["verified"],
+        "manifest_path": str(candidate),
+        "manifest_wrapper_revision": wrapper_revision,
+        "manifest_error": None,
+    }
+
+
 def utc_timestamp() -> str:
     return (
         datetime.datetime.now(datetime.timezone.utc)
@@ -115,9 +191,7 @@ def utc_timestamp() -> str:
 def probe_cache_path() -> pathlib.Path:
     cache_home = os.environ.get("XDG_CACHE_HOME")
     if not cache_home:
-        cache_home = str(
-            pathlib.Path(os.environ.get("HOME", "/config")) / ".cache"
-        )
+        cache_home = str(pathlib.Path(os.environ.get("HOME", "/config")) / ".cache")
     return pathlib.Path(cache_home) / "grotto" / "doctor-sandbox-probe.json"
 
 
@@ -156,10 +230,7 @@ def write_probe_cache(path: pathlib.Path, value: dict[str, Any]) -> str | None:
         return None
     except (OSError, TypeError, ValueError) as exc:
         if temporary_path is not None:
-            try:
-                temporary_path.unlink()
-            except OSError:
-                pass
+            temporary_path.unlink(missing_ok=True)
         return str(exc)
 
 
@@ -227,20 +298,19 @@ def proc_status() -> dict[str, int | None]:
 
 
 def group_status() -> list[dict[str, Any]]:
-    groups = []
+    result = []
     for gid in os.getgroups():
         try:
             name = grp.getgrgid(gid).gr_name
         except KeyError:
             name = None
-        groups.append({"gid": gid, "name": name})
-    return groups
+        result.append({"gid": gid, "name": name})
+    return result
 
 
 def resolve_bundled_bwrap() -> str | None:
     matches = glob.glob(
-        "/opt/codex-cli/lib/node_modules/@openai/codex/"
-        "**/codex-resources/bwrap",
+        "/opt/codex-cli/lib/node_modules/@openai/codex/**/codex-resources/bwrap",
         recursive=True,
     )
     return next((path for path in matches if os.access(path, os.X_OK)), None)
@@ -251,150 +321,77 @@ def version_info(path: str | None, args: list[str]) -> dict[str, Any]:
         return {"path": None, "version": None}
     result = run([path, *args])
     output = result["stdout"] or result["stderr"]
-    return {
-        "path": path,
-        "version": output.splitlines()[0] if output else None,
-    }
+    return {"path": path, "version": output.splitlines()[0] if output else None}
 
 
 def bubblewrap_version_info(
-    path: str | None,
-    system_bwrap: str | None,
+    path: str | None, system_bwrap: str | None
 ) -> dict[str, Any]:
-    result: dict[str, Any] = {
+    return {
         "path": path,
         "version": None,
-        "version_source": None,
+        "version_source": (
+            "PATH package metadata" if path and path == system_bwrap
+            else "bundled binary not executed by default" if path
+            else None
+        ),
     }
-    if not path:
-        return result
-    if path != system_bwrap:
-        result["version_source"] = "bundled binary not executed by default"
-        return result
-
-    package_queries = (
-        (
-            "/usr/bin/dpkg-query",
-            [
-                "/usr/bin/dpkg-query",
-                "-W",
-                "-f=$" + "{Version}",
-                "bubblewrap",
-            ],
-            "dpkg",
-        ),
-        (
-            shutil.which("rpm", path=DIAGNOSTIC_PATH),
-            ["rpm", "-q", "--qf", "%{VERSION}-%{RELEASE}", "bubblewrap"],
-            "rpm",
-        ),
-    )
-    for executable, command, source in package_queries:
-        if not executable or not os.access(executable, os.X_OK):
-            continue
-        command[0] = executable
-        query = run(command)
-        if query["ok"] and query["stdout"]:
-            result["version"] = query["stdout"].splitlines()[0]
-            result["version_source"] = source
-            return result
-    result["version_source"] = "package metadata unavailable"
-    return result
 
 
 def memory_status() -> dict[str, int]:
     values: dict[str, int] = {}
     for line in (read_text("/proc/meminfo") or "").splitlines():
         name, separator, raw = line.partition(":")
-        if not separator or name not in {"MemTotal", "MemAvailable", "SwapTotal"}:
-            continue
-        fields = raw.split()
-        if fields:
+        if separator and name in {"MemTotal", "MemAvailable", "SwapTotal"}:
             try:
-                values[f"{name.lower()}_bytes"] = int(fields[0]) * 1024
-            except ValueError:
+                values[f"{name.lower()}_bytes"] = int(raw.split()[0]) * 1024
+            except (IndexError, ValueError):
                 pass
     return values
 
 
 def device_inventory() -> list[dict[str, Any]]:
+    devices = []
     root = pathlib.Path("/dev")
-    entries: list[dict[str, Any]] = []
     if not root.is_dir():
-        return entries
-    candidates = list(root.iterdir())
-    for nested in (root / "pts", root / "input"):
-        if nested.is_dir():
-            try:
-                candidates.extend(nested.iterdir())
-            except OSError:
-                pass
-    for path in sorted(set(candidates), key=lambda item: str(item)):
+        return devices
+    try:
+        candidates = list(root.iterdir())
+    except OSError:
+        return devices
+    for path in sorted(candidates, key=str):
         try:
             item = path.lstat()
         except OSError:
             continue
-        kind = "other"
-        major = None
-        minor = None
-        target = None
-        if stat.S_ISDIR(item.st_mode):
-            kind = "directory"
-        elif stat.S_ISLNK(item.st_mode):
-            kind = "symlink"
-            try:
-                target = os.readlink(path)
-            except OSError:
-                pass
-        elif stat.S_ISCHR(item.st_mode):
+        kind = "directory" if stat.S_ISDIR(item.st_mode) else "other"
+        if stat.S_ISCHR(item.st_mode):
             kind = "character"
-            major = os.major(item.st_rdev)
-            minor = os.minor(item.st_rdev)
         elif stat.S_ISBLK(item.st_mode):
             kind = "block"
-            major = os.major(item.st_rdev)
-            minor = os.minor(item.st_rdev)
-        entries.append(
-            {
-                "path": str(path),
-                "kind": kind,
-                "mode": oct(item.st_mode & 0o777),
-                "major": major,
-                "minor": minor,
-                "target": target,
-            }
-        )
-    return entries
+        elif stat.S_ISLNK(item.st_mode):
+            kind = "symlink"
+        devices.append({"path": str(path), "kind": kind, "mode": oct(item.st_mode & 0o777)})
+    return devices
 
 
 def network_status() -> dict[str, Any]:
     if os.environ.get("GROTTO_DOCTOR_SKIP_NETWORK") == "1":
         skipped = {"ok": None, "skipped": True, "error": None}
         return {"host": AUTH_HOST, "dns": skipped, "https": skipped}
-
     addresses: list[str] = []
     dns_error = None
     try:
         addresses = sorted(
-            {
-                item[4][0]
-                for item in socket.getaddrinfo(
-                    AUTH_HOST,
-                    443,
-                    type=socket.SOCK_STREAM,
-                )
-            }
+            {entry[4][0] for entry in socket.getaddrinfo(AUTH_HOST, 443, type=socket.SOCK_STREAM)}
         )
     except OSError as exc:
         dns_error = str(exc)
-
     https_status = None
     https_error = None
     try:
         request = urllib.request.Request(
-            f"https://{AUTH_HOST}/",
-            method="HEAD",
-            headers={"User-Agent": "grotto-doctor/1"},
+            f"https://{AUTH_HOST}/", method="HEAD", headers={"User-Agent": "grotto-doctor/1"}
         )
         with urllib.request.urlopen(request, timeout=8) as response:
             https_status = response.status
@@ -402,21 +399,10 @@ def network_status() -> dict[str, Any]:
         https_status = exc.code
     except (OSError, urllib.error.URLError) as exc:
         https_error = str(exc)
-
     return {
         "host": AUTH_HOST,
-        "dns": {
-            "ok": bool(addresses),
-            "skipped": False,
-            "addresses": addresses,
-            "error": dns_error,
-        },
-        "https": {
-            "ok": https_status is not None,
-            "skipped": False,
-            "status": https_status,
-            "error": https_error,
-        },
+        "dns": {"ok": bool(addresses), "addresses": addresses, "error": dns_error},
+        "https": {"ok": https_status is not None, "status": https_status, "error": https_error},
     }
 
 
@@ -432,19 +418,14 @@ def effective_landlock_enabled() -> tuple[bool | None, dict[str, Any]]:
 
 
 def missing_check(message: str) -> dict[str, Any]:
-    return {
-        "ok": False,
-        "returncode": None,
-        "stdout": "",
-        "stderr": message,
-    }
+    return {"ok": False, "returncode": None, "stdout": "", "stderr": message}
 
 
 def collect_sandbox_checks(
     bwrap_helper: str | None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     if bwrap_helper:
-        canonical_bwrap = run(
+        fresh_dev = run(
             [
                 bwrap_helper,
                 "--unshare-user",
@@ -457,28 +438,7 @@ def collect_sandbox_checks(
                 "/bin/true",
             ]
         )
-        with tempfile.TemporaryDirectory(
-            prefix=".grotto-doctor-bwrap-",
-            dir="/tmp",
-        ) as probe:
-            write_without_protected = run(
-                [
-                    bwrap_helper,
-                    "--unshare-user",
-                    "--unshare-pid",
-                    "--ro-bind",
-                    "/",
-                    "/",
-                    "--bind",
-                    probe,
-                    probe,
-                    "/bin/sh",
-                    "-c",
-                    'touch "$1/ordinary" && rm "$1/ordinary"',
-                    "sh",
-                    probe,
-                ]
-            )
+        with tempfile.TemporaryDirectory(prefix=".grotto-doctor-bwrap-", dir="/tmp") as probe:
             protected_remount = run(
                 [
                     bwrap_helper,
@@ -500,33 +460,15 @@ def collect_sandbox_checks(
                 ]
             )
     else:
-        canonical_bwrap = missing_check("Bubblewrap helper not found")
-        write_without_protected = missing_check("Bubblewrap helper not found")
+        fresh_dev = missing_check("Bubblewrap helper not found")
         protected_remount = missing_check("Bubblewrap helper not found")
 
     probe_parent = WORKSPACE if os.access(WORKSPACE, os.W_OK) else "/tmp"
-    with tempfile.TemporaryDirectory(
-        prefix=".grotto-doctor-codex-",
-        dir=probe_parent,
-    ) as probe:
+    with tempfile.TemporaryDirectory(prefix=".grotto-doctor-codex-", dir=probe_parent) as probe:
         for name in (".git", ".agents", ".codex"):
             protected = pathlib.Path(probe, name)
             protected.mkdir()
             pathlib.Path(protected, "seed").write_text("seed\n", encoding="utf-8")
-
-        codex_read_only = run(
-            [
-                CODEX,
-                "sandbox",
-                "-P",
-                ":read-only",
-                "-C",
-                probe,
-                "--",
-                "/bin/true",
-            ],
-            cwd=probe,
-        )
         codex_workspace = run(
             [
                 CODEX,
@@ -538,28 +480,7 @@ def collect_sandbox_checks(
                 "--",
                 "/bin/sh",
                 "-c",
-                (
-                    'touch ordinary && rm ordinary && '
-                    'test -r .git/seed && test -r .agents/seed && '
-                    'test -r .codex/seed && '
-                    '! touch .git/blocked && ! touch .agents/blocked && '
-                    '! touch .codex/blocked && ! touch /etc/grotto-doctor-blocked'
-                ),
-            ],
-            cwd=probe,
-        )
-        landlock_read_only = run(
-            [
-                CODEX,
-                "sandbox",
-                "-P",
-                ":read-only",
-                "-C",
-                probe,
-                "--enable",
-                "use_legacy_landlock",
-                "--",
-                "/bin/true",
+                "touch ordinary && rm ordinary && ! touch .git/blocked && ! touch .agents/blocked && ! touch .codex/blocked && ! touch /etc/grotto-doctor-blocked",
             ],
             cwd=probe,
         )
@@ -578,40 +499,28 @@ def collect_sandbox_checks(
             ],
             cwd=probe,
         )
-
     checks = {
         "direct_command": run(["/bin/true"]),
-        "user_namespace": run(
-            ["/usr/bin/unshare", "--user", "--map-root-user", "/bin/true"]
-        ),
-        "bubblewrap_fresh_dev": canonical_bwrap,
-        "bubblewrap_write_without_protected_child": write_without_protected,
+        "bubblewrap_fresh_dev": fresh_dev,
         "bubblewrap_protected_child_remount": protected_remount,
-        "codex_read_only": codex_read_only,
         "codex_workspace_permissions": codex_workspace,
-        "landlock_read_only": landlock_read_only,
         "landlock_workspace_profile": landlock_workspace,
     }
-    probe_details = {
+    return checks, {
         "root": "temporary directory removed after checks",
         "protected_paths": [".git", ".agents", ".codex"],
         "ordinary_write_checked": True,
         "outside_write_checked": "/etc/grotto-doctor-blocked",
     }
-    return checks, probe_details
 
 
 def run_sandbox_probe(
-    bwrap_helper: str | None,
-    selected_backend: str,
+    bwrap_helper: str | None, selected_backend: str
 ) -> dict[str, Any]:
     started_at = utc_timestamp()
     checks, details = collect_sandbox_checks(bwrap_helper)
     completed_at = utc_timestamp()
-    probe_ok = bool(
-        checks["direct_command"]["ok"]
-        and checks["codex_workspace_permissions"]["ok"]
-    )
+    ok = bool(checks["direct_command"]["ok"] and checks["codex_workspace_permissions"]["ok"])
     return {
         "schema_version": PROBE_CACHE_SCHEMA_VERSION,
         "status": "completed",
@@ -622,7 +531,7 @@ def run_sandbox_probe(
         "probe_completed_at": completed_at,
         "selected_backend": selected_backend,
         "selected_bwrap": bwrap_helper,
-        "ok": probe_ok,
+        "ok": ok,
         "checks": checks,
         "details": details,
     }
@@ -632,20 +541,22 @@ def collect(*, active_probe: bool = False) -> dict[str, Any]:
     build_info = read_json("/opt/chatgpt/.codex-linux/build-info.json")
     upstream = build_info.get("upstreamDmg", {})
     source = build_info.get("source", {})
-
+    wrapper_revision = os.environ.get(
+        "GROTTO_CODEX_DESKTOP_LINUX_REF", source.get("commit", "unknown")
+    )
+    desktop_policy = read_chatgpt_desktop_security_policy(
+        expected_wrapper_revision=wrapper_revision
+    )
     bundled_bwrap = resolve_bundled_bwrap()
     system_bwrap = shutil.which("bwrap", path=DIAGNOSTIC_PATH)
     selected_bwrap = system_bwrap or bundled_bwrap
-    selected_bwrap_source = (
-        "PATH" if system_bwrap else "codex-bundled" if bundled_bwrap else "missing"
-    )
-    landlock_enabled, feature_listing = effective_landlock_enabled()
-    selected_backend = "landlock" if landlock_enabled else "bubblewrap"
+    selected_backend, feature_listing = effective_landlock_enabled()
+    backend = "landlock" if selected_backend else "bubblewrap"
     cache_path = probe_cache_path()
     cached_probe, cache_read_error = read_probe_cache(cache_path)
     cache_write_error = None
     if active_probe:
-        sandbox_probe = run_sandbox_probe(selected_bwrap, selected_backend)
+        sandbox_probe = run_sandbox_probe(selected_bwrap, backend)
         cache_write_error = write_probe_cache(cache_path, sandbox_probe)
         if cache_write_error is None:
             cached_probe = sandbox_probe
@@ -659,31 +570,12 @@ def collect(*, active_probe: bool = False) -> dict[str, Any]:
             "details": None,
         }
     checks = sandbox_probe["checks"]
-    probe_details = sandbox_probe["details"]
-
-    try:
-        statvfs = os.statvfs("/dev/shm")
-        shm_size_bytes = statvfs.f_frsize * statvfs.f_blocks
-    except OSError:
-        shm_size_bytes = None
 
     command_paths = {
         name: shutil.which(name, path=DIAGNOSTIC_PATH)
         for name in (
-            "bash",
-            "git",
-            "curl",
-            "jq",
-            "gh",
-            "lsof",
-            "pkg-config",
-            "pip3",
-            "python3",
-            "rg",
-            "shellcheck",
-            "sqlite3",
-            "unzip",
-            "zip",
+            "bash", "git", "curl", "jq", "gh", "lsof", "pkg-config", "pip3",
+            "python3", "rg", "shellcheck", "sqlite3", "unzip", "zip",
         )
     }
     tools = {
@@ -700,56 +592,48 @@ def collect(*, active_probe: bool = False) -> dict[str, Any]:
         "shellcheck": version_info(command_paths["shellcheck"], ["--version"]),
         "sqlite3": version_info(command_paths["sqlite3"], ["--version"]),
     }
-
     host_audit_access = os.access("/var/log/audit/audit.log", os.R_OK)
-    selinux_attribution = (
-        "requires_host_audit_review"
-        if host_audit_access
-        else "unknown_without_host_audit"
-    )
-
     remediation: list[str] = []
+    if desktop_policy["manifest_error"]:
+        remediation.append(
+            "The image lacks verified ChatGPT Desktop build policy metadata at "
+            f"{desktop_policy['manifest_path']}: {desktop_policy['manifest_error']}. "
+            "Rebuild the image with installed-app policy verification enabled."
+        )
+    elif desktop_policy["node_repl_auto_approved"]:
+        remediation.append("Node REPL JavaScript is reported as automatically approved.")
     if active_probe:
-        fresh_dev_error = checks["bubblewrap_fresh_dev"]["stderr"]
-        protected_error = checks["bubblewrap_protected_child_remount"]["stderr"]
-        if "Can't mount devpts" in fresh_dev_error:
+        if "Can't mount devpts" in checks["bubblewrap_fresh_dev"]["stderr"]:
             remediation.append(
-                "Codex's fresh minimal /dev setup is blocked at the nested devpts "
-                "mount. Do not bind the complete outer /dev without reviewing the "
-                "additional device and shared-PTY exposure."
+                "Codex's fresh minimal /dev setup is blocked at the nested devpts mount."
             )
-        if "Can't remount readonly" in protected_error:
+        if "Can't remount readonly" in checks["bubblewrap_protected_child_remount"]["stderr"]:
             remediation.append(
-                "Bubblewrap cannot remount synthetic protected metadata paths "
-                "read-only in this container. Preserve .git, .agents, and .codex "
-                "protections while investigating an upstream-compatible mount path."
-            )
-        if not checks["landlock_workspace_profile"]["ok"]:
-            remediation.append(
-                "Legacy Landlock is a read-only diagnostic here; the installed "
-                "Codex rejects it for permission profiles requiring direct runtime "
-                "enforcement."
+                "Bubblewrap cannot remount synthetic protected metadata paths read-only."
             )
         if not checks["codex_workspace_permissions"]["ok"]:
             remediation.append(
-                "The Codex workspace sandbox is not ready. Keep SELinux and normal "
-                "Podman seccomp enabled. An unavailable container audit stream is "
-                "not evidence that SELinux was uninvolved; correlate matching AVC "
-                "records from the host."
+                "The Codex workspace sandbox is not ready; preserve SELinux and normal Podman seccomp."
             )
     if not pathlib.Path("/dev/dri").exists():
-        remediation.append(
-            "No /dev/dri device is available; the desktop will use its "
-            "configured software-rendering fallback."
-        )
+        remediation.append("No /dev/dri device is available; software rendering will be used.")
 
     report: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "ok": sandbox_probe["ok"],
         "active_probe": active_probe,
-        "node_repl_exposed": NODE_REPL_EXPOSED,
-        "node_repl_auto_approved": NODE_REPL_AUTO_APPROVED,
-        "node_repl_policy_source": NODE_REPL_POLICY_SOURCE,
+        "node_repl_exposed": desktop_policy["node_repl_exposed"],
+        "node_repl_auto_approved": desktop_policy["node_repl_auto_approved"],
+        "node_repl_verified": desktop_policy["node_repl_verified"],
+        "node_repl_policy_source": desktop_policy["node_repl_policy_source"],
+        "browser_use_trusted_client_hash_patch": desktop_policy[
+            "browser_use_trusted_client_hash_patch"
+        ],
+        "browser_use_policy_verified": desktop_policy["browser_use_policy_verified"],
+        "chatgpt_desktop_security": {
+            key: desktop_policy[key]
+            for key in ("manifest_path", "manifest_wrapper_revision", "manifest_error")
+        },
         "may_generate_host_avcs": active_probe,
         "probe_started_at": sandbox_probe.get("probe_started_at"),
         "probe_completed_at": sandbox_probe.get("probe_completed_at"),
@@ -762,22 +646,12 @@ def collect(*, active_probe: bool = False) -> dict[str, Any]:
         },
         "runtime": {
             "name": os.environ.get("GROTTO_RUNTIME", "chatgpt-desktop"),
-            "build_revision": os.environ.get(
-                "GROTTO_BUILD_REVISION",
-                "unknown",
-            ),
-            "wrapper_revision": os.environ.get(
-                "GROTTO_CODEX_DESKTOP_LINUX_REF",
-                source.get("commit", "unknown"),
-            ),
+            "build_revision": os.environ.get("GROTTO_BUILD_REVISION", "unknown"),
+            "wrapper_revision": wrapper_revision,
             "codex_cli_build_version": os.environ.get(
-                "GROTTO_CODEX_CLI_VERSION",
-                tools["codex"]["version"] or "unknown",
+                "GROTTO_CODEX_CLI_VERSION", tools["codex"]["version"] or "unknown"
             ),
-            "selkies_base_image": os.environ.get(
-                "GROTTO_SELKIES_BASE_IMAGE",
-                "unknown",
-            ),
+            "selkies_base_image": os.environ.get("GROTTO_SELKIES_BASE_IMAGE", "unknown"),
             "desktop": {
                 "app_version": upstream.get("appVersion"),
                 "dmg_sha256": upstream.get("sha256"),
@@ -793,28 +667,15 @@ def collect(*, active_probe: bool = False) -> dict[str, Any]:
         },
         "environment": {
             key: os.environ.get(key)
-            for key in (
-                "HOME",
-                "CODEX_HOME",
-                "XDG_CONFIG_HOME",
-                "XDG_CACHE_HOME",
-                "XDG_STATE_HOME",
-                "PATH",
-            )
+            for key in ("HOME", "CODEX_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME", "PATH")
         },
-        "paths": {
-            path: path_status(path)
-            for path in ("/config", "/workspace", "/tools", "/cache")
-        },
+        "paths": {path: path_status(path) for path in ("/config", "/workspace", "/tools", "/cache")},
         "mounts": {
             "/": mount_entry("/"),
             "/config": mount_entry("/config"),
             "/workspace": mount_entry("/workspace"),
             "/dev/pts": mount_entry("/dev/pts"),
-            "/dev/shm": {
-                **mount_entry("/dev/shm"),
-                "size_bytes": shm_size_bytes,
-            },
+            "/dev/shm": mount_entry("/dev/shm"),
         },
         "security": {
             **proc_status(),
@@ -824,70 +685,45 @@ def collect(*, active_probe: bool = False) -> dict[str, Any]:
                 "process_context": read_text("/proc/self/attr/current"),
                 "pid1_context": read_text("/proc/1/attr/current"),
                 "host_audit_access": host_audit_access,
-                "attribution": selinux_attribution,
+                "attribution": "requires_host_audit_review" if host_audit_access else "unknown_without_host_audit",
             },
-            "max_user_namespaces": read_text(
-                "/proc/sys/user/max_user_namespaces"
-            ),
-            "unprivileged_userns_clone": read_text(
-                "/proc/sys/kernel/unprivileged_userns_clone"
-            ),
+            "max_user_namespaces": read_text("/proc/sys/user/max_user_namespaces"),
+            "unprivileged_userns_clone": read_text("/proc/sys/kernel/unprivileged_userns_clone"),
             "uid_map": read_text("/proc/self/uid_map"),
             "gid_map": read_text("/proc/self/gid_map"),
-            "audit_visibility": {
-                "audit_log_readable": host_audit_access,
-                "selinuxfs_enforce_readable": os.access(
-                    "/sys/fs/selinux/enforce",
-                    os.R_OK,
-                ),
-            },
         },
         "hardware": {
             "dri_available": pathlib.Path("/dev/dri").is_dir(),
-            "dri_entries": sorted(
-                path.name for path in pathlib.Path("/dev/dri").iterdir()
-            )
-            if pathlib.Path("/dev/dri").is_dir()
-            else [],
             "devices": device_inventory(),
             "memory": memory_status(),
         },
         "command_paths": command_paths,
         "tools": tools,
         "sandbox": {
-            "selected_backend": selected_backend,
+            "selected_backend": backend,
             "selection_source": "effective Codex feature configuration",
             "automatic_fallback_enabled": False,
-            "backend_working": (
-                checks["codex_workspace_permissions"]["ok"]
-                if active_probe
-                else None
-            ),
+            "backend_working": checks["codex_workspace_permissions"]["ok"] if active_probe else None,
             "feature_listing": feature_listing,
             "selected_bwrap": selected_bwrap,
-            "selected_bwrap_source": selected_bwrap_source,
+            "selected_bwrap_source": "PATH" if system_bwrap else "codex-bundled" if bundled_bwrap else "missing",
             "system_bwrap": system_bwrap,
             "bundled_bwrap": bundled_bwrap,
             "probe": {
                 "status": sandbox_probe["status"],
                 "reason": sandbox_probe["reason"],
-                "details": probe_details,
+                "details": sandbox_probe["details"],
             },
             "known_fedora_compatibility": {
                 "status": "known_incompatible",
-                "scope": (
-                    "nested Bubblewrap devpts mounts and protected-path "
-                    "remounts under rootless Fedora SELinux"
-                ),
+                "scope": "nested Bubblewrap devpts mounts and protected-path remounts under rootless Fedora SELinux",
                 "ordinary_runtime_denials_observed": False,
                 "security_boundaries_unchanged": True,
             },
             "limitations": [
-                "Legacy Landlock is not equivalent to Bubblewrap for split "
-                "filesystem profiles.",
+                "Legacy Landlock is not equivalent to Bubblewrap for split filesystem profiles.",
                 "Managed proxy-only networking requires Bubblewrap.",
-                "No Grotto automatic backend fallback is installed while the "
-                "workspace-write investigation remains unresolved.",
+                "No Grotto automatic backend fallback is installed.",
             ],
         },
         "checks": checks,
@@ -898,6 +734,9 @@ def collect(*, active_probe: bool = False) -> dict[str, Any]:
 
 
 def render_human(report: dict[str, Any]) -> str:
+    def state(value: Any) -> str:
+        return "unknown" if value is None else str(value)
+
     if report["active_probe"]:
         overall = "ok" if report["ok"] else "attention required"
         working = str(report["sandbox"]["backend_working"])
@@ -907,40 +746,29 @@ def render_human(report: dict[str, Any]) -> str:
     lines = [
         "Grotto ChatGPT Desktop doctor",
         f"overall: {overall}",
-        (
-            "sandbox: selected="
-            f"{report['sandbox']['selected_backend']} "
-            f"working={working} "
-            "automatic_fallback=false"
-        ),
-        (
-            "sandbox probe: "
-            f"{report['sandbox_probe']['status']}"
-            + (
-                f" ({report['sandbox_probe']['reason']})"
-                if report["sandbox_probe"]["reason"]
-                else ""
-            )
+        f"sandbox: selected={report['sandbox']['selected_backend']} working={working} automatic_fallback=false",
+        "sandbox probe: " + report["sandbox_probe"]["status"] + (
+            f" ({report['sandbox_probe']['reason']})" if report["sandbox_probe"]["reason"] else ""
         ),
         f"codex: {report['tools']['codex']['version'] or 'unavailable'}",
         f"wrapper: {report['runtime']['wrapper_revision']}",
         (
             "node_repl: "
-            f"exposed={report['node_repl_exposed']} "
-            f"auto_approved={report['node_repl_auto_approved']} "
-            f"policy_source={report['node_repl_policy_source']}"
+            f"exposed={state(report['node_repl_exposed'])} "
+            f"auto_approved={state(report['node_repl_auto_approved'])} "
+            f"verified={state(report['node_repl_verified'])} "
+            f"policy_source={report['node_repl_policy_source'] or 'unknown'}"
         ),
         (
-            "identity: "
-            f"{report['identity']['user']} "
-            f"uid={report['identity']['uid']} "
-            f"gid={report['identity']['gid']}"
+            "browser_use: trusted_client_hash_patch="
+            f"{state(report['browser_use_trusted_client_hash_patch'])} "
+            f"verified={state(report['browser_use_policy_verified'])}"
         ),
+        f"identity: {report['identity']['user']} uid={report['identity']['uid']} gid={report['identity']['gid']}",
         (
             "selinux: host_audit_access="
             f"{report['security']['selinux']['host_audit_access']} "
-            "attribution="
-            f"{report['security']['selinux']['attribution']}"
+            f"attribution={report['security']['selinux']['attribution']}"
         ),
     ]
     if report["active_probe"]:
@@ -952,28 +780,16 @@ def render_human(report: dict[str, Any]) -> str:
             )
         )
     cached_probe = report["cached_sandbox_probe"]["result"]
-    if cached_probe:
-        lines.append(
-            "cached sandbox probe: "
-            f"completed={cached_probe.get('probe_completed_at')} "
-            f"ok={cached_probe.get('ok')}"
-        )
-    else:
-        lines.append("cached sandbox probe: unavailable")
+    lines.append(
+        "cached sandbox probe: "
+        + (f"completed={cached_probe.get('probe_completed_at')} ok={cached_probe.get('ok')}" if cached_probe else "unavailable")
+    )
     for name, check in report["checks"].items():
         detail = check["stderr"].splitlines()[0] if check["stderr"] else ""
-        lines.append(
-            f"check {name}: {'pass' if check['ok'] else 'fail'}"
-            + (f" ({detail})" if detail else "")
-        )
-    dns = report["network"]["dns"]["ok"]
-    https = report["network"]["https"]["ok"]
-    lines.append(f"network: dns={dns} https={https}")
+        lines.append(f"check {name}: {'pass' if check['ok'] else 'fail'}" + (f" ({detail})" if detail else ""))
+    lines.append(f"network: dns={report['network']['dns']['ok']} https={report['network']['https']['ok']}")
     for path, status in report["paths"].items():
-        lines.append(
-            f"path {path}: exists={status['exists']} "
-            f"writable={status['writable']}"
-        )
+        lines.append(f"path {path}: exists={status['exists']} writable={status['writable']}")
     for item in report["remediation"]:
         lines.append(f"remediation: {item}")
     return "\n".join(lines)
@@ -981,18 +797,11 @@ def render_human(report: dict[str, Any]) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--json",
-        action="store_true",
-        help="emit stable machine-readable JSON",
-    )
+    parser.add_argument("--json", action="store_true", help="emit stable machine-readable JSON")
     parser.add_argument(
         "--probe-sandbox",
         action="store_true",
-        help=(
-            "actively execute Bubblewrap, devpts, protected-remount, "
-            "permission-profile, and Landlock tests; may generate host AVCs"
-        ),
+        help="actively execute sandbox tests; may generate host AVCs",
     )
     args = parser.parse_args(argv)
     if args.probe_sandbox:
