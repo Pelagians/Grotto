@@ -341,19 +341,15 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--root", type=pathlib.Path, required=True)
     parser.add_argument("--wrapper-revision", required=True)
     parser.add_argument("--manifest", type=pathlib.Path, required=True)
-    parser.add_argument(
-        "--finalize-trusted-hashes",
-        action="store_true",
-        help="bind the patched schema helper to final installed Browser Use clients",
-    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     arguments = parse_args(sys.argv[1:] if argv is None else argv)
     try:
-        if arguments.finalize_trusted_hashes:
-            finalize_embedded_trusted_hashes(arguments.root)
+        # The wrapper patches Browser Use clients after its schema patch runs.
+        # Rebind the schema literal to those final bytes, then verify the result.
+        finalize_embedded_trusted_hashes(arguments.root)
         inspection = inspect_installed_application(arguments.root)
         manifest = inspection.manifest(arguments.wrapper_revision)
         write_manifest(arguments.manifest, manifest)
