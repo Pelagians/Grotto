@@ -7,6 +7,7 @@ export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-/config/.config}"
 export XDG_CACHE_HOME="${XDG_CACHE_HOME:-/config/.cache}"
 export XDG_DATA_HOME="${XDG_DATA_HOME:-/config/.local/share}"
 export XDG_STATE_HOME="${XDG_STATE_HOME:-/config/.local/state}"
+export BROWSER="${BROWSER:-/usr/local/bin/grotto-claude-browser}"
 
 install -d -m 0755 \
     "$XDG_CONFIG_HOME" \
@@ -17,6 +18,15 @@ install -d -m 0755 \
 install -d -m 0700 \
     "$CLAUDE_CONFIG_DIR" \
     "$XDG_DATA_HOME/keyrings"
+
+# Claude Desktop opens Google OAuth in the system browser. Register a real
+# browser inside the Selkies session and route the return protocol back to the
+# already-running desktop application. These user-level associations persist
+# with /config and are safe to refresh on every launch.
+xdg-mime default grotto-claude-browser.desktop text/html
+xdg-mime default grotto-claude-browser.desktop x-scheme-handler/http
+xdg-mime default grotto-claude-browser.desktop x-scheme-handler/https
+xdg-mime default grotto-claude-url-handler.desktop x-scheme-handler/claude
 
 # Claude and desktop extensions use the Secret Service API for sensitive state.
 # Selkies normally provides a session D-Bus. Start only the secrets component
