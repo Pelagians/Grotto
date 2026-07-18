@@ -18,8 +18,10 @@ install -d -m 0755 \
     /workspace
 install -d -m 0700 \
     "$CLAUDE_CONFIG_DIR" \
-    "$XDG_DATA_HOME/keyrings" \
-    "$GROTTO_CLAUDE_BRIDGE_DIR"
+    "$XDG_DATA_HOME/keyrings"
+if [[ ! -d "$GROTTO_CLAUDE_BRIDGE_DIR" ]]; then
+    install -d -m 0777 "$GROTTO_CLAUDE_BRIDGE_DIR"
+fi
 
 # Claude Desktop delegates Google OAuth to the system browser. Inside Grotto,
 # HTTP/HTTPS requests go to a user-scoped Unix socket shared with the Podman
