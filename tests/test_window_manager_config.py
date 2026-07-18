@@ -33,6 +33,7 @@ LOCAL_FEATURE = FEATURES_CONFIG.parent / (
     "local/grotto-single-window-chrome"
 )
 CONTAINERFILE = REPOSITORY / "Containerfile.chatgpt-desktop"
+DOCKERIGNORE = REPOSITORY / ".dockerignore"
 
 
 def local_name(tag: object) -> str:
@@ -146,6 +147,7 @@ def assert_client_window_chrome_policy() -> None:
     feature_config = json.loads(FEATURES_CONFIG.read_text(encoding="utf-8"))
     assert feature_config == {"enabled": ["grotto-single-window-chrome"]}
 
+    assert (LOCAL_FEATURE / "README.md").is_file()
     manifest = json.loads(
         (LOCAL_FEATURE / "feature.json").read_text(encoding="utf-8")
     )
@@ -167,6 +169,18 @@ def assert_client_window_chrome_policy() -> None:
         'report.get("enabledFeatures") == ["grotto-single-window-chrome"]'
     )
     assert feature_copy < install < report_check
+    assert (
+        "linux-features/local/grotto-single-window-chrome/README.md"
+        in containerfile[feature_copy:install]
+    )
+
+    dockerignore = DOCKERIGNORE.read_text(encoding="utf-8").splitlines()
+    readme_exception = (
+        "!runtimes/chatgpt-desktop/"
+        "codex-desktop-linux-features/**/README.md"
+    )
+    assert readme_exception in dockerignore
+    assert dockerignore.index(readme_exception) > dockerignore.index("**/README.md")
 
 
 def load_configurator():

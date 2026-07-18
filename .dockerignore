@@ -13,6 +13,8 @@ docs/
 LICENSE
 *.md
 **/README.md
+# codex-desktop-linux treats feature READMEs as required build metadata.
+!runtimes/chatgpt-desktop/codex-desktop-linux-features/**/README.md
 
 # Quadlet / systemd unit examples are runtime deployment artifacts, not build inputs
 quadlet/

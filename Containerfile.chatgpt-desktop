@@ -86,6 +86,8 @@ RUN set -eux; \
     python3 -m json.tool linux-features/features.json >/dev/null; \
     grep -q '"grotto-single-window-chrome"' linux-features/features.json; \
     test -f \
+        linux-features/local/grotto-single-window-chrome/README.md; \
+    test -f \
         linux-features/local/grotto-single-window-chrome/feature.json; \
     test -f \
         linux-features/local/grotto-single-window-chrome/patch.js
