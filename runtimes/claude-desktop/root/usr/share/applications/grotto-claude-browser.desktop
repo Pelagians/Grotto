@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Firefox ESR for Claude authentication
+Comment=Open Claude authentication links in the Selkies session
+Exec=/usr/local/bin/grotto-claude-browser %u
+Terminal=false
+NoDisplay=true
+MimeType=text/html;x-scheme-handler/http;x-scheme-handler/https;
+Categories=Network;WebBrowser;
