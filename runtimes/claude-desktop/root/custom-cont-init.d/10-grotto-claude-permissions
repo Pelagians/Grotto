@@ -32,15 +32,27 @@ install -d -o abc -g abc -m 0700 \
     /config/.mozilla \
     /config/.local/share/keyrings
 
-# The Selkies base seeds these only for a new configuration volume. Refresh the
-# launchers on every image start so upgrades and display-mode switches use the
-# current Claude startup path.
+# Refresh Grotto-managed launchers and window policy on every image start. This
+# prevents an existing /config volume from retaining LinuxServer's catch-all
+# maximization or duplicate server-side frames after an image update.
 install -o abc -g abc -m 0755 \
     /defaults/autostart \
     /config/.config/openbox/autostart
 install -o abc -g abc -m 0755 \
     /defaults/autostart_wayland \
     /config/.config/labwc/autostart
+install -o abc -g abc -m 0644 \
+    /defaults/labwc.xml \
+    /config/.config/labwc/rc.xml
+
+if [[ ! -f /config/.config/openbox/rc.xml ]]; then
+    install -o abc -g abc -m 0644 \
+        /etc/xdg/openbox/rc.xml \
+        /config/.config/openbox/rc.xml
+fi
+/usr/local/libexec/grotto-configure-openbox \
+    /config/.config/openbox/rc.xml
+chown abc:abc /config/.config/openbox/rc.xml
 
 # Repair application-owned state, but never recursively rewrite the mounted
 # project workspace or user-installed tool trees.
