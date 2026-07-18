@@ -1,0 +1,34 @@
+#!/bin/bash
+set -Eeuo pipefail
+
+export HOME="${HOME:-/config}"
+export CLAUDE_CONFIG_DIR="${CLAUDE_CONFIG_DIR:-/config/.claude}"
+export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-/config/.config}"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-/config/.cache}"
+export XDG_DATA_HOME="${XDG_DATA_HOME:-/config/.local/share}"
+export XDG_STATE_HOME="${XDG_STATE_HOME:-/config/.local/state}"
+
+install -d -m 0755 \
+    "$XDG_CONFIG_HOME" \
+    "$XDG_CACHE_HOME" \
+    "$XDG_DATA_HOME" \
+    "$XDG_STATE_HOME" \
+    /workspace
+install -d -m 0700 \
+    "$CLAUDE_CONFIG_DIR" \
+    "$XDG_DATA_HOME/keyrings"
+
+# Claude and desktop extensions use the Secret Service API for sensitive state.
+# Selkies normally provides a session D-Bus. Start only the secrets component
+# and preserve any environment values returned by an already-running daemon.
+if command -v gnome-keyring-daemon >/dev/null 2>&1; then
+    keyring_environment="$(
+        gnome-keyring-daemon --start --components=secrets 2>/dev/null || true
+    )"
+    if [[ -n "$keyring_environment" ]]; then
+        eval "$keyring_environment"
+    fi
+fi
+
+cd /workspace
+exec /usr/bin/claude-desktop
