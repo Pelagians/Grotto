@@ -70,6 +70,21 @@ class InstalledPolicyVerifierTest(unittest.TestCase):
         self.assertFalse(inspection.node_repl_auto_approved)
         self.assertTrue(inspection.browser_use_trusted_client_hash_patch)
 
+    def test_identical_verified_client_hashes_pass(self) -> None:
+        sources = self.safe_sources(
+            SAFE_BROWSER_BUNDLE.replace(TRUSTED_HASHES[1], TRUSTED_HASHES[0])
+        )
+        sources[
+            "resources/plugins/openai-bundled/plugins/chrome/scripts/browser-client.mjs"
+        ] = BROWSER_CLIENT
+        temporary, root = self.fixture(sources)
+        with temporary:
+            inspection = policy.inspect_installed_application(root)
+
+        self.assertTrue(inspection.node_repl_exposed)
+        self.assertFalse(inspection.node_repl_auto_approved)
+        self.assertTrue(inspection.browser_use_trusted_client_hash_patch)
+
     def test_normalized_auto_approval_variants_fail(self) -> None:
         variants = (
             'tools: { js: { approval_mode: "approve" } }',
