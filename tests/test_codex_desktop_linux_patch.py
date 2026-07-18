@@ -122,10 +122,16 @@ class CodexDesktopLinuxPatchTest(unittest.TestCase):
             self.implementation,
         )
         self.assertIn("trustedBrowserClientSha256s", self.implementation)
+        self.assertIn("trustedHashesSchemaRegex", self.implementation)
         self.assertIn(
-            'return source.includes("trustedBrowserClientSha256s")',
+            ".transform(codexLinuxTrustedBrowserClientSha256s)",
             self.implementation,
         )
+        self.assertIn("function bundledBrowserClientSha256s", self.implementation)
+        self.assertIn('require("node:crypto")', self.implementation)
+        self.assertIn('path.join(extractedDir, "webview", "assets")', self.implementation)
+        self.assertIn('"browser-client.mjs"', self.implementation)
+        self.assertIn('return source.includes("trustedBrowserClientSha256s")', self.implementation)
 
     def test_automatic_javascript_approval_insertion_is_absent(self) -> None:
         self.assertNotIn("mcpServerConfigRegex", self.implementation)
