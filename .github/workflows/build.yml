@@ -29,6 +29,47 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
+  checks:
+    name: Static policy checks
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run repository checks
+        run: make check
+
+      - name: Run focused Python tests
+        run: |
+          python3 tests/test_codex_desktop_linux_patch.py
+          python3 tests/test_grotto_doctor.py
+          python3 tests/test_window_manager_config.py
+          python3 tests/test_verify_installed_chatgpt_policy.py
+
+      - name: Shellcheck changed shell files
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          mapfile -t shell_files < <(
+            git diff --name-only --diff-filter=ACMRT "$BASE_SHA...$HEAD_SHA" -- '*.sh'
+          )
+          if (( ${#shell_files[@]} > 0 )); then
+            shellcheck "${shell_files[@]}"
+          fi
+
+      - name: Check diff whitespace
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: git diff --check "$BASE_SHA...$HEAD_SHA"
+
   image:
     name: Build ${{ matrix.name }}
     runs-on: ubuntu-24.04
