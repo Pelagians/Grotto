@@ -52,10 +52,66 @@ podman build \
   .
 ```
 
+## Host browser bridge
+
+Claude Desktop delegates Google authentication to the operating system's
+browser. Grotto keeps the browser on the Podman host rather than adding a
+second browser and browser profile to the image.
+
+Install the user-scoped bridge from the repository:
+
+```bash
+python3 contrib/claude-host-bridge/grotto-claude-host-bridge install
+```
+
+The installer performs four user-level actions:
+
+1. Copies the bridge to `~/.local/bin/grotto-claude-host-bridge`.
+2. Starts `grotto-claude-host-bridge.service` through the systemd user manager.
+3. Registers the host's `claude://` handler.
+4. Creates the private runtime directory beneath `$XDG_RUNTIME_DIR`.
+
+Check its state with:
+
+```bash
+~/.local/bin/grotto-claude-host-bridge status
+```
+
+A healthy host service reports `Host browser socket: ready`. The Claude
+callback socket remains `missing` until the container and its graphical session
+are running.
+
+On systems without a usable systemd user manager, start the service from the
+host graphical session before clicking the sign-in button:
+
+```bash
+~/.local/bin/grotto-claude-host-bridge serve
+```
+
+The bridge uses a shared Unix-socket directory rather than TCP ports:
+
+```text
+Claude Desktop
+  -> /run/grotto/claude-bridge/host.sock
+  -> host xdg-open
+  -> normal host browser
+  -> host claude:// handler
+  -> /run/grotto/claude-bridge/claude.sock
+  -> running Claude Desktop session
+```
+
+The host endpoint accepts only absolute `https://` URLs. The container endpoint
+accepts only `claude://` callbacks. Both sockets are created in a mode-0700
+user runtime directory and have mode 0600. The bridge does not mount the Podman
+socket, expose a TCP listener, or provide a general command-execution channel.
+
 ## Run with Intel or AMD graphics
 
 ```bash
 mkdir -p claude-config workspace tools cache
+BRIDGE_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/grotto/claude-bridge"
+mkdir -p "$BRIDGE_DIR"
+chmod 0700 "$BRIDGE_DIR"
 
 podman run --rm \
   --name grotto-claude-desktop \
@@ -74,6 +130,7 @@ podman run --rm \
   --volume "$PWD/workspace:/workspace:Z" \
   --volume "$PWD/tools:/tools:Z" \
   --volume "$PWD/cache:/cache:Z" \
+  --volume "$BRIDGE_DIR:/run/grotto/claude-bridge:z" \
   ghcr.io/pelagians/grotto-claude-desktop:latest
 ```
 
@@ -93,62 +150,77 @@ For a CPU/X11 fallback, omit `/dev/dri` and use:
 Sign in through Claude Desktop's first-run interface. The image does not bake
 credentials or copy Claude Code CLI tokens into the desktop application.
 
-`Sign in with Google` requires an external browser rather than an embedded
-Electron webview. The image includes Firefox ESR and registers it as the
-HTTP/HTTPS browser inside the Selkies desktop. Clicking the Google button opens
-a Firefox window in the same streamed session. Complete Google authentication
-there, then accept the browser's request to return to Claude Desktop if it
-prompts to open a `claude://` link.
+When `Sign in with Google` is clicked, Claude Desktop invokes the configured
+browser handler inside Selkies. `/usr/local/bin/grotto-claude-browser` validates
+the URL and sends it through `host.sock`. The host service opens the URL using
+the host desktop's normal `xdg-open` path.
 
-The same-session browser is intentional. Opening the login URL on the Podman
-host would leave the OAuth return protocol on the host, where it could not
-reach Claude Desktop inside the container. Grotto registers
-`x-scheme-handler/claude` to `/usr/local/bin/grotto-claude-url-handler`, which
-passes the return URL to the running desktop application.
+After Google and Claude finish authentication, the browser opens a `claude://`
+callback. The installed host desktop entry forwards that callback through
+`claude.sock`. A listener started by the Selkies autostart script inherits the
+active Wayland/X11 and session D-Bus environment and passes the URI to the
+running Claude Desktop application.
 
-Firefox state is stored beneath `/config` because the container sets
-`HOME=/config`. Treat it as sensitive alongside the Claude session. To retry
-from a completely clean browser and Claude session, stop the container and
-remove only the relevant test configuration directory after backing up anything
-that must be retained.
+The shared bridge directory must be mounted for both directions to work. A
+missing host socket usually means the host service is not running. A missing
+Claude socket usually means the container has not reached its graphical
+autostart phase. Check both with:
+
+```bash
+~/.local/bin/grotto-claude-host-bridge status
+podman exec --user abc grotto-claude-desktop \
+  ls -la /run/grotto/claude-bridge
+```
+
+Container-side bridge errors are written to:
+
+```text
+/config/.cache/grotto/claude-browser-bridge-error.log
+/config/.cache/grotto/claude-callback-listener.log
+```
 
 Claude application state is redirected under `/config` by setting `HOME` and
 the XDG paths to persistent locations. The launcher also starts the Secret
-Service component of `gnome-keyring-daemon` when possible, and persists its
+Service component of `gnome-keyring-daemon` when possible and persists its
 keyring data under `/config/.local/share/keyrings`.
 
-Treat `/config` as sensitive. It can contain authenticated sessions, browser
-cookies, Claude settings, extension credentials, MCP configuration, and Claude
-Code state.
+Treat `/config` as sensitive. It can contain authenticated sessions, Claude
+settings, extension credentials, MCP configuration, and Claude Code state.
+
+Remove the host integration with:
+
+```bash
+~/.local/bin/grotto-claude-host-bridge uninstall
+```
 
 ## Persistent state
 
 | Path | Purpose | Persistence |
 | --- | --- | --- |
-| `/config` | Claude sessions, browser profile, settings, keyrings, and application state | Required |
+| `/config` | Claude sessions, settings, keyrings, and application state | Required |
 | `/workspace` | Project repositories and working files | Required |
 | `/tools` | User-installed tools and language environments | Recommended |
 | `/cache` | Disposable package caches | Optional |
+| `/run/grotto/claude-bridge` | Ephemeral host-browser and callback sockets | Runtime bind mount |
 
 Important paths inside `/config` include:
 
 - `/config/.claude` for Claude Code settings and state
 - `/config/.claude.json` when created by Claude
 - `/config/.config` for application configuration and URL-handler associations
-- `/config/.cache` for application cache and logs
+- `/config/.cache` for application cache and bridge logs
 - `/config/.local/share/keyrings` for Secret Service state
-- `/config/.mozilla` for the Firefox profile used during authentication
 
 The container initialization script repairs ownership only for Grotto-managed
 configuration, tool, and cache paths. It does not recursively rewrite the
-mounted project workspace.
+mounted project workspace or host runtime directory.
 
 ## Workbench tools
 
 The image includes a practical baseline for local development and MCP servers:
 Git, GitHub CLI, SSH, curl, jq, Python, pip, ripgrep, shellcheck, SQLite,
-archive tools, D-Bus utilities, Secret Service support, and Firefox ESR for
-account authentication.
+archive tools, D-Bus utilities, and Secret Service support. It does not bundle a
+web browser.
 
 Persistent installation paths match `grotto-chatgpt-desktop`:
 
@@ -190,14 +262,16 @@ podman run --rm \
 ```
 
 The smoke test verifies the package, repository signing key, recorded version,
-Selkies executable, Firefox executable, Secret Service dependency, writable
-persistent roots, HTTP/HTTPS browser association, and `claude://` return
-handler. It intentionally does not launch the graphical client or authenticate.
+Selkies executable, Secret Service dependency, writable persistent roots,
+bridge-client validation, callback-listener validation, HTTP/HTTPS association,
+and the internal `claude://` handler. It intentionally does not launch the
+graphical client, host browser, or a real authentication flow.
 
-The remaining integration checks require an actual Selkies session:
+The remaining integration checks require an actual Selkies session and host
+browser:
 
 1. Claude renders in Wayland/Labwc and X11/Openbox modes.
-2. `Sign in with Google` opens Firefox inside Selkies and returns to Claude.
+2. `Sign in with Google` opens the host browser and returns to Claude.
 3. Authentication survives replacement of the container.
 4. File and folder selection can access `/workspace`.
 5. Claude Code can edit a mounted repository and invoke installed tools.
