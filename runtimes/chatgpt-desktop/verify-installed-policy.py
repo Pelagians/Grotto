@@ -108,21 +108,21 @@ def marker_contexts(
     sources: Iterable[tuple[pathlib.Path, str]],
     marker: str,
     *,
-    limit: int = 4,
-    radius: int = 700,
+    limit: int = 8,
+    radius: int = 900,
 ) -> list[str]:
     """Return bounded, whitespace-normalized source context for CI diagnosis."""
     contexts: list[str] = []
     for path, source in sources:
         offset = source.find(marker)
-        if offset < 0:
-            continue
-        start = max(0, offset - radius)
-        end = min(len(source), offset + len(marker) + radius)
-        snippet = re.sub(r"\s+", " ", source[start:end]).strip()
-        contexts.append(f"{path.relative_to(root)}: {snippet}")
-        if len(contexts) >= limit:
-            break
+        while offset >= 0:
+            start = max(0, offset - radius)
+            end = min(len(source), offset + len(marker) + radius)
+            snippet = re.sub(r"\s+", " ", source[start:end]).strip()
+            contexts.append(f"{path.relative_to(root)}@{offset}: {snippet}")
+            if len(contexts) >= limit:
+                return contexts
+            offset = source.find(marker, offset + len(marker))
     return contexts
 
 
@@ -166,18 +166,29 @@ def inspect_installed_application(root: pathlib.Path) -> Inspection:
     if browser_use_present:
         if not trusted_hash_behavior:
             evidence = sorted(browser_use_markers) + browser_client_artifacts
-            contexts = marker_contexts(
-                root, sources, "trustedBrowserClientSha256s"
-            )
+            diagnostic_contexts: list[str] = []
+            for marker in (
+                "trustedBrowserClientSha256s",
+                "nodeReplPath",
+                "browserClientPath",
+            ):
+                diagnostic_contexts.extend(
+                    f"{marker}: {context}"
+                    for context in marker_contexts(root, sources, marker)
+                )
             detail = (
                 f"helper_definition={helper_definition}, "
                 f"helper_application={helper_application}"
             )
-            if contexts:
-                detail += "; contexts: " + " || ".join(contexts)
+            if diagnostic_contexts:
+                detail += "; contexts: " + " || ".join(diagnostic_contexts)
             raise VerificationError(
                 "Browser Use is present without the trusted-client hash adjustment"
-                + (f" (evidence: {', '.join(evidence)}; {detail})" if evidence else f" ({detail})")
+                + (
+                    f" (evidence: {', '.join(evidence)}; {detail})"
+                    if evidence
+                    else f" ({detail})"
+                )
             )
         if not node_repl_exposed:
             raise VerificationError(
