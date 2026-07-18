@@ -29,9 +29,8 @@ The installed package version is recorded at:
 /usr/share/grotto/claude-desktop-version
 ```
 
-The first implementation tracks the current stable package candidate. A
-specific version can be selected at build time with
-`CLAUDE_DESKTOP_VERSION=<apt-version>`.
+The default build tracks the current stable package candidate. A specific
+version can be selected with `CLAUDE_DESKTOP_VERSION=<apt-version>`.
 
 ## Local build
 
@@ -52,70 +51,57 @@ podman build \
   .
 ```
 
-## Host browser bridge
+## Viewer-browser bridge
 
 Claude Desktop delegates Google authentication to the operating system's
-browser. Grotto keeps the browser on the Podman host rather than adding a
-second browser and browser profile to the image.
+browser. A remote Selkies session cannot use an ordinary local browser handler
+because the browser viewing the session may be on another machine.
 
-Install the user-scoped bridge from the repository:
-
-```bash
-python3 contrib/claude-host-bridge/grotto-claude-host-bridge install
-```
-
-The installer performs four user-level actions:
-
-1. Copies the bridge to `~/.local/bin/grotto-claude-host-bridge`.
-2. Starts `grotto-claude-host-bridge.service` through the systemd user manager.
-3. Registers the host's `claude://` handler.
-4. Creates the shared bridge directory inside the private user runtime root.
-
-Check its state with:
-
-```bash
-~/.local/bin/grotto-claude-host-bridge status
-```
-
-A healthy host service reports `Host browser socket: ready`. The Claude
-callback socket remains `missing` until the container and its graphical session
-are running.
-
-On systems without a usable systemd user manager, start the service from the
-host graphical session before clicking the sign-in button:
-
-```bash
-~/.local/bin/grotto-claude-host-bridge serve
-```
-
-The bridge uses a shared Unix-socket directory rather than TCP ports:
+Grotto keeps this handoff entirely inside the image:
 
 ```text
 Claude Desktop
-  -> /run/grotto/claude-bridge/host.sock
-  -> host xdg-open
-  -> normal host browser
-  -> host claude:// handler
-  -> /run/grotto/claude-bridge/claude.sock
-  -> running Claude Desktop session
+  -> xdg-open / BROWSER
+  -> /usr/local/bin/grotto-claude-browser
+  -> authenticated Selkies URL-event file
+  -> injected Selkies viewer overlay
+  -> browser-native link on the viewer's device
 ```
 
-The host endpoint accepts only absolute `https://` URLs. The container endpoint
-accepts only `claude://` callbacks. The parent `$XDG_RUNTIME_DIR` remains private
-to the logged-in host user. The mounted child directory and sockets use broad
-Unix mode bits so processes on opposite sides of rootless Podman's UID namespace
-can connect; they are reachable only through that private parent on the host and
-through the explicit bind mount in the Claude container. The bridge does not
-mount the Podman socket, expose a TCP listener, or provide a general
-command-execution channel.
+LinuxServer selects a dashboard at startup and copies it into
+`/usr/share/selkies/web`, which NGINX serves through the same authentication as
+the remote desktop. During the image build, Grotto patches every packaged
+`selkies-dashboard*` variant with:
+
+- `grotto-claude-viewer-open.js`, a small browser-side overlay
+- `grotto-claude-open-url.json`, a writable one-event handoff file
+
+`grotto-claude-browser` accepts only absolute HTTPS URLs, assigns each request a
+unique identifier and timestamp, and writes it to the live event file. The
+viewer script polls that same-origin file with caching disabled. A fresh event
+shows an overlay containing a real `<a target="_blank">` link. The extra click
+is intentional because browsers commonly block asynchronously created popups.
+
+The bridge adds no browser package, host service, bind mount, TCP listener,
+Podman socket, browser extension, or Selkies fork.
+
+### Bridge security boundaries
+
+- outbound URLs must use `https://` and include a hostname
+- event URLs are limited to 16 KiB
+- the viewer ignores events older than 15 minutes
+- the event file is served only through the existing Selkies NGINX site
+- the viewer revalidates the URL scheme before displaying it
+- the overlay uses `noopener` and `noreferrer`
+- no arbitrary command or non-HTTP protocol is accepted by the bridge
+
+Anyone who can control the authenticated Selkies session can see the pending
+sign-in link. Treat it as sensitive and avoid sharing a session during login.
 
 ## Run with Intel or AMD graphics
 
 ```bash
 mkdir -p claude-config workspace tools cache
-BRIDGE_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/grotto/claude-bridge"
-mkdir -p "$BRIDGE_DIR"
-chmod 0777 "$BRIDGE_DIR"
 
 podman run --rm \
   --name grotto-claude-desktop \
@@ -134,7 +120,6 @@ podman run --rm \
   --volume "$PWD/workspace:/workspace:Z" \
   --volume "$PWD/tools:/tools:Z" \
   --volume "$PWD/cache:/cache:Z" \
-  --volume "$BRIDGE_DIR:/run/grotto/claude-bridge:z" \
   ghcr.io/pelagians/grotto-claude-desktop:latest
 ```
 
@@ -154,33 +139,50 @@ For a CPU/X11 fallback, omit `/dev/dri` and use:
 Sign in through Claude Desktop's first-run interface. The image does not bake
 credentials or copy Claude Code CLI tokens into the desktop application.
 
-When `Sign in with Google` is clicked, Claude Desktop invokes the configured
-browser handler inside Selkies. `/usr/local/bin/grotto-claude-browser` validates
-the URL and sends it through `host.sock`. The host service opens the URL using
-the host desktop's normal `xdg-open` path.
+When `Sign in with Google` is clicked:
 
-After Google and Claude finish authentication, the browser opens a `claude://`
-callback. The installed host desktop entry forwards that callback through
-`claude.sock`. A listener started by the Selkies autostart script inherits the
-active Wayland/X11 and session D-Bus environment and passes the URI to the
-running Claude Desktop application.
+1. Claude Desktop invokes the Grotto browser handler.
+2. The handler publishes the HTTPS login URL into the live Selkies dashboard.
+3. The browser viewing Selkies displays a `Continue Claude sign-in` overlay.
+4. The user clicks `Open sign-in page` and completes authentication in that
+   browser.
+5. The user returns to the Selkies tab.
 
-The shared bridge directory must be mounted for both directions to work. A
-missing host socket usually means the host service is not running. A missing
-Claude socket usually means the container has not reached its graphical
-autostart phase. Check both with:
+The outbound handoff is implemented and testable without any host integration.
+The exact return behavior of Anthropic's current Linux login flow must be
+observed in a real graphical session. It may complete through account-side
+polling, or it may attempt a protocol callback. Grotto does not register or
+forward a `claude://` callback until the actual login flow demonstrates that it
+is required.
+
+Inspect the current event inside a running container:
 
 ```bash
-~/.local/bin/grotto-claude-host-bridge status
 podman exec --user abc grotto-claude-desktop \
-  ls -la /run/grotto/claude-bridge
+  cat /usr/share/selkies/web/grotto-claude-open-url.json
 ```
 
-Container-side bridge errors are written to:
+The file can contain a live authentication URL. Do not publish its contents.
+
+Verify the browser association:
+
+```bash
+podman exec --user abc grotto-claude-desktop bash -lc '
+  printf "BROWSER=%s\n" "$BROWSER"
+  xdg-mime query default x-scheme-handler/https
+'
+```
+
+Expected handler:
 
 ```text
-/config/.cache/grotto/claude-browser-bridge-error.log
-/config/.cache/grotto/claude-callback-listener.log
+grotto-claude-browser.desktop
+```
+
+Container-side handoff errors are written to:
+
+```text
+/config/.cache/grotto/claude-viewer-bridge-error.log
 ```
 
 Claude application state is redirected under `/config` by setting `HOME` and
@@ -191,12 +193,6 @@ keyring data under `/config/.local/share/keyrings`.
 Treat `/config` as sensitive. It can contain authenticated sessions, Claude
 settings, extension credentials, MCP configuration, and Claude Code state.
 
-Remove the host integration with:
-
-```bash
-~/.local/bin/grotto-claude-host-bridge uninstall
-```
-
 ## Persistent state
 
 | Path | Purpose | Persistence |
@@ -205,19 +201,18 @@ Remove the host integration with:
 | `/workspace` | Project repositories and working files | Required |
 | `/tools` | User-installed tools and language environments | Recommended |
 | `/cache` | Disposable package caches | Optional |
-| `/run/grotto/claude-bridge` | Ephemeral host-browser and callback sockets | Runtime bind mount |
 
 Important paths inside `/config` include:
 
 - `/config/.claude` for Claude Code settings and state
 - `/config/.claude.json` when created by Claude
 - `/config/.config` for application configuration and URL-handler associations
-- `/config/.cache` for application cache and bridge logs
+- `/config/.cache` for application cache and viewer-bridge errors
 - `/config/.local/share/keyrings` for Secret Service state
 
 The container initialization script repairs ownership only for Grotto-managed
-configuration, tool, and cache paths. It does not recursively rewrite the
-mounted project workspace or host runtime directory.
+configuration, tool, cache, and dashboard event paths. It does not recursively
+rewrite the mounted project workspace.
 
 ## Workbench tools
 
@@ -267,17 +262,18 @@ podman run --rm \
 
 The smoke test verifies the package, repository signing key, recorded version,
 Selkies executable, Secret Service dependency, writable persistent roots,
-bridge-client validation, callback-listener validation, HTTP/HTTPS association,
-and the internal `claude://` handler. It intentionally does not launch the
-graphical client, host browser, or a real authentication flow.
+HTTPS-only browser handler, MIME association, and viewer injection across every
+packaged Selkies dashboard. It intentionally does not launch the graphical
+client or perform real authentication.
 
-The remaining integration checks require an actual Selkies session and host
-browser:
+The remaining integration checks require an actual Selkies session:
 
 1. Claude renders in Wayland/Labwc and X11/Openbox modes.
-2. `Sign in with Google` opens the host browser and returns to Claude.
-3. Authentication survives replacement of the container.
-4. File and folder selection can access `/workspace`.
-5. Claude Code can edit a mounted repository and invoke installed tools.
-6. Secret Service state survives restart without plaintext fallback flags.
-7. The runtime works under rootless Podman without disabling SELinux or seccomp.
+2. `Sign in with Google` produces the viewer overlay and opens the viewer's
+   browser.
+3. The post-login return behavior is identified and handled only if required.
+4. Authentication survives replacement of the container.
+5. File and folder selection can access `/workspace`.
+6. Claude Code can edit a mounted repository and invoke installed tools.
+7. Secret Service state survives restart without plaintext fallback flags.
+8. The runtime works under rootless Podman without disabling SELinux or seccomp.
