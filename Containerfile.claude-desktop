@@ -161,8 +161,8 @@ RUN set -eux; \
         /cache/uv; \
     install -d -o abc -g abc -m 0700 \
         /config/.claude \
-        /config/.local/share/keyrings \
-        /run/grotto/claude-bridge; \
+        /config/.local/share/keyrings; \
+    install -d -o abc -g abc -m 0777 /run/grotto/claude-bridge; \
     icon="$(find /usr/share/icons -type f -iname '*claude*.png' 2>/dev/null | sort -V | tail -n 1 || true)"; \
     if [ -n "$icon" ]; then \
         install -m 0644 "$icon" /usr/share/selkies/www/icon.png; \
