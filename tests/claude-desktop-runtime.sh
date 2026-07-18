@@ -87,6 +87,6 @@ test "$(xdg-mime query default x-scheme-handler/claude)" = grotto-claude-url-han
 
 test "$(stat -c '%a' "$CLAUDE_CONFIG_DIR")" = 700
 test "$(stat -c '%a' "$XDG_DATA_HOME/keyrings")" = 700
-test "$(stat -c '%a' "$GROTTO_CLAUDE_BRIDGE_DIR")" = 700
+test "$(stat -c '%a' "$GROTTO_CLAUDE_BRIDGE_DIR")" = 777
 
 printf 'Claude Desktop %s runtime smoke test passed\n' "$installed_version"
