@@ -32,6 +32,11 @@ for command_name in "${required[@]}"; do
     fi
 done
 
+test -x /usr/local/libexec/grotto-configure-openbox
+test -x /defaults/autostart
+test -x /defaults/autostart_wayland
+test -f /defaults/labwc.xml
+
 bundled_bwrap="$(find /opt/codex-cli/lib/node_modules/@openai/codex \
     -path '*/codex-resources/bwrap' -type f -perm /111 -print -quit)"
 test -n "$bundled_bwrap"

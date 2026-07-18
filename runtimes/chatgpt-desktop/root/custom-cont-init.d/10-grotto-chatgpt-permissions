@@ -6,6 +6,9 @@ set -Eeuo pipefail
 # Keep Codex credentials owned by the same account that launches the desktop app.
 install -d -o abc -g abc -m 0700 /config/.codex
 install -d -o abc -g abc -m 0755 \
+    /config/.config \
+    /config/.config/labwc \
+    /config/.config/openbox \
     /workspace \
     /tools \
     /tools/bin \
@@ -21,6 +24,18 @@ install -d -o abc -g abc -m 0755 \
     /cache/pip \
     /cache/uv \
     /cache/xdg
+
+# The Selkies base only seeds a window-manager autostart file when persistent
+# state does not already contain one. Refresh both supported sessions so an
+# image upgrade or an X11/Wayland mode switch cannot retain the base terminal
+# launcher instead of Grotto's ChatGPT launcher. The base locks the active copy
+# read-only later when RESTART_APP is enabled.
+install -o abc -g abc -m 0755 \
+    /defaults/autostart \
+    /config/.config/openbox/autostart
+install -o abc -g abc -m 0755 \
+    /defaults/autostart_wayland \
+    /config/.config/labwc/autostart
 
 # Repair only the persistent roots and Grotto-managed tool/cache directories.
 # Project contents keep their existing ownership so host-side checkouts are not
