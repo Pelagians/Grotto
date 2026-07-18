@@ -15,6 +15,7 @@ keyring=/usr/share/keyrings/claude-desktop-archive-keyring.asc
 repository=/etc/apt/sources.list.d/claude-desktop.list
 version_file=/usr/share/grotto/claude-desktop-version
 viewer_script=/usr/share/grotto/claude-viewer-open.js
+nginx_template=/defaults/default.conf
 architecture="$(dpkg --print-architecture)"
 gnupg_home="$(mktemp -d)"
 chmod 0700 "$gnupg_home"
@@ -33,20 +34,43 @@ done
 
 test -x /usr/bin/claude-desktop
 test -x /usr/local/bin/grotto-claude-browser
+test -x /usr/local/bin/grotto-claude-callback-relay
 test -x /lsiopy/bin/selkies
 test -r /usr/share/applications/grotto-claude-browser.desktop
 test -r "$viewer_script"
+test -r "$nginx_template"
 test -r "$keyring"
 test -r "$repository"
 test -s "$version_file"
 
 python3 /usr/local/bin/grotto-claude-browser --self-test
+python3 /usr/local/bin/grotto-claude-callback-relay --self-test
 
 grep -Fq 'target="_blank"' "$viewer_script"
 grep -Fq 'parsed.protocol !== "https:"' "$viewer_script"
 grep -Fq 'credentials: "same-origin"' "$viewer_script"
-if grep -Fq 'host.sock' /usr/local/bin/grotto-claude-browser; then
-    echo "Claude browser handler still depends on a host socket" >&2
+grep -Fq 'new URL("grotto/claude-callback", scriptUrl)' "$viewer_script"
+grep -Fq '"X-Grotto-Claude-Relay": "1"' "$viewer_script"
+grep -Fq 'startsWith("claude://")' "$viewer_script"
+grep -Fq 'Send to remote Claude' "$viewer_script"
+
+test "$(grep -Fc 'location = SUBFOLDERgrotto/claude-callback' "$nginx_template")" = 2
+test "$(grep -Fc 'limit_except POST { deny all; }' "$nginx_template")" = 2
+test "$(grep -Fc 'proxy_pass http://127.0.0.1:17888/callback;' "$nginx_template")" = 2
+
+if grep -RFq 'host.sock' \
+    /usr/local/bin/grotto-claude-browser \
+    /usr/local/bin/grotto-claude-callback-relay \
+    "$viewer_script"; then
+    echo "Claude authentication still depends on a host socket" >&2
+    exit 1
+fi
+
+if grep -RFq '/run/grotto/claude-bridge' \
+    /usr/local/bin/grotto-claude-browser \
+    /usr/local/bin/grotto-claude-callback-relay \
+    "$viewer_script"; then
+    echo "Claude authentication still depends on an external bridge mount" >&2
     exit 1
 fi
 
@@ -100,6 +124,7 @@ for dashboard in /usr/share/selkies/selkies-dashboard*; do
     test -w "$event"
     test "$(stat -c '%a' "$event")" = 644
     grep -Fq 'grotto-claude-viewer-open.js' "$index"
+    grep -Fq 'grotto/claude-callback' "$script"
 
     python3 - "$event" <<'PY'
 import json
