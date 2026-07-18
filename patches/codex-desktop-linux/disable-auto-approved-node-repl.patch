@@ -30,7 +30,7 @@ index a6a6c5a..3813777 100644
    let patchedSource = currentSource;
    let patchedTrustedHashes = false;
    const hasTrustedHashesRuntimeBuilder =
-@@ -218,21 +219,42 @@ function applyBrowserUseNodeReplApprovalPatch(currentSource) {
+@@ -218,22 +219,45 @@ function applyBrowserUseNodeReplApprovalPatch(currentSource) {
        },
      );
    }
@@ -90,7 +90,7 @@ index a6a6c5a..3813777 100644
    if (
      patchedTrustedHashes &&
      !patchedSource.includes("function codexLinuxTrustedBrowserClientSha256s(")
-@@ -276,42 +298,83 @@ function applyBrowserUseNodeReplApprovalPatch(currentSource) {
+@@ -276,43 +300,103 @@ function applyBrowserUseNodeReplApprovalPatch(currentSource) {
      );
    }
  
@@ -208,7 +208,7 @@ index a6a6c5a..3813777 100644
        } catch {
          return false;
        }
-@@ -321,7 +384,10 @@ function applyBrowserUseNodeReplApprovalAssets(extractedDir) {
+@@ -321,7 +405,10 @@ function applyBrowserUseNodeReplApprovalAssets(extractedDir) {
    const pendingWrites = [];
    for (const candidate of candidates) {
      const currentSource = fs.readFileSync(candidate, "utf8");
