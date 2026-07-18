@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import pathlib
@@ -17,6 +18,14 @@ from typing import Iterable
 SCHEMA_VERSION = 1
 VERIFICATION_SOURCE = "installed-electron-bundle"
 JAVASCRIPT_SUFFIXES = {".js", ".cjs", ".mjs"}
+BROWSER_CLIENT_SUFFIXES = {
+    "browser": pathlib.PurePath(
+        "resources/plugins/openai-bundled/plugins/browser/scripts/browser-client.mjs"
+    ).parts,
+    "chrome": pathlib.PurePath(
+        "resources/plugins/openai-bundled/plugins/chrome/scripts/browser-client.mjs"
+    ).parts,
+}
 
 # Property names may be quoted and production bundles may be minified. Keep this
 # structural instead of relying on one source whitespace layout.
@@ -30,7 +39,14 @@ TRUST_HELPER_DEFINITION_RE = re.compile(
     r"function\s+codexLinuxTrustedBrowserClientSha256s\s*\("
 )
 TRUST_HELPER_APPLICATION_RE = re.compile(
+    r"(?:"
     r"[A-Za-z_$][\w$]*\s*=\s*codexLinuxTrustedBrowserClientSha256s\s*\("
+    r"|\.transform\(\s*codexLinuxTrustedBrowserClientSha256s\s*\)"
+    r")"
+)
+TRUSTED_HASH_LITERAL_RE = re.compile(
+    r"(?:const|let|var)?\s*__codexLinuxBundledBrowserClientSha256s\s*=\s*"
+    r"(\[(?:\s*[\"'][0-9a-f]{64}[\"']\s*,?){2}\])"
 )
 NODE_REPL_MARKERS = (
     "nodeReplPath",
@@ -103,27 +119,62 @@ def read_sources(files: Iterable[pathlib.Path]) -> list[tuple[pathlib.Path, str]
     return result
 
 
-def marker_contexts(
-    root: pathlib.Path,
+def has_path_suffix(path: pathlib.Path, suffix: tuple[str, ...]) -> bool:
+    return len(path.parts) >= len(suffix) and path.parts[-len(suffix) :] == suffix
+
+
+def installed_browser_client_hashes(
     sources: Iterable[tuple[pathlib.Path, str]],
-    marker: str,
-    *,
-    limit: int = 16,
-    radius: int = 350,
-) -> list[str]:
-    """Return bounded, whitespace-normalized source context for CI diagnosis."""
-    contexts: list[str] = []
-    for path, source in sources:
-        offset = source.find(marker)
-        while offset >= 0:
-            start = max(0, offset - radius)
-            end = min(len(source), offset + len(marker) + radius)
-            snippet = re.sub(r"\s+", " ", source[start:end]).strip()
-            contexts.append(f"{path.relative_to(root)}@{offset}: {snippet}")
-            if len(contexts) >= limit:
-                return contexts
-            offset = source.find(marker, offset + len(marker))
-    return contexts
+) -> dict[str, str]:
+    matches: dict[str, list[pathlib.Path]] = {
+        plugin: [] for plugin in BROWSER_CLIENT_SUFFIXES
+    }
+    for path, _source in sources:
+        for plugin, suffix in BROWSER_CLIENT_SUFFIXES.items():
+            if has_path_suffix(path, suffix):
+                matches[plugin].append(path)
+
+    present = {plugin: paths for plugin, paths in matches.items() if paths}
+    if not present:
+        return {}
+    if any(len(matches[plugin]) != 1 for plugin in BROWSER_CLIENT_SUFFIXES):
+        detail = ", ".join(
+            f"{plugin}={len(paths)}" for plugin, paths in sorted(matches.items())
+        )
+        raise VerificationError(
+            f"Browser Use client artifact structure is incomplete or ambiguous: {detail}"
+        )
+
+    return {
+        plugin: hashlib.sha256(paths[0].read_bytes()).hexdigest()
+        for plugin, paths in matches.items()
+    }
+
+
+def embedded_trusted_hashes(combined: str) -> set[str] | None:
+    matches = TRUSTED_HASH_LITERAL_RE.findall(combined)
+    if not matches:
+        return None
+    if len(matches) != 1:
+        raise VerificationError(
+            "Browser Use trusted-client hash literal is duplicated or ambiguous"
+        )
+    try:
+        values = json.loads(matches[0].replace("'", '"'))
+    except json.JSONDecodeError as exc:
+        raise VerificationError(
+            "Browser Use trusted-client hash literal is malformed"
+        ) from exc
+    if (
+        not isinstance(values, list)
+        or len(values) != 2
+        or len(set(values)) != 2
+        or any(not re.fullmatch(r"[0-9a-f]{64}", value) for value in values)
+    ):
+        raise VerificationError(
+            "Browser Use trusted-client hash literal is incomplete or contradictory"
+        )
+    return set(values)
 
 
 def inspect_installed_application(root: pathlib.Path) -> Inspection:
@@ -146,45 +197,55 @@ def inspect_installed_application(root: pathlib.Path) -> Inspection:
     node_repl_markers = {marker for marker in NODE_REPL_MARKERS if marker in combined}
     browser_use_markers = {marker for marker in BROWSER_USE_MARKERS if marker in combined}
     ambiguous_markers = {marker for marker in AMBIGUOUS_MARKERS if marker in combined}
-    browser_client_artifacts = [
-        str(path.relative_to(root))
-        for path, _source in sources
-        if path.name == "browser-client.mjs" and "openai-bundled" in path.parts
-    ]
+    client_hashes = installed_browser_client_hashes(sources)
+    embedded_hashes = embedded_trusted_hashes(combined)
 
     node_repl_exposed = bool(node_repl_markers)
-    trusted_hash_behavior = helper_definition and helper_application
+    dynamic_hash_helper = all(
+        marker in combined
+        for marker in (
+            "createHash",
+            "sha256",
+            "readFileSync",
+            "browser-client.mjs",
+            "codexLinuxTrustedBrowserClientSha256s",
+        )
+    )
+    exact_literal_hashes = (
+        bool(client_hashes)
+        and embedded_hashes is not None
+        and embedded_hashes == set(client_hashes.values())
+    )
+    if embedded_hashes is not None and client_hashes:
+        if embedded_hashes != set(client_hashes.values()):
+            raise VerificationError(
+                "embedded Browser Use trusted-client hashes do not match the installed clients"
+            )
+    trusted_hash_behavior = (
+        helper_definition
+        and helper_application
+        and (dynamic_hash_helper or exact_literal_hashes)
+    )
     browser_use_present = bool(
         browser_use_markers
-        or browser_client_artifacts
+        or client_hashes
         or helper_definition
         or helper_application
+        or embedded_hashes
     )
 
     if helper_definition != helper_application:
         raise VerificationError("Browser Use trusted-client helper is only partially installed")
     if browser_use_present:
-        if not trusted_hash_behavior:
-            evidence = sorted(browser_use_markers) + browser_client_artifacts
-            diagnostic_contexts: list[str] = []
-            for marker in ("trustedBrowserClientSha256s", "nodeReplPath"):
-                diagnostic_contexts.extend(
-                    f"{marker}: {context}"
-                    for context in marker_contexts(root, sources, marker)
-                )
-            detail = (
-                f"helper_definition={helper_definition}, "
-                f"helper_application={helper_application}"
-            )
-            if diagnostic_contexts:
-                detail += "; contexts: " + " || ".join(diagnostic_contexts)
+        if not client_hashes:
             raise VerificationError(
-                "Browser Use is present without the trusted-client hash adjustment"
-                + (
-                    f" (evidence: {', '.join(evidence)}; {detail})"
-                    if evidence
-                    else f" ({detail})"
-                )
+                "Browser Use markers exist but both installed client artifacts are not present"
+            )
+        if not trusted_hash_behavior:
+            evidence = sorted(browser_use_markers) + sorted(client_hashes)
+            raise VerificationError(
+                "Browser Use is present without a verified trusted-client hash adjustment"
+                + (f" (evidence: {', '.join(evidence)})" if evidence else "")
             )
         if not node_repl_exposed:
             raise VerificationError(
