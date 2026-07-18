@@ -103,6 +103,29 @@ def read_sources(files: Iterable[pathlib.Path]) -> list[tuple[pathlib.Path, str]
     return result
 
 
+def marker_contexts(
+    root: pathlib.Path,
+    sources: Iterable[tuple[pathlib.Path, str]],
+    marker: str,
+    *,
+    limit: int = 4,
+    radius: int = 700,
+) -> list[str]:
+    """Return bounded, whitespace-normalized source context for CI diagnosis."""
+    contexts: list[str] = []
+    for path, source in sources:
+        offset = source.find(marker)
+        if offset < 0:
+            continue
+        start = max(0, offset - radius)
+        end = min(len(source), offset + len(marker) + radius)
+        snippet = re.sub(r"\s+", " ", source[start:end]).strip()
+        contexts.append(f"{path.relative_to(root)}: {snippet}")
+        if len(contexts) >= limit:
+            break
+    return contexts
+
+
 def inspect_installed_application(root: pathlib.Path) -> Inspection:
     files = javascript_files(root)
     sources = read_sources(files)
@@ -143,9 +166,18 @@ def inspect_installed_application(root: pathlib.Path) -> Inspection:
     if browser_use_present:
         if not trusted_hash_behavior:
             evidence = sorted(browser_use_markers) + browser_client_artifacts
+            contexts = marker_contexts(
+                root, sources, "trustedBrowserClientSha256s"
+            )
+            detail = (
+                f"helper_definition={helper_definition}, "
+                f"helper_application={helper_application}"
+            )
+            if contexts:
+                detail += "; contexts: " + " || ".join(contexts)
             raise VerificationError(
                 "Browser Use is present without the trusted-client hash adjustment"
-                + (f" (evidence: {', '.join(evidence)})" if evidence else "")
+                + (f" (evidence: {', '.join(evidence)}; {detail})" if evidence else f" ({detail})")
             )
         if not node_repl_exposed:
             raise VerificationError(
