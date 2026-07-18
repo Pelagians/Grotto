@@ -176,6 +176,57 @@ def embedded_trusted_hashes(combined: str) -> set[str] | None:
     return set(values)
 
 
+def finalize_embedded_trusted_hashes(root: pathlib.Path) -> bool:
+    """Bind the patched schema helper to the final Linux client artifacts."""
+    files = javascript_files(root)
+    sources = read_sources(files)
+    client_hashes = installed_browser_client_hashes(sources)
+    locations = [
+        (path, source, match)
+        for path, source in sources
+        for match in TRUSTED_HASH_LITERAL_RE.finditer(source)
+    ]
+
+    if not client_hashes:
+        if locations:
+            raise VerificationError(
+                "trusted-client hash literal exists without installed Browser Use clients"
+            )
+        return False
+    if len(locations) != 1:
+        raise VerificationError(
+            "Browser Use clients exist without one classifiable trusted-client hash literal"
+        )
+
+    path, source, match = locations[0]
+    final_values = list(client_hashes.values())
+    replacement = json.dumps(final_values, separators=(",", ":"))
+    if match.group(1) == replacement:
+        return False
+
+    updated = source[: match.start(1)] + replacement + source[match.end(1) :]
+    temporary: pathlib.Path | None = None
+    try:
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=f".{path.name}.", dir=path.parent, text=True
+        )
+        temporary = pathlib.Path(temporary_name)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(updated)
+            handle.flush()
+            os.fsync(handle.fileno())
+        temporary.chmod(stat.S_IMODE(path.stat().st_mode))
+        os.replace(temporary, path)
+    except (OSError, UnicodeError) as exc:
+        raise VerificationError(
+            f"cannot finalize Browser Use trusted-client hashes in {path}: {exc}"
+        ) from exc
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+    return True
+
+
 def inspect_installed_application(root: pathlib.Path) -> Inspection:
     files = javascript_files(root)
     sources = read_sources(files)
@@ -290,12 +341,19 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--root", type=pathlib.Path, required=True)
     parser.add_argument("--wrapper-revision", required=True)
     parser.add_argument("--manifest", type=pathlib.Path, required=True)
+    parser.add_argument(
+        "--finalize-trusted-hashes",
+        action="store_true",
+        help="bind the patched schema helper to final installed Browser Use clients",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     arguments = parse_args(sys.argv[1:] if argv is None else argv)
     try:
+        if arguments.finalize_trusted_hashes:
+            finalize_embedded_trusted_hashes(arguments.root)
         inspection = inspect_installed_application(arguments.root)
         manifest = inspection.manifest(arguments.wrapper_revision)
         write_manifest(arguments.manifest, manifest)
