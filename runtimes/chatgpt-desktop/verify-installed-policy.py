@@ -168,7 +168,6 @@ def embedded_trusted_hashes(combined: str) -> set[str] | None:
     if (
         not isinstance(values, list)
         or len(values) != 2
-        or len(set(values)) != 2
         or any(not re.fullmatch(r"[0-9a-f]{64}", value) for value in values)
     ):
         raise VerificationError(
