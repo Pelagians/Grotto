@@ -148,10 +148,11 @@ def inspect_installed_application(root: pathlib.Path) -> Inspection:
             raise VerificationError(
                 "Browser Use runtime exists but Node REPL integration cannot be classified"
             )
-    elif ambiguous_markers:
+    elif node_repl_exposed or ambiguous_markers:
+        markers = sorted(ambiguous_markers | node_repl_markers)
         raise VerificationError(
             "installed bundle contains ambiguous Browser Use/Node REPL markers: "
-            + ", ".join(sorted(ambiguous_markers))
+            + ", ".join(markers)
         )
     elif helper_definition or helper_application:
         raise VerificationError("trusted-client helper exists without a Browser Use runtime")
