@@ -32,14 +32,6 @@ TRUST_HELPER_DEFINITION_RE = re.compile(
 TRUST_HELPER_APPLICATION_RE = re.compile(
     r"[A-Za-z_$][\w$]*\s*=\s*codexLinuxTrustedBrowserClientSha256s\s*\("
 )
-RUNTIME_BUILDER_RE = re.compile(
-    r"function\s+[A-Za-z_$][\w$]*\s*\(\s*\{"
-    r"(?=[^{}]{0,4096}nodePath\s*:)"
-    r"(?=[^{}]{0,4096}nodeReplPath\s*:)"
-    r"(?=[^{}]{0,4096}shouldUseWslPaths\s*:)"
-    r"[^{}]{0,4096}trustedBrowserClientSha256s\s*:",
-    re.DOTALL,
-)
 NODE_REPL_MARKERS = (
     "nodeReplPath",
     "mcp_servers.${",
@@ -115,34 +107,45 @@ def inspect_installed_application(root: pathlib.Path) -> Inspection:
     files = javascript_files(root)
     sources = read_sources(files)
 
-    unsafe = [str(path) for path, source in sources if AUTO_APPROVAL_RE.search(source)]
-    if unsafe:
+    unsafe_paths = [
+        str(path) for path, source in sources if AUTO_APPROVAL_RE.search(source)
+    ]
+    node_repl_auto_approved = bool(unsafe_paths)
+    if node_repl_auto_approved:
         raise VerificationError(
             "Node REPL JavaScript automatic approval remains in installed bundle(s): "
-            + ", ".join(unsafe)
+            + ", ".join(unsafe_paths)
         )
 
     combined = "\n".join(source for _path, source in sources)
     helper_definition = bool(TRUST_HELPER_DEFINITION_RE.search(combined))
     helper_application = bool(TRUST_HELPER_APPLICATION_RE.search(combined))
-    runtime_builder = bool(RUNTIME_BUILDER_RE.search(combined))
     node_repl_markers = {marker for marker in NODE_REPL_MARKERS if marker in combined}
     browser_use_markers = {marker for marker in BROWSER_USE_MARKERS if marker in combined}
     ambiguous_markers = {marker for marker in AMBIGUOUS_MARKERS if marker in combined}
+    browser_client_artifacts = [
+        str(path.relative_to(root))
+        for path, _source in sources
+        if path.name == "browser-client.mjs" and "openai-bundled" in path.parts
+    ]
 
     node_repl_exposed = bool(node_repl_markers)
-    browser_use_present = runtime_builder or bool(browser_use_markers)
+    trusted_hash_behavior = helper_definition and helper_application
+    browser_use_present = bool(
+        browser_use_markers
+        or browser_client_artifacts
+        or helper_definition
+        or helper_application
+    )
 
     if helper_definition != helper_application:
         raise VerificationError("Browser Use trusted-client helper is only partially installed")
     if browser_use_present:
-        if not runtime_builder:
-            raise VerificationError(
-                "Browser Use markers exist but the runtime builder cannot be classified"
-            )
-        if not (helper_definition and helper_application):
+        if not trusted_hash_behavior:
+            evidence = sorted(browser_use_markers) + browser_client_artifacts
             raise VerificationError(
                 "Browser Use is present without the trusted-client hash adjustment"
+                + (f" (evidence: {', '.join(evidence)})" if evidence else "")
             )
         if not node_repl_exposed:
             raise VerificationError(
@@ -154,14 +157,12 @@ def inspect_installed_application(root: pathlib.Path) -> Inspection:
             "installed bundle contains ambiguous Browser Use/Node REPL markers: "
             + ", ".join(markers)
         )
-    elif helper_definition or helper_application:
-        raise VerificationError("trusted-client helper exists without a Browser Use runtime")
 
     return Inspection(
         node_repl_exposed=node_repl_exposed,
-        node_repl_auto_approved=False,
+        node_repl_auto_approved=node_repl_auto_approved,
         browser_use_trusted_client_hash_patch=(
-            browser_use_present and helper_definition and helper_application
+            browser_use_present and trusted_hash_behavior
         ),
         files_scanned=len(files),
     )
