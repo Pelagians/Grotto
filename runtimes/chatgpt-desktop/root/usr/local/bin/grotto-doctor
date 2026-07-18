@@ -31,6 +31,11 @@ PROBE_WARNING = (
 )
 AUTH_HOST = "auth.openai.com"
 CODEX = "/opt/codex-cli/bin/codex"
+NODE_REPL_EXPOSED = True
+NODE_REPL_AUTO_APPROVED = False
+NODE_REPL_POLICY_SOURCE = (
+    "Grotto build patch disables browser-use-node-repl-approval"
+)
 MANAGED_NODE_DIR = "/opt/chatgpt/resources/node-runtime/bin"
 WORKSPACE = "/workspace"
 DIAGNOSTIC_PATH = ":".join(
@@ -742,6 +747,9 @@ def collect(*, active_probe: bool = False) -> dict[str, Any]:
         "schema_version": SCHEMA_VERSION,
         "ok": sandbox_probe["ok"],
         "active_probe": active_probe,
+        "node_repl_exposed": NODE_REPL_EXPOSED,
+        "node_repl_auto_approved": NODE_REPL_AUTO_APPROVED,
+        "node_repl_policy_source": NODE_REPL_POLICY_SOURCE,
         "may_generate_host_avcs": active_probe,
         "probe_started_at": sandbox_probe.get("probe_started_at"),
         "probe_completed_at": sandbox_probe.get("probe_completed_at"),
@@ -916,6 +924,12 @@ def render_human(report: dict[str, Any]) -> str:
         ),
         f"codex: {report['tools']['codex']['version'] or 'unavailable'}",
         f"wrapper: {report['runtime']['wrapper_revision']}",
+        (
+            "node_repl: "
+            f"exposed={report['node_repl_exposed']} "
+            f"auto_approved={report['node_repl_auto_approved']} "
+            f"policy_source={report['node_repl_policy_source']}"
+        ),
         (
             "identity: "
             f"{report['identity']['user']} "

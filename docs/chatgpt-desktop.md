@@ -316,11 +316,20 @@ The explicit option prints a warning, runs the matrix once, timestamps the
 result, and updates the persistent probe cache. On the known rootless Fedora
 configuration it intentionally reproduces the nested Bubblewrap SELinux AVCs.
 
-The current rootless Fedora container has an unresolved nested Bubblewrap
-limitation. Direct terminal commands work, while fresh devpts setup and
-synthetic protected-path remounts fail. Grotto does not install an automatic
-fallback, bind the complete outer `/dev`, or weaken `.git`, `.agents`, or
-`.codex` protections. See
+The Grotto image applies a build-owned patch that removes the upstream
+`browser-use-node-repl-approval` descriptor from the exact pinned
+`codex-desktop-linux` wrapper commit before `install.sh` runs. This prevents
+`applyBrowserUseNodeReplApprovalPatch()` from injecting an automatic approval
+for arbitrary `node_repl` JavaScript. The node_repl integration remains
+exposed for Browser Use, but its JavaScript tool is not automatically approved.
+`grotto-doctor` reports `node_repl_exposed`, `node_repl_auto_approved`, and
+`node_repl_policy_source` so this containment is visible without active probes.
+
+This is a containment change, not a sandbox compatibility fix. Bubblewrap-backed
+command execution may remain blocked under rootless Podman with SELinux on
+Fedora because fresh devpts setup and synthetic protected-path remounts fail.
+Grotto does not install an automatic fallback, bind the complete outer `/dev`,
+or weaken `.git`, `.agents`, or `.codex` protections. See
 [ChatGPT Desktop sandbox investigation](chatgpt-desktop-sandbox.md) for exact
 commands, timestamps, syscall traces, device differences, and remaining
 architecture candidates.
