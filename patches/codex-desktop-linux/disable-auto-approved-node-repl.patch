@@ -14,13 +14,15 @@ diff --git a/scripts/patches/impl/main-process/browser.js b/scripts/patches/impl
 index a6a6c5a..8ba0f53 100644
 --- a/scripts/patches/impl/main-process/browser.js
 +++ b/scripts/patches/impl/main-process/browser.js
-@@ -221,5 +221,1 @@ function applyBrowserUseNodeReplApprovalPatch(currentSource) {
- 
+@@ -218,20 +218,5 @@ function applyBrowserUseNodeReplApprovalPatch(currentSource) {
+       },
+     );
+   }
+-
 -  // The node_repl MCP server config is a standalone object literal in a
 -  // separate build chunk. Insert the js auto-approval there.
 -  const mcpServerConfigRegex =
 -    /(\[`mcp_servers\.\$\{[A-Za-z_$][\w$]*\}`\]:\{args:\[\],command:[A-Za-z_$][\w$]*,env:[A-Za-z_$][\w$]*,)(startup_timeout_sec:120\})/g;
-@@ -226,12 +222,1 @@ function applyBrowserUseNodeReplApprovalPatch(currentSource) {
 -  const mcpServerConfigAlreadyApprovedRegex =
 -    /\[`mcp_servers\.\$\{[A-Za-z_$][\w$]*\}`\]:\{args:\[\],command:[A-Za-z_$][\w$]*,env:[A-Za-z_$][\w$]*,tools:\{js:\{approval_mode:`approve`\}\},startup_timeout_sec:120\}/;
 -  let patchedAnyMcpServerConfig = false;
@@ -31,8 +33,9 @@ index a6a6c5a..8ba0f53 100644
 -      return `${configPrefix}tools:{js:{approval_mode:\`approve\`}},${configSuffix}`;
 -    },
 -  );
--
+ 
    if (
+     patchedTrustedHashes &&
 @@ -276,14 +261,1 @@ function applyBrowserUseNodeReplApprovalPatch(currentSource) {
 -  if (
 -    patchedSource === currentSource &&
