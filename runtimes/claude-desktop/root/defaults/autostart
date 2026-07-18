@@ -7,6 +7,7 @@ export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-/config/.config}"
 export XDG_CACHE_HOME="${XDG_CACHE_HOME:-/config/.cache}"
 export XDG_DATA_HOME="${XDG_DATA_HOME:-/config/.local/share}"
 export XDG_STATE_HOME="${XDG_STATE_HOME:-/config/.local/state}"
+export GROTTO_CLAUDE_BRIDGE_DIR="${GROTTO_CLAUDE_BRIDGE_DIR:-/run/grotto/claude-bridge}"
 export BROWSER="${BROWSER:-/usr/local/bin/grotto-claude-browser}"
 
 install -d -m 0755 \
@@ -17,12 +18,13 @@ install -d -m 0755 \
     /workspace
 install -d -m 0700 \
     "$CLAUDE_CONFIG_DIR" \
-    "$XDG_DATA_HOME/keyrings"
+    "$XDG_DATA_HOME/keyrings" \
+    "$GROTTO_CLAUDE_BRIDGE_DIR"
 
-# Claude Desktop opens Google OAuth in the system browser. Register a real
-# browser inside the Selkies session and route the return protocol back to the
-# already-running desktop application. These user-level associations persist
-# with /config and are safe to refresh on every launch.
+# Claude Desktop delegates Google OAuth to the system browser. Inside Grotto,
+# HTTP/HTTPS requests go to a user-scoped Unix socket shared with the Podman
+# host. The host opens its normal browser and sends claude:// callbacks back to
+# the second socket created by the listener below.
 xdg-mime default grotto-claude-browser.desktop text/html
 xdg-mime default grotto-claude-browser.desktop x-scheme-handler/http
 xdg-mime default grotto-claude-browser.desktop x-scheme-handler/https
@@ -39,6 +41,10 @@ if command -v gnome-keyring-daemon >/dev/null 2>&1; then
         eval "$keyring_environment"
     fi
 fi
+
+install -d -m 0755 "$XDG_CACHE_HOME/grotto"
+/usr/local/bin/grotto-claude-callback-listener \
+    >> "$XDG_CACHE_HOME/grotto/claude-callback-listener.log" 2>&1 &
 
 cd /workspace
 exec /usr/bin/claude-desktop
