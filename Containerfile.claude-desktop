@@ -20,7 +20,7 @@ ENV TITLE="Claude Desktop" \
     FILE_MANAGER_PATH=/workspace \
     GROTTO_RUNTIME=claude-desktop \
     GROTTO_BUILD_REVISION="$GROTTO_BUILD_REVISION" \
-    GROTTO_CLAUDE_BRIDGE_DIR=/run/grotto/claude-bridge \
+    GROTTO_CLAUDE_VIEWER_EVENT_FILE=/usr/share/selkies/web/grotto-claude-open-url.json \
     CLAUDE_CONFIG_DIR=/config/.claude \
     XDG_CONFIG_HOME=/config/.config \
     XDG_CACHE_HOME=/config/.cache \
@@ -113,24 +113,39 @@ RUN set -eux; \
         /defaults/autostart_wayland \
         /custom-cont-init.d/10-grotto-claude-permissions \
         /usr/local/bin/grotto-claude-browser \
-        /usr/local/bin/grotto-claude-callback-listener \
-        /usr/local/bin/grotto-claude-url-handler \
         /usr/local/libexec/grotto-claude-desktop-smoke; \
     bash -n /defaults/autostart; \
     bash -n /defaults/autostart_wayland; \
     bash -n /custom-cont-init.d/10-grotto-claude-permissions; \
-    bash -n /usr/local/bin/grotto-claude-url-handler; \
     bash -n /usr/local/libexec/grotto-claude-desktop-smoke; \
-    python3 -m py_compile \
-        /usr/local/bin/grotto-claude-browser \
-        /usr/local/bin/grotto-claude-callback-listener; \
+    python3 -m py_compile /usr/local/bin/grotto-claude-browser; \
     python3 /usr/local/bin/grotto-claude-browser --self-test; \
-    python3 /usr/local/bin/grotto-claude-callback-listener --self-test; \
     rm -rf /usr/local/bin/__pycache__; \
     desktop-file-validate \
-        /usr/share/applications/grotto-claude-browser.desktop \
-        /usr/share/applications/grotto-claude-url-handler.desktop; \
+        /usr/share/applications/grotto-claude-browser.desktop; \
     update-desktop-database /usr/share/applications; \
+    dashboard_count=0; \
+    for dashboard in /usr/share/selkies/selkies-dashboard*; do \
+        [ -d "$dashboard" ] || continue; \
+        index="$dashboard/index.html"; \
+        test -f "$index"; \
+        install -m 0644 \
+            /usr/share/grotto/claude-viewer-open.js \
+            "$dashboard/grotto-claude-viewer-open.js"; \
+        printf '%s\n' \
+            '{"version":1,"id":"","created_at":0,"url":""}' \
+            > "$dashboard/grotto-claude-open-url.json"; \
+        chown abc:abc "$dashboard/grotto-claude-open-url.json"; \
+        chmod 0644 "$dashboard/grotto-claude-open-url.json"; \
+        if ! grep -q 'grotto-claude-viewer-open.js' "$index"; then \
+            sed -i \
+                's#</body>#<script src="grotto-claude-viewer-open.js"></script></body>#' \
+                "$index"; \
+        fi; \
+        grep -q 'grotto-claude-viewer-open.js' "$index"; \
+        dashboard_count=$((dashboard_count + 1)); \
+    done; \
+    test "$dashboard_count" -gt 0; \
     for command_name in \
         bash claude-desktop curl dbus-launch desktop-file-validate find \
         gh git gnome-keyring-daemon gpg jq lsof pip3 pkg-config python3 rg \
@@ -162,7 +177,6 @@ RUN set -eux; \
     install -d -o abc -g abc -m 0700 \
         /config/.claude \
         /config/.local/share/keyrings; \
-    install -d -o abc -g abc -m 0777 /run/grotto/claude-bridge; \
     icon="$(find /usr/share/icons -type f -iname '*claude*.png' 2>/dev/null | sort -V | tail -n 1 || true)"; \
     if [ -n "$icon" ]; then \
         install -m 0644 "$icon" /usr/share/selkies/www/icon.png; \
@@ -171,9 +185,8 @@ RUN set -eux; \
     test "$(command -v selkies)" = /lsiopy/bin/selkies; \
     test -x /usr/bin/claude-desktop; \
     test -x /usr/local/bin/grotto-claude-browser; \
-    test -x /usr/local/bin/grotto-claude-callback-listener; \
     test -r /usr/share/applications/grotto-claude-browser.desktop; \
-    test -r /usr/share/applications/grotto-claude-url-handler.desktop; \
+    test -r /usr/share/grotto/claude-viewer-open.js; \
     test -r /usr/share/grotto/claude-desktop-version
 
 WORKDIR /workspace
