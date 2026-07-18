@@ -54,14 +54,14 @@ The image provides:
 - Anthropic's official Claude Desktop Linux beta package
 - Claude Chat and the desktop Code interface available to eligible plans
 - Selkies HTTPS streaming
-- persistent application, keyring, and Claude state
+- persistent application, keyring, Firefox auth profile, and Claude state
 - a mounted project workspace and persistent user toolchain
-- an image-contained viewer bridge that opens HTTPS authentication in the browser viewing Selkies
-- a same-origin callback relay that returns a copied `claude://` login link to Claude Desktop inside the graphical session
+- Firefox ESR for Google authentication inside the Selkies desktop
+- an in-container `claude://` handler that returns authentication to Claude Desktop
 
 The image does not provide:
 
-- a bundled web browser
+- a general-purpose preconfigured browsing environment
 - a host-side browser service or callback daemon
 - a browser extension or extra bind mount for authentication
 - the separate `claude-code` CLI package
