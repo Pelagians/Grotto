@@ -14,7 +14,7 @@ diff --git a/scripts/patches/impl/main-process/browser.js b/scripts/patches/impl
 index a6a6c5a..8ba0f53 100644
 --- a/scripts/patches/impl/main-process/browser.js
 +++ b/scripts/patches/impl/main-process/browser.js
-@@ -218,21 +218,6 @@ function applyBrowserUseNodeReplApprovalPatch(currentSource) {
+@@ -218,18 +218,3 @@ function applyBrowserUseNodeReplApprovalPatch(currentSource) {
        },
      );
    }
@@ -33,9 +33,6 @@ index a6a6c5a..8ba0f53 100644
 -      return `${configPrefix}tools:{js:{approval_mode:\`approve\`}},${configSuffix}`;
 -    },
 -  );
- 
-   if (
-     patchedTrustedHashes &&
 @@ -276,14 +261,1 @@ function applyBrowserUseNodeReplApprovalPatch(currentSource) {
 -  if (
 -    patchedSource === currentSource &&
