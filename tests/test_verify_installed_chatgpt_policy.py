@@ -120,11 +120,34 @@ const hostConfigSchema={browserClientPath:pathSchema,nodeReplPath:pathSchema,
         ):
             policy.inspect_installed_application(root)
 
+    def test_finalizer_rebinds_stale_hashes_to_final_clients(self) -> None:
+        stale_hashes = ["0" * 64, "1" * 64]
+        stale_bundle = SAFE_BROWSER_BUNDLE.replace(
+            json.dumps(TRUSTED_HASHES),
+            json.dumps(stale_hashes),
+        )
+        temporary, root = self.fixture(self.safe_sources(stale_bundle))
+        with temporary:
+            with self.assertRaisesRegex(
+                policy.VerificationError, "do not match the installed clients"
+            ):
+                policy.inspect_installed_application(root)
+            self.assertTrue(policy.finalize_embedded_trusted_hashes(root))
+            inspection = policy.inspect_installed_application(root)
+            combined = "\n".join(
+                source
+                for _path, source in policy.read_sources(policy.javascript_files(root))
+            )
+
+        self.assertTrue(inspection.browser_use_trusted_client_hash_patch)
+        self.assertEqual(policy.embedded_trusted_hashes(combined), set(TRUSTED_HASHES))
+
     def test_node_repl_absent_upstream_is_not_claimed_exposed(self) -> None:
         temporary, root = self.fixture(
             {"resources/app/main.js": "const ordinaryDesktopBundle = true;"}
         )
         with temporary:
+            self.assertFalse(policy.finalize_embedded_trusted_hashes(root))
             inspection = policy.inspect_installed_application(root)
 
         self.assertFalse(inspection.node_repl_exposed)
