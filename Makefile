@@ -25,6 +25,8 @@ check:
 	bash -n runtimes/claude-desktop/root/defaults/autostart
 	bash -n runtimes/claude-desktop/root/defaults/autostart_wayland
 	bash -n runtimes/claude-desktop/root/custom-cont-init.d/10-grotto-claude-permissions
+	bash -n runtimes/claude-desktop/root/usr/local/bin/grotto-claude-browser
+	bash -n runtimes/claude-desktop/root/usr/local/bin/grotto-claude-url-handler
 	bash -n tests/claude-desktop-runtime.sh
 	CODEX_DESKTOP_LINUX_SOURCE="$(CODEX_DESKTOP_LINUX_SOURCE)" python3 tests/test_codex_desktop_linux_patch.py
 	python3 tests/test_grotto_doctor.py
