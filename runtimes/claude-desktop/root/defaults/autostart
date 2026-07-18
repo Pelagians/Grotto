@@ -29,12 +29,6 @@ xdg-mime default grotto-claude-browser.desktop text/html
 xdg-mime default grotto-claude-browser.desktop x-scheme-handler/http
 xdg-mime default grotto-claude-browser.desktop x-scheme-handler/https
 
-# The browser cannot register a web handler for Anthropic's claude:// scheme.
-# Run a loopback-only callback relay in this graphical session so the viewer can
-# paste the callback link and deliver it to the existing Claude Desktop process.
-/usr/local/bin/grotto-claude-callback-relay \
-    >> "$XDG_CACHE_HOME/grotto/claude-callback-relay.log" 2>&1 &
-
 # Claude and desktop extensions use the Secret Service API for sensitive state.
 # Selkies normally provides a session D-Bus. Start only the secrets component
 # and preserve any environment values returned by an already-running daemon.
@@ -46,6 +40,12 @@ if command -v gnome-keyring-daemon >/dev/null 2>&1; then
         eval "$keyring_environment"
     fi
 fi
+
+# The browser cannot register a web handler for Anthropic's claude:// scheme.
+# Start the loopback-only callback relay after the keyring setup so callbacks
+# launch Claude with the same graphical-session and Secret Service environment.
+/usr/local/bin/grotto-claude-callback-relay \
+    >> "$XDG_CACHE_HOME/grotto/claude-callback-relay.log" 2>&1 &
 
 cd /workspace
 exec /usr/bin/claude-desktop
