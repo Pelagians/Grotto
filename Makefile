@@ -26,9 +26,11 @@ check:
 	bash -n runtimes/claude-desktop/root/defaults/autostart_wayland
 	bash -n runtimes/claude-desktop/root/custom-cont-init.d/10-grotto-claude-permissions
 	python3 -m py_compile runtimes/claude-desktop/root/usr/local/bin/grotto-claude-browser
+	python3 -m py_compile runtimes/claude-desktop/root/usr/local/libexec/grotto-configure-openbox
 	python3 runtimes/claude-desktop/root/usr/local/bin/grotto-claude-browser --self-test
 	bash -n runtimes/claude-desktop/root/usr/local/bin/grotto-claude-url-handler
 	bash -n tests/claude-desktop-runtime.sh
+	python3 tests/test_claude_window_manager_config.py
 	CODEX_DESKTOP_LINUX_SOURCE="$(CODEX_DESKTOP_LINUX_SOURCE)" python3 tests/test_codex_desktop_linux_patch.py
 	python3 tests/test_grotto_doctor.py
 	python3 tests/test_window_manager_config.py
