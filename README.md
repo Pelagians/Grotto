@@ -64,7 +64,9 @@ podman build \
   .
 ```
 
-See [`docs/claude-desktop.md`](docs/claude-desktop.md) for authentication, persistent state, Selkies, GPU, Claude Code, and Cowork boundaries.
+Google sign-in uses a user-scoped Unix-socket bridge to open the host's normal browser and return `claude://` callbacks to the running Selkies session. The image does not bundle a browser.
+
+See [`docs/claude-desktop.md`](docs/claude-desktop.md) for bridge installation, authentication, persistent state, Selkies, GPU, Claude Code, and Cowork boundaries.
 
 ## Release process
 
