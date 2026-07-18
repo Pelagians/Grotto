@@ -71,6 +71,25 @@ RUN set -eux; \
     git checkout --detach FETCH_HEAD; \
     git rev-parse HEAD
 
+COPY patches/codex-desktop-linux/disable-auto-approved-node-repl.patch \
+    /tmp/disable-auto-approved-node-repl.patch
+
+# Keep the wrapper pinned while disabling its extracted-app patch that
+# auto-approves arbitrary node_repl JavaScript. Both the preflight and apply
+# are strict: any upstream source drift fails this image build.
+RUN set -eux; \
+    test "$(git rev-parse HEAD)" = "${CODEX_DESKTOP_LINUX_REF}"; \
+    git apply --check --whitespace=error-all \
+        /tmp/disable-auto-approved-node-repl.patch; \
+    git apply --whitespace=error-all \
+        /tmp/disable-auto-approved-node-repl.patch; \
+    git diff --check; \
+    ! grep -q 'browser-use-node-repl-approval' \
+        scripts/patches/core/all-linux/main-process/browser-integrations/patch.js; \
+    ! grep -q 'applyBrowserUseNodeReplApprovalAssets' \
+        scripts/patches/core/all-linux/main-process/browser-integrations/patch.js; \
+    rm -f /tmp/disable-auto-approved-node-repl.patch
+
 # The upstream installer downloads the official ChatGPT DMG, checks the
 # generated Linux candidate, rebuilds native modules, and stages the complete
 # Electron application. Nothing is downloaded or compiled at container start.

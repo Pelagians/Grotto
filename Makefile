@@ -10,13 +10,17 @@ GROTTO_OPENCLAW_IMAGE ?= grotto-openclaw:dev
 GROTTO_CHATGPT_DESKTOP_IMAGE ?= grotto-chatgpt-desktop:dev
 CODEX_DESKTOP_LINUX_REF ?= 7d4049b68b17bc663b8a934326fefcaca99e8ceb
 CODEX_CLI_VERSION ?= latest
+CODEX_DESKTOP_LINUX_SOURCE ?=
 
 check:
 	sh -n files/grotto-openclaw-entrypoint
 	bash -n runtimes/chatgpt-desktop/root/defaults/autostart
 	bash -n runtimes/chatgpt-desktop/root/defaults/autostart_wayland
 	python3 -m py_compile runtimes/chatgpt-desktop/root/usr/local/bin/grotto-chatgpt-auth
+	python3 -m py_compile runtimes/chatgpt-desktop/root/usr/local/bin/grotto-doctor
 	bash -n runtimes/chatgpt-desktop/root/custom-cont-init.d/10-grotto-chatgpt-permissions
+	CODEX_DESKTOP_LINUX_SOURCE="$(CODEX_DESKTOP_LINUX_SOURCE)" python3 tests/test_codex_desktop_linux_patch.py
+	python3 tests/test_grotto_doctor.py
 	python3 tests/test_window_manager_config.py
 
 check-container-engine:

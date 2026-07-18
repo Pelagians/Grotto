@@ -1,0 +1,40 @@
+diff --git a/scripts/patches/core/all-linux/main-process/browser-integrations/patch.js b/scripts/patches/core/all-linux/main-process/browser-integrations/patch.js
+index dce1ae0..589db83 100644
+--- a/scripts/patches/core/all-linux/main-process/browser-integrations/patch.js
++++ b/scripts/patches/core/all-linux/main-process/browser-integrations/patch.js
+@@ -3,10 +3,5 @@
+-const {
+-  extractedAppPatch,
+-  mainBundlePatch,
+-} = require("../../../../descriptor.js");
+-const { patchStatusFromChange } = require("../../../../../lib/patch-report.js");
++const { mainBundlePatch } = require("../../../../descriptor.js");
+ const {
+-  applyBrowserUseNodeReplApprovalAssets,
+   applyLinuxBundledPluginCopyPermissionsPatch,
+   applyLinuxBundledPluginReconcileStaleSnapshotPatch,
+   applyLinuxBrowserUseRouteLivenessPatch,
+@@ -23,23 +18,6 @@ module.exports = [
+     ciPolicy: "optional",
+     apply: applyLinuxChromePluginAutoInstallPatch,
+   }),
+-  extractedAppPatch({
+-    id: "browser-use-node-repl-approval",
+-    phase: "extracted-app:pre-webview",
+-    order: 160,
+-    ciPolicy: "optional",
+-    apply: applyBrowserUseNodeReplApprovalAssets,
+-    status: (result, warnings) => ({
+-      status:
+-        result?.matched === 0
+-          ? "skipped-optional"
+-          : patchStatusFromChange(Boolean(result?.changed), warnings, "optional"),
+-      reason:
+-        result?.matched === 0
+-          ? "Browser Use node_repl mcp config bundle not found"
+-          : warnings[0] ?? null,
+-    }),
+-  }),
+   mainBundlePatch({
+     id: "linux-bundled-plugin-reconcile-stale-snapshot",
+     phase: "main-bundle",

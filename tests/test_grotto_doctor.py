@@ -123,6 +123,11 @@ class DoctorTest(unittest.TestCase):
 
         probe.assert_not_called()
         self.assertFalse(report["active_probe"])
+        self.assertTrue(report["node_repl_exposed"])
+        self.assertFalse(report["node_repl_auto_approved"])
+        self.assertEqual(
+            report["node_repl_policy_source"], doctor.NODE_REPL_POLICY_SOURCE
+        )
         self.assertEqual(report["sandbox_probe"]["status"], "not_run")
         self.assertEqual(report["sandbox_probe"]["reason"], doctor.PROBE_NOT_RUN_REASON)
         self.assertEqual(report["checks"], {})
@@ -183,6 +188,7 @@ class DoctorTest(unittest.TestCase):
         self.assertIn("2026-07-17T20:00:01Z", human)
         self.assertIn("2026-07-17T20:00:00Z", machine)
         self.assertIn("2026-07-17T20:00:01Z", machine)
+        self.assertIn("node_repl: exposed=True auto_approved=False", human)
 
     def test_explicit_probe_prints_avc_warning(self) -> None:
         report = probe_record()

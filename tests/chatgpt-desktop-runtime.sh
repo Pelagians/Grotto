@@ -62,6 +62,9 @@ jq -e '.schema_version == 1' "$report" >/dev/null
 jq -e '.identity.user == "abc"' "$report" >/dev/null
 jq -e '.ok == null' "$report" >/dev/null
 jq -e '.active_probe == false' "$report" >/dev/null
+jq -e '.node_repl_exposed == true' "$report" >/dev/null
+jq -e '.node_repl_auto_approved == false' "$report" >/dev/null
+jq -e '.node_repl_policy_source | contains("Grotto build patch")' "$report" >/dev/null
 jq -e '.may_generate_host_avcs == false' "$report" >/dev/null
 jq -e '.probe_started_at == null and .probe_completed_at == null' "$report" >/dev/null
 jq -e '.sandbox_probe.status == "not_run"' "$report" >/dev/null
