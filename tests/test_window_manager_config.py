@@ -3,8 +3,10 @@
 
 from __future__ import annotations
 
+import argparse
 import importlib.machinery
 import importlib.util
+import json
 import os
 from pathlib import Path
 import tempfile
@@ -25,6 +27,14 @@ LABWC_CONFIG = Path(
         REPOSITORY / "runtimes/chatgpt-desktop/root/defaults/labwc.xml",
     )
 )
+FEATURES_CONFIG = REPOSITORY / (
+    "runtimes/chatgpt-desktop/codex-desktop-linux-features/features.json"
+)
+LOCAL_FEATURE = FEATURES_CONFIG.parent / (
+    "local/grotto-single-window-chrome"
+)
+CONTAINERFILE = REPOSITORY / "Containerfile.chatgpt-desktop"
+DOCKERIGNORE = REPOSITORY / ".dockerignore"
 
 
 def local_name(tag: object) -> str:
@@ -134,6 +144,46 @@ def assert_labwc_policy(config: Path) -> None:
         ]
 
 
+def assert_client_window_chrome_policy() -> None:
+    feature_config = json.loads(FEATURES_CONFIG.read_text(encoding="utf-8"))
+    assert feature_config == {"enabled": ["grotto-single-window-chrome"]}
+
+    assert (LOCAL_FEATURE / "README.md").is_file()
+    manifest = json.loads(
+        (LOCAL_FEATURE / "feature.json").read_text(encoding="utf-8")
+    )
+    assert manifest["id"] == "grotto-single-window-chrome"
+    assert manifest["defaultEnabled"] is False
+    assert manifest["entrypoints"] == {"patchDescriptors": "./patch.js"}
+
+    patch_source = (LOCAL_FEATURE / "patch.js").read_text(encoding="utf-8")
+    assert "applyFramelessTitlebarMainPatch" in patch_source
+    assert "process.platform!==`linux`&&" in patch_source
+    assert patch_source.count('ciPolicy: "required-upstream"') == 2
+
+    containerfile = CONTAINERFILE.read_text(encoding="utf-8")
+    feature_copy = containerfile.index(
+        "runtimes/chatgpt-desktop/codex-desktop-linux-features/"
+    )
+    install = containerfile.index("./install.sh --fresh")
+    report_check = containerfile.index(
+        'report.get("enabledFeatures") == ["grotto-single-window-chrome"]'
+    )
+    assert feature_copy < install < report_check
+    assert (
+        "linux-features/local/grotto-single-window-chrome/README.md"
+        in containerfile[feature_copy:install]
+    )
+
+    dockerignore = DOCKERIGNORE.read_text(encoding="utf-8").splitlines()
+    readme_exception = (
+        "!runtimes/chatgpt-desktop/"
+        "codex-desktop-linux-features/**/README.md"
+    )
+    assert readme_exception in dockerignore
+    assert dockerignore.index(readme_exception) > dockerignore.index("**/README.md")
+
+
 def load_configurator():
     loader = importlib.machinery.SourceFileLoader(
         "grotto_configure_openbox",
@@ -146,7 +196,7 @@ def load_configurator():
     return module
 
 
-def main() -> None:
+def main(*, installed_image: bool = False) -> None:
     configurator = load_configurator()
     fixture = """<?xml version="1.0"?>
 <openbox_config xmlns="http://openbox.org/3.4/rc">
@@ -166,8 +216,17 @@ def main() -> None:
     if actual_openbox:
         assert_openbox_policy(Path(actual_openbox))
     assert_labwc_policy(LABWC_CONFIG)
+    if not installed_image:
+        assert_client_window_chrome_policy()
     print("window-manager policy tests passed")
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--installed-image",
+        action="store_true",
+        help="skip repository-only client build-policy checks",
+    )
+    arguments = parser.parse_args()
+    main(installed_image=arguments.installed_image)

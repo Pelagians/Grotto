@@ -23,6 +23,7 @@ check:
 	CODEX_DESKTOP_LINUX_SOURCE="$(CODEX_DESKTOP_LINUX_SOURCE)" python3 tests/test_codex_desktop_linux_patch.py
 	python3 tests/test_grotto_doctor.py
 	python3 tests/test_window_manager_config.py
+	python3 tests/test_window_manager_config.py --installed-image
 	python3 tests/test_verify_installed_chatgpt_policy.py
 
 check-container-engine:

@@ -1,0 +1,9 @@
+{
+  "id": "grotto-single-window-chrome",
+  "title": "Grotto Single-Window Chrome",
+  "description": "Remove Linux client window controls and omit File -> New Window while retaining the rest of the application menu.",
+  "defaultEnabled": false,
+  "entrypoints": {
+    "patchDescriptors": "./patch.js"
+  }
+}
