@@ -1,0 +1,8 @@
+#!/bin/bash
+set -Eeuo pipefail
+
+if (($# == 0)); then
+    exec /usr/bin/firefox-esr
+fi
+
+exec /usr/bin/firefox-esr --new-window "$@"
