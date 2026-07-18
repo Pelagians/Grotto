@@ -1,0 +1,191 @@
+#!/usr/bin/python3
+"""Fixture tests for the installed ChatGPT Desktop policy verifier."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.machinery
+import importlib.util
+import json
+import pathlib
+import stat
+import sys
+import tempfile
+import unittest
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+VERIFIER = ROOT / "runtimes/chatgpt-desktop/verify-installed-policy.py"
+LOADER = importlib.machinery.SourceFileLoader("grotto_installed_policy", str(VERIFIER))
+SPEC = importlib.util.spec_from_loader(LOADER.name, LOADER)
+assert SPEC is not None
+policy = importlib.util.module_from_spec(SPEC)
+sys.modules[LOADER.name] = policy
+LOADER.exec_module(policy)
+
+BROWSER_CLIENT = "export const browserClient = 'browser';\n"
+CHROME_CLIENT = "export const browserClient = 'chrome';\n"
+TRUSTED_HASHES = [
+    hashlib.sha256(BROWSER_CLIENT.encode()).hexdigest(),
+    hashlib.sha256(CHROME_CLIENT.encode()).hexdigest(),
+]
+SAFE_BROWSER_BUNDLE = f'''
+const __codexLinuxBundledBrowserClientSha256s={json.dumps(TRUSTED_HASHES)};
+function codexLinuxTrustedBrowserClientSha256s(hashes) {{
+  return Array.from(new Set([...hashes,...__codexLinuxBundledBrowserClientSha256s]));
+}}
+const hostConfigSchema={{
+  browserClientPath:pathSchema,
+  nodeReplPath:pathSchema,
+  trustedBrowserClientSha256s:hashSchema.transform(
+    codexLinuxTrustedBrowserClientSha256s
+  )
+}};
+'''
+
+
+class InstalledPolicyVerifierTest(unittest.TestCase):
+    def fixture(self, sources: dict[str, str]) -> tuple[tempfile.TemporaryDirectory, pathlib.Path]:
+        temporary = tempfile.TemporaryDirectory()
+        root = pathlib.Path(temporary.name) / "opt" / "chatgpt"
+        root.mkdir(parents=True)
+        for name, source in sources.items():
+            path = root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(source, encoding="utf-8")
+        return temporary, root
+
+    def safe_sources(self, bundle: str = SAFE_BROWSER_BUNDLE) -> dict[str, str]:
+        return {
+            "content/webview/assets/app.js": bundle,
+            "resources/plugins/openai-bundled/plugins/browser/scripts/browser-client.mjs": BROWSER_CLIENT,
+            "resources/plugins/openai-bundled/plugins/chrome/scripts/browser-client.mjs": CHROME_CLIENT,
+        }
+
+    def test_trusted_hash_present_and_auto_approval_absent_passes(self) -> None:
+        temporary, root = self.fixture(self.safe_sources())
+        with temporary:
+            inspection = policy.inspect_installed_application(root)
+
+        self.assertTrue(inspection.node_repl_exposed)
+        self.assertFalse(inspection.node_repl_auto_approved)
+        self.assertTrue(inspection.browser_use_trusted_client_hash_patch)
+
+    def test_identical_verified_client_hashes_pass(self) -> None:
+        sources = self.safe_sources(
+            SAFE_BROWSER_BUNDLE.replace(TRUSTED_HASHES[1], TRUSTED_HASHES[0])
+        )
+        sources[
+            "resources/plugins/openai-bundled/plugins/chrome/scripts/browser-client.mjs"
+        ] = BROWSER_CLIENT
+        temporary, root = self.fixture(sources)
+        with temporary:
+            inspection = policy.inspect_installed_application(root)
+
+        self.assertTrue(inspection.node_repl_exposed)
+        self.assertFalse(inspection.node_repl_auto_approved)
+        self.assertTrue(inspection.browser_use_trusted_client_hash_patch)
+
+    def test_normalized_auto_approval_variants_fail(self) -> None:
+        variants = (
+            'tools: { js: { approval_mode: "approve" } }',
+            "tools:{js:{approval_mode:`approve`}}",
+            "'tools' : { 'js' : { 'approval_mode' : 'approve' } }",
+        )
+        for index, unsafe in enumerate(variants):
+            with self.subTest(index=index):
+                temporary, root = self.fixture(
+                    self.safe_sources(SAFE_BROWSER_BUNDLE + unsafe)
+                )
+                with temporary, self.assertRaisesRegex(
+                    policy.VerificationError, "automatic approval"
+                ):
+                    policy.inspect_installed_application(root)
+
+    def test_browser_use_without_trusted_hash_patch_fails(self) -> None:
+        source = r'''
+const hostConfigSchema={browserClientPath:pathSchema,nodeReplPath:pathSchema,
+  trustedBrowserClientSha256s:hashSchema};
+'''
+        temporary, root = self.fixture(self.safe_sources(source))
+        with temporary, self.assertRaisesRegex(
+            policy.VerificationError, "without a verified trusted-client hash adjustment"
+        ):
+            policy.inspect_installed_application(root)
+
+    def test_embedded_hash_mismatch_fails(self) -> None:
+        mismatch = SAFE_BROWSER_BUNDLE.replace(TRUSTED_HASHES[0], "0" * 64)
+        temporary, root = self.fixture(self.safe_sources(mismatch))
+        with temporary, self.assertRaisesRegex(
+            policy.VerificationError, "do not match the installed clients"
+        ):
+            policy.inspect_installed_application(root)
+
+    def test_finalizer_rebinds_stale_hashes_to_final_clients(self) -> None:
+        stale_hashes = ["0" * 64, "1" * 64]
+        stale_bundle = SAFE_BROWSER_BUNDLE.replace(
+            json.dumps(TRUSTED_HASHES),
+            json.dumps(stale_hashes),
+        )
+        temporary, root = self.fixture(self.safe_sources(stale_bundle))
+        with temporary:
+            with self.assertRaisesRegex(
+                policy.VerificationError, "do not match the installed clients"
+            ):
+                policy.inspect_installed_application(root)
+            self.assertTrue(policy.finalize_embedded_trusted_hashes(root))
+            inspection = policy.inspect_installed_application(root)
+            combined = "\n".join(
+                source
+                for _path, source in policy.read_sources(policy.javascript_files(root))
+            )
+
+        self.assertTrue(inspection.browser_use_trusted_client_hash_patch)
+        self.assertEqual(policy.embedded_trusted_hashes(combined), set(TRUSTED_HASHES))
+
+    def test_node_repl_absent_upstream_is_not_claimed_exposed(self) -> None:
+        temporary, root = self.fixture(
+            {"resources/app/main.js": "const ordinaryDesktopBundle = true;"}
+        )
+        with temporary:
+            self.assertFalse(policy.finalize_embedded_trusted_hashes(root))
+            inspection = policy.inspect_installed_application(root)
+
+        self.assertFalse(inspection.node_repl_exposed)
+        self.assertFalse(inspection.node_repl_auto_approved)
+        self.assertFalse(inspection.browser_use_trusted_client_hash_patch)
+
+    def test_ambiguous_changed_bundle_fails_closed(self) -> None:
+        temporary, root = self.fixture(
+            {"resources/app/chunk.js": "const changed={nodeReplPath:value};"}
+        )
+        with temporary, self.assertRaisesRegex(
+            policy.VerificationError, "ambiguous"
+        ):
+            policy.inspect_installed_application(root)
+
+    def test_empty_or_unreadable_bundle_structure_fails_closed(self) -> None:
+        temporary, root = self.fixture({"README.txt": "not a bundle"})
+        with temporary, self.assertRaisesRegex(
+            policy.VerificationError, "no JavaScript bundles"
+        ):
+            policy.inspect_installed_application(root)
+
+    def test_manifest_is_derived_and_immutable(self) -> None:
+        temporary, root = self.fixture(self.safe_sources())
+        with temporary:
+            inspection = policy.inspect_installed_application(root)
+            manifest = inspection.manifest("7d4049b")
+            destination = root.parent / "security.json"
+            policy.write_manifest(destination, manifest)
+            loaded = json.loads(destination.read_text(encoding="utf-8"))
+            mode = stat.S_IMODE(destination.stat().st_mode)
+
+        self.assertEqual(loaded, manifest)
+        self.assertEqual(mode, 0o444)
+        self.assertTrue(loaded["node_repl"]["verified"])
+        self.assertFalse(loaded["node_repl"]["auto_approved"])
+        self.assertTrue(loaded["browser_use"]["verified"])
+
+
+if __name__ == "__main__":
+    unittest.main()

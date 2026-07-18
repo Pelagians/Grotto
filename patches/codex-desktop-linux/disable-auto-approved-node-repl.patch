@@ -1,40 +1,219 @@
 diff --git a/scripts/patches/core/all-linux/main-process/browser-integrations/patch.js b/scripts/patches/core/all-linux/main-process/browser-integrations/patch.js
-index dce1ae0..589db83 100644
+index dce1ae0..399eaee 100644
 --- a/scripts/patches/core/all-linux/main-process/browser-integrations/patch.js
 +++ b/scripts/patches/core/all-linux/main-process/browser-integrations/patch.js
-@@ -3,10 +3,5 @@
--const {
--  extractedAppPatch,
--  mainBundlePatch,
--} = require("../../../../descriptor.js");
--const { patchStatusFromChange } = require("../../../../../lib/patch-report.js");
-+const { mainBundlePatch } = require("../../../../descriptor.js");
- const {
--  applyBrowserUseNodeReplApprovalAssets,
-   applyLinuxBundledPluginCopyPermissionsPatch,
-   applyLinuxBundledPluginReconcileStaleSnapshotPatch,
-   applyLinuxBrowserUseRouteLivenessPatch,
-@@ -23,23 +18,6 @@ module.exports = [
-     ciPolicy: "optional",
-     apply: applyLinuxChromePluginAutoInstallPatch,
-   }),
--  extractedAppPatch({
--    id: "browser-use-node-repl-approval",
--    phase: "extracted-app:pre-webview",
--    order: 160,
--    ciPolicy: "optional",
--    apply: applyBrowserUseNodeReplApprovalAssets,
--    status: (result, warnings) => ({
--      status:
--        result?.matched === 0
--          ? "skipped-optional"
--          : patchStatusFromChange(Boolean(result?.changed), warnings, "optional"),
--      reason:
--        result?.matched === 0
+@@ -36,7 +36,7 @@ module.exports = [
+           : patchStatusFromChange(Boolean(result?.changed), warnings, "optional"),
+       reason:
+         result?.matched === 0
 -          ? "Browser Use node_repl mcp config bundle not found"
--          : warnings[0] ?? null,
--    }),
--  }),
-   mainBundlePatch({
-     id: "linux-bundled-plugin-reconcile-stale-snapshot",
-     phase: "main-bundle",
++          ? "Browser Use trusted-client hash configuration bundle not found"
+           : warnings[0] ?? null,
+     }),
+   }),
+diff --git a/scripts/patches/impl/main-process/browser.js b/scripts/patches/impl/main-process/browser.js
+index a6a6c5a..c4f10c1 100644
+--- a/scripts/patches/impl/main-process/browser.js
++++ b/scripts/patches/impl/main-process/browser.js
+@@ -1,5 +1,6 @@
+ "use strict";
+ 
++const crypto = require("node:crypto");
+ const fs = require("node:fs");
+ const path = require("node:path");
+ 
+@@ -191,7 +192,7 @@ function applyLinuxBundledPluginReconcileStaleSnapshotPatch(currentSource) {
+   );
+ }
+ 
+-function applyBrowserUseNodeReplApprovalPatch(currentSource) {
++function applyBrowserUseNodeReplApprovalPatch(currentSource, bundledTrustedHashes = []) {
+   let patchedSource = currentSource;
+   let patchedTrustedHashes = false;
+   const hasTrustedHashesRuntimeBuilder =
+@@ -219,20 +220,42 @@ function applyBrowserUseNodeReplApprovalPatch(currentSource) {
+     );
+   }
+ 
+-  // The node_repl MCP server config is a standalone object literal in a
+-  // separate build chunk. Insert the js auto-approval there.
+-  const mcpServerConfigRegex =
+-    /(\[`mcp_servers\.\$\{[A-Za-z_$][\w$]*\}`\]:\{args:\[\],command:[A-Za-z_$][\w$]*,env:[A-Za-z_$][\w$]*,)(startup_timeout_sec:120\})/g;
+-  const mcpServerConfigAlreadyApprovedRegex =
+-    /\[`mcp_servers\.\$\{[A-Za-z_$][\w$]*\}`\]:\{args:\[\],command:[A-Za-z_$][\w$]*,env:[A-Za-z_$][\w$]*,tools:\{js:\{approval_mode:`approve`\}\},startup_timeout_sec:120\}/;
+-  let patchedAnyMcpServerConfig = false;
+-  patchedSource = patchedSource.replace(
+-    mcpServerConfigRegex,
+-    (_match, configPrefix, configSuffix) => {
+-      patchedAnyMcpServerConfig = true;
+-      return `${configPrefix}tools:{js:{approval_mode:\`approve\`}},${configSuffix}`;
+-    },
+-  );
++  // Current builds validate the Browser Use host configuration in a webview
++  // schema instead of a main-process runtime builder. Preserve the same trust
++  // adjustment there using hashes derived from the extracted official app.
++  const hasTrustedHashesSchema =
++    currentSource.includes("browserClientPath:") &&
++    currentSource.includes("nodeModuleDirs:") &&
++    currentSource.includes("nodeReplPath:") &&
++    currentSource.includes("trustedBrowserClientSha256s:");
++  const trustedHashesSchemaRegex =
++    /(nodeReplPath:[A-Za-z_$][\w$]*,platform:[^,{}]+,trustedBrowserClientSha256s:)([A-Za-z_$][\w$]*)(?=\})/g;
++  const trustedHashesSchemaMatches = [
++    ...patchedSource.matchAll(trustedHashesSchemaRegex),
++  ];
++  if (
++    trustedHashesSchemaMatches.length === 1 &&
++    bundledTrustedHashes.length === 2 &&
++    bundledTrustedHashes.every((hash) => /^[0-9a-f]{64}$/.test(hash))
++  ) {
++    patchedSource = patchedSource.replace(
++      trustedHashesSchemaRegex,
++      (_match, configPrefix, trustedHashesSchema) => {
++        patchedTrustedHashes = true;
++        return `${configPrefix}${trustedHashesSchema}.transform(codexLinuxTrustedBrowserClientSha256s)`;
++      },
++    );
++    const helper =
++      `const __codexLinuxBundledBrowserClientSha256s=${JSON.stringify(bundledTrustedHashes)};function codexLinuxTrustedBrowserClientSha256s(__codexHashes){let __codexTrustedHashes=Array.isArray(__codexHashes)?[...__codexHashes]:[];return Array.from(new Set([...__codexTrustedHashes,...__codexLinuxBundledBrowserClientSha256s]))}`;
++    const strictDirective = '"use strict";';
++    const helperInsertionIndex = patchedSource.startsWith(strictDirective)
++      ? strictDirective.length
++      : 0;
++    patchedSource =
++      patchedSource.slice(0, helperInsertionIndex) +
++      helper +
++      patchedSource.slice(helperInsertionIndex);
++  }
+ 
+   if (
+     patchedTrustedHashes &&
+@@ -271,41 +294,97 @@ function applyBrowserUseNodeReplApprovalPatch(currentSource) {
+   }
+ 
+   if (
+-    patchedSource === currentSource &&
+-    patchedSource.includes("startup_timeout_sec:120") &&
+-    !patchedAnyMcpServerConfig &&
+-    !mcpServerConfigAlreadyApprovedRegex.test(patchedSource) &&
+     !patchedTrustedHashes &&
+-    !patchedSource.includes("codexLinuxTrustedBrowserClientSha256s(")
++    !patchedSource.includes("codexLinuxTrustedBrowserClientSha256s(") &&
++    hasTrustedHashesSchema
+   ) {
+     console.warn(
+-      "WARN: Could not find Browser Use node_repl config insertion point — skipping node_repl approval patch",
++      bundledTrustedHashes.length === 2
++        ? "WARN: Could not find Browser Use trusted hash schema insertion point — skipping Linux Browser Use trusted hash patch"
++        : "WARN: Could not derive both bundled Browser Use client hashes — skipping Linux Browser Use trusted hash schema patch",
+     );
+   }
+ 
+   return patchedSource;
+ }
+ 
+-// The trusted-hash setup and node_repl config can live in different build chunks.
+-// Scan every chunk carrying either marker so each patch reaches its current host.
++function bundledBrowserClientSha256s(extractedDir) {
++  const searchRoot = path.join(path.dirname(extractedDir), "dmg-extract");
++  if (!fs.existsSync(searchRoot)) {
++    return [];
++  }
++
++  const suffixes = [
++    path.join(
++      "plugins",
++      "openai-bundled",
++      "plugins",
++      "browser",
++      "scripts",
++      "browser-client.mjs",
++    ),
++    path.join(
++      "plugins",
++      "openai-bundled",
++      "plugins",
++      "chrome",
++      "scripts",
++      "browser-client.mjs",
++    ),
++  ];
++  const matches = new Map(suffixes.map((suffix) => [suffix, []]));
++  const pending = [searchRoot];
++  while (pending.length > 0) {
++    const directory = pending.pop();
++    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
++      const candidate = path.join(directory, entry.name);
++      if (entry.isDirectory()) {
++        pending.push(candidate);
++      } else if (entry.isFile()) {
++        for (const suffix of suffixes) {
++          if (candidate.endsWith(path.sep + suffix)) {
++            matches.get(suffix).push(candidate);
++          }
++        }
++      }
++    }
++  }
++
++  if (suffixes.some((suffix) => matches.get(suffix).length !== 1)) {
++    return [];
++  }
++  return suffixes.map((suffix) =>
++    crypto
++      .createHash("sha256")
++      .update(fs.readFileSync(matches.get(suffix)[0]))
++      .digest("hex"),
++  );
++}
++
++// The trusted-hash runtime builder or schema can live in generated main or
++// webview chunks. Scan both locations so the pinned wrapper handles either.
+ function applyBrowserUseNodeReplApprovalAssets(extractedDir) {
+-  const buildDir = path.join(extractedDir, ".vite", "build");
+-  if (!fs.existsSync(buildDir)) {
++  const assetDirs = [
++    path.join(extractedDir, ".vite", "build"),
++    path.join(extractedDir, "webview", "assets"),
++  ].filter((directory) => fs.existsSync(directory));
++  if (assetDirs.length === 0) {
+     return { matched: 0, changed: 0 };
+   }
+ 
+-  const candidates = fs
+-    .readdirSync(buildDir)
+-    .filter((name) => name.endsWith(".js"))
+-    .sort()
+-    .map((name) => path.join(buildDir, name))
++  const trustedHashes = bundledBrowserClientSha256s(extractedDir);
++  const candidates = assetDirs
++    .flatMap((directory) =>
++      fs
++        .readdirSync(directory)
++        .filter((name) => name.endsWith(".js"))
++        .sort()
++        .map((name) => path.join(directory, name)),
++    )
+     .filter((candidate) => {
+       try {
+         const source = fs.readFileSync(candidate, "utf8");
+-        return (
+-          source.includes("startup_timeout_sec:120") ||
+-          source.includes("trustedBrowserClientSha256s")
+-        );
++        return source.includes("trustedBrowserClientSha256s");
+       } catch {
+         return false;
+       }
+@@ -315,7 +394,10 @@ function applyBrowserUseNodeReplApprovalAssets(extractedDir) {
+   const pendingWrites = [];
+   for (const candidate of candidates) {
+     const currentSource = fs.readFileSync(candidate, "utf8");
+-    const patchedSource = applyBrowserUseNodeReplApprovalPatch(currentSource);
++    const patchedSource = applyBrowserUseNodeReplApprovalPatch(
++      currentSource,
++      trustedHashes,
++    );
+     if (patchedSource !== currentSource) {
+       changed += 1;
+       pendingWrites.push({ filePath: candidate, patchedSource });

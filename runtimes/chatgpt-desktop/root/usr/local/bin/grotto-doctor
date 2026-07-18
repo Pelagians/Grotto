@@ -23,6 +23,8 @@ from typing import Any
 
 SCHEMA_VERSION = 1
 PROBE_CACHE_SCHEMA_VERSION = 1
+CHATGPT_SECURITY_MANIFEST_SCHEMA_VERSION = 1
+CHATGPT_SECURITY_MANIFEST = "/usr/share/grotto/chatgpt-desktop-security.json"
 PROBE_NOT_RUN_REASON = "active probe requires --probe-sandbox"
 PROBE_WARNING = (
     "WARNING: --probe-sandbox will intentionally trigger host SELinux AVCs "
@@ -31,11 +33,6 @@ PROBE_WARNING = (
 )
 AUTH_HOST = "auth.openai.com"
 CODEX = "/opt/codex-cli/bin/codex"
-NODE_REPL_EXPOSED = True
-NODE_REPL_AUTO_APPROVED = False
-NODE_REPL_POLICY_SOURCE = (
-    "Grotto build patch disables browser-use-node-repl-approval"
-)
 MANAGED_NODE_DIR = "/opt/chatgpt/resources/node-runtime/bin"
 WORKSPACE = "/workspace"
 DIAGNOSTIC_PATH = ":".join(
@@ -102,6 +99,108 @@ def read_json(path: str) -> dict[str, Any]:
         return value if isinstance(value, dict) else {}
     except (OSError, UnicodeError, json.JSONDecodeError):
         return {}
+
+
+def unverified_security_policy(path: pathlib.Path, reason: str) -> dict[str, Any]:
+    return {
+        "node_repl_exposed": None,
+        "node_repl_auto_approved": None,
+        "node_repl_verified": False,
+        "node_repl_policy_source": None,
+        "browser_use_trusted_client_hash_patch": None,
+        "browser_use_policy_verified": False,
+        "manifest_path": str(path),
+        "manifest_wrapper_revision": None,
+        "manifest_error": reason,
+    }
+
+
+def read_chatgpt_desktop_security_policy(
+    path: pathlib.Path | None = None,
+    *,
+    expected_wrapper_revision: str | None = None,
+) -> dict[str, Any]:
+    candidate = path or pathlib.Path(
+        os.environ.get("GROTTO_CHATGPT_SECURITY_MANIFEST", CHATGPT_SECURITY_MANIFEST)
+    )
+    try:
+        value = json.loads(candidate.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return unverified_security_policy(candidate, "security manifest is missing")
+    except json.JSONDecodeError as exc:
+        return unverified_security_policy(
+            candidate,
+            f"security manifest is malformed: {exc}",
+        )
+    except (OSError, UnicodeError) as exc:
+        return unverified_security_policy(
+            candidate,
+            f"security manifest is invalid: {exc}",
+        )
+
+    if (
+        not isinstance(value, dict)
+        or value.get("schema_version") != CHATGPT_SECURITY_MANIFEST_SCHEMA_VERSION
+    ):
+        return unverified_security_policy(
+            candidate,
+            "security manifest schema is unsupported",
+        )
+    node_repl = value.get("node_repl")
+    browser_use = value.get("browser_use")
+    wrapper_revision = value.get("wrapper_revision")
+    if not isinstance(node_repl, dict) or not isinstance(browser_use, dict):
+        return unverified_security_policy(
+            candidate,
+            "security manifest sections are invalid",
+        )
+    fields = (
+        node_repl.get("exposed"),
+        node_repl.get("auto_approved"),
+        node_repl.get("verified"),
+        browser_use.get("trusted_client_hash_patch"),
+        browser_use.get("verified"),
+    )
+    if any(type(field) is not bool for field in fields):
+        return unverified_security_policy(
+            candidate,
+            "security manifest fields are invalid",
+        )
+    if not isinstance(wrapper_revision, str) or not wrapper_revision:
+        return unverified_security_policy(
+            candidate,
+            "security manifest wrapper is invalid",
+        )
+    if expected_wrapper_revision not in (None, "unknown", wrapper_revision):
+        return unverified_security_policy(
+            candidate,
+            "security manifest wrapper does not match runtime",
+        )
+    source = node_repl.get("verification_source")
+    if source != "installed-electron-bundle":
+        return unverified_security_policy(
+            candidate,
+            "security manifest source is invalid",
+        )
+    if not node_repl["verified"] or not browser_use["verified"]:
+        return unverified_security_policy(
+            candidate,
+            "security manifest is unverified",
+        )
+
+    return {
+        "node_repl_exposed": node_repl["exposed"],
+        "node_repl_auto_approved": node_repl["auto_approved"],
+        "node_repl_verified": node_repl["verified"],
+        "node_repl_policy_source": source,
+        "browser_use_trusted_client_hash_patch": browser_use[
+            "trusted_client_hash_patch"
+        ],
+        "browser_use_policy_verified": browser_use["verified"],
+        "manifest_path": str(candidate),
+        "manifest_wrapper_revision": wrapper_revision,
+        "manifest_error": None,
+    }
 
 
 def utc_timestamp() -> str:
@@ -632,6 +731,13 @@ def collect(*, active_probe: bool = False) -> dict[str, Any]:
     build_info = read_json("/opt/chatgpt/.codex-linux/build-info.json")
     upstream = build_info.get("upstreamDmg", {})
     source = build_info.get("source", {})
+    wrapper_revision = os.environ.get(
+        "GROTTO_CODEX_DESKTOP_LINUX_REF",
+        source.get("commit", "unknown"),
+    )
+    security_policy = read_chatgpt_desktop_security_policy(
+        expected_wrapper_revision=wrapper_revision,
+    )
 
     bundled_bwrap = resolve_bundled_bwrap()
     system_bwrap = shutil.which("bwrap", path=DIAGNOSTIC_PATH)
@@ -709,6 +815,13 @@ def collect(*, active_probe: bool = False) -> dict[str, Any]:
     )
 
     remediation: list[str] = []
+    if security_policy["manifest_error"]:
+        remediation.append(
+            "ChatGPT Desktop build policy metadata is unavailable or unverified "
+            f"({security_policy['manifest_error']}). Rebuild the image so the "
+            "installed Electron application is verified and the security manifest "
+            "is generated."
+        )
     if active_probe:
         fresh_dev_error = checks["bubblewrap_fresh_dev"]["stderr"]
         protected_error = checks["bubblewrap_protected_child_remount"]["stderr"]
@@ -747,9 +860,23 @@ def collect(*, active_probe: bool = False) -> dict[str, Any]:
         "schema_version": SCHEMA_VERSION,
         "ok": sandbox_probe["ok"],
         "active_probe": active_probe,
-        "node_repl_exposed": NODE_REPL_EXPOSED,
-        "node_repl_auto_approved": NODE_REPL_AUTO_APPROVED,
-        "node_repl_policy_source": NODE_REPL_POLICY_SOURCE,
+        "node_repl_exposed": security_policy["node_repl_exposed"],
+        "node_repl_auto_approved": security_policy["node_repl_auto_approved"],
+        "node_repl_verified": security_policy["node_repl_verified"],
+        "node_repl_policy_source": security_policy["node_repl_policy_source"],
+        "browser_use_trusted_client_hash_patch": security_policy[
+            "browser_use_trusted_client_hash_patch"
+        ],
+        "browser_use_policy_verified": security_policy[
+            "browser_use_policy_verified"
+        ],
+        "chatgpt_desktop_security": {
+            "manifest_path": security_policy["manifest_path"],
+            "manifest_wrapper_revision": security_policy[
+                "manifest_wrapper_revision"
+            ],
+            "manifest_error": security_policy["manifest_error"],
+        },
         "may_generate_host_avcs": active_probe,
         "probe_started_at": sandbox_probe.get("probe_started_at"),
         "probe_completed_at": sandbox_probe.get("probe_completed_at"),
@@ -766,10 +893,7 @@ def collect(*, active_probe: bool = False) -> dict[str, Any]:
                 "GROTTO_BUILD_REVISION",
                 "unknown",
             ),
-            "wrapper_revision": os.environ.get(
-                "GROTTO_CODEX_DESKTOP_LINUX_REF",
-                source.get("commit", "unknown"),
-            ),
+            "wrapper_revision": wrapper_revision,
             "codex_cli_build_version": os.environ.get(
                 "GROTTO_CODEX_CLI_VERSION",
                 tools["codex"]["version"] or "unknown",
@@ -897,6 +1021,10 @@ def collect(*, active_probe: bool = False) -> dict[str, Any]:
     return report
 
 
+def human_value(value: Any) -> str:
+    return "unknown" if value is None else str(value)
+
+
 def render_human(report: dict[str, Any]) -> str:
     if report["active_probe"]:
         overall = "ok" if report["ok"] else "attention required"
@@ -926,9 +1054,15 @@ def render_human(report: dict[str, Any]) -> str:
         f"wrapper: {report['runtime']['wrapper_revision']}",
         (
             "node_repl: "
-            f"exposed={report['node_repl_exposed']} "
-            f"auto_approved={report['node_repl_auto_approved']} "
-            f"policy_source={report['node_repl_policy_source']}"
+            f"exposed={human_value(report['node_repl_exposed'])} "
+            f"auto_approved={human_value(report['node_repl_auto_approved'])} "
+            f"verified={report['node_repl_verified']} "
+            f"policy_source={human_value(report['node_repl_policy_source'])}"
+        ),
+        (
+            "browser_use: trusted_client_hash_patch="
+            f"{human_value(report['browser_use_trusted_client_hash_patch'])} "
+            f"verified={report['browser_use_policy_verified']}"
         ),
         (
             "identity: "
@@ -943,6 +1077,11 @@ def render_human(report: dict[str, Any]) -> str:
             f"{report['security']['selinux']['attribution']}"
         ),
     ]
+    if report["chatgpt_desktop_security"]["manifest_error"]:
+        lines.append(
+            "security policy manifest: unverified ("
+            f"{report['chatgpt_desktop_security']['manifest_error']})"
+        )
     if report["active_probe"]:
         lines.extend(
             (
