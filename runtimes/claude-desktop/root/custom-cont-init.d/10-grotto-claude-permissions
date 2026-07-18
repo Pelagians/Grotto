@@ -1,0 +1,56 @@
+#!/usr/bin/with-contenv bash
+# shellcheck shell=bash
+set -Eeuo pipefail
+
+# LinuxServer adjusts the abc account to PUID/PGID before custom init scripts run.
+install -d -o abc -g abc -m 0755 \
+    /config \
+    /config/.cache \
+    /config/.config \
+    /config/.config/labwc \
+    /config/.config/openbox \
+    /config/.local \
+    /config/.local/share \
+    /config/.local/state \
+    /workspace \
+    /tools \
+    /tools/bin \
+    /tools/cargo \
+    /tools/mise \
+    /tools/npm \
+    /tools/pnpm \
+    /tools/python \
+    /tools/pipx \
+    /tools/venvs \
+    /cache \
+    /cache/npm \
+    /cache/pip \
+    /cache/uv \
+    /cache/xdg
+install -d -o abc -g abc -m 0700 \
+    /config/.claude \
+    /config/.local/share/keyrings
+
+# The Selkies base seeds these only for a new configuration volume. Refresh the
+# launchers on every image start so upgrades and display-mode switches use the
+# current Claude startup path.
+install -o abc -g abc -m 0755 \
+    /defaults/autostart \
+    /config/.config/openbox/autostart
+install -o abc -g abc -m 0755 \
+    /defaults/autostart_wayland \
+    /config/.config/labwc/autostart
+
+# Repair application-owned state, but never recursively rewrite the mounted
+# project workspace or user-installed tool trees.
+chown abc:abc /workspace /tools /cache
+chown abc:abc \
+    /tools/bin /tools/cargo /tools/mise /tools/npm /tools/pnpm \
+    /tools/python /tools/pipx /tools/venvs \
+    /cache/npm /cache/pip /cache/uv /cache/xdg
+chown -R abc:abc \
+    /config/.claude \
+    /config/.cache \
+    /config/.config \
+    /config/.local
+chmod 0700 /config/.claude /config/.local/share/keyrings
