@@ -7,6 +7,7 @@ export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-/config/.config}"
 export XDG_CACHE_HOME="${XDG_CACHE_HOME:-/config/.cache}"
 export XDG_DATA_HOME="${XDG_DATA_HOME:-/config/.local/share}"
 export XDG_STATE_HOME="${XDG_STATE_HOME:-/config/.local/state}"
+export GROTTO_CLAUDE_BRIDGE_DIR="${GROTTO_CLAUDE_BRIDGE_DIR:-/run/grotto/claude-bridge}"
 export BROWSER="${BROWSER:-/usr/local/bin/grotto-claude-browser}"
 
 expected_fingerprint=31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE
@@ -24,15 +25,14 @@ case "$architecture" in
 esac
 
 for command_name in \
-    claude-desktop firefox-esr gnome-keyring-daemon selkies \
-    xdg-mime
+    claude-desktop gnome-keyring-daemon python3 selkies xdg-mime
 do
     command -v "$command_name" >/dev/null
 done
 
 test -x /usr/bin/claude-desktop
-test -x /usr/bin/firefox-esr
 test -x /usr/local/bin/grotto-claude-browser
+test -x /usr/local/bin/grotto-claude-callback-listener
 test -x /usr/local/bin/grotto-claude-url-handler
 test -x /lsiopy/bin/selkies
 test -r /usr/share/applications/grotto-claude-browser.desktop
@@ -40,6 +40,9 @@ test -r /usr/share/applications/grotto-claude-url-handler.desktop
 test -r "$keyring"
 test -r "$repository"
 test -s "$version_file"
+
+python3 /usr/local/bin/grotto-claude-browser --self-test
+python3 /usr/local/bin/grotto-claude-callback-listener --self-test
 
 gpg --batch --homedir "$gnupg_home" --show-keys --with-colons "$keyring" \
     | awk -F: '$1 == "fpr" { print $10; exit }' \
@@ -60,6 +63,7 @@ for directory in \
     "$XDG_CACHE_HOME" \
     "$XDG_DATA_HOME" \
     "$XDG_STATE_HOME" \
+    "$GROTTO_CLAUDE_BRIDGE_DIR" \
     /workspace \
     /tools \
     /cache
@@ -83,5 +87,6 @@ test "$(xdg-mime query default x-scheme-handler/claude)" = grotto-claude-url-han
 
 test "$(stat -c '%a' "$CLAUDE_CONFIG_DIR")" = 700
 test "$(stat -c '%a' "$XDG_DATA_HOME/keyrings")" = 700
+test "$(stat -c '%a' "$GROTTO_CLAUDE_BRIDGE_DIR")" = 700
 
 printf 'Claude Desktop %s runtime smoke test passed\n' "$installed_version"
