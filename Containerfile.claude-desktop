@@ -113,17 +113,24 @@ RUN set -eux; \
         /defaults/autostart_wayland \
         /custom-cont-init.d/10-grotto-claude-permissions \
         /usr/local/bin/grotto-claude-browser \
+        /usr/local/bin/grotto-claude-callback-relay \
         /usr/local/libexec/grotto-claude-desktop-smoke; \
     bash -n /defaults/autostart; \
     bash -n /defaults/autostart_wayland; \
     bash -n /custom-cont-init.d/10-grotto-claude-permissions; \
     bash -n /usr/local/libexec/grotto-claude-desktop-smoke; \
-    python3 -m py_compile /usr/local/bin/grotto-claude-browser; \
+    python3 -m py_compile \
+        /usr/local/bin/grotto-claude-browser \
+        /usr/local/bin/grotto-claude-callback-relay; \
     python3 /usr/local/bin/grotto-claude-browser --self-test; \
+    python3 /usr/local/bin/grotto-claude-callback-relay --self-test; \
     rm -rf /usr/local/bin/__pycache__; \
     desktop-file-validate \
         /usr/share/applications/grotto-claude-browser.desktop; \
     update-desktop-database /usr/share/applications; \
+    python3 -c 'from pathlib import Path; p=Path("/defaults/default.conf"); text=p.read_text(encoding="utf-8"); marker="  error_page 500 502 503 504 /50x.html;\n"; snippet="  location = SUBFOLDERgrotto/claude-callback {\n    limit_except POST { deny all; }\n    proxy_set_header Host $host;\n    proxy_set_header X-Forwarded-Proto $scheme;\n    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n    proxy_http_version 1.1;\n    proxy_buffering off;\n    proxy_connect_timeout 2s;\n    proxy_read_timeout 5s;\n    client_max_body_size 64k;\n    proxy_pass http://127.0.0.1:17888/callback;\n  }\n"; assert text.count(marker) == 2; p.write_text(text.replace(marker, snippet + marker), encoding="utf-8")'; \
+    test "$(grep -Fc 'location = SUBFOLDERgrotto/claude-callback' /defaults/default.conf)" = 2; \
+    test "$(grep -Fc 'proxy_pass http://127.0.0.1:17888/callback;' /defaults/default.conf)" = 2; \
     dashboard_count=0; \
     for dashboard in /usr/share/selkies/selkies-dashboard*; do \
         [ -d "$dashboard" ] || continue; \
@@ -185,6 +192,7 @@ RUN set -eux; \
     test "$(command -v selkies)" = /lsiopy/bin/selkies; \
     test -x /usr/bin/claude-desktop; \
     test -x /usr/local/bin/grotto-claude-browser; \
+    test -x /usr/local/bin/grotto-claude-callback-relay; \
     test -r /usr/share/applications/grotto-claude-browser.desktop; \
     test -r /usr/share/grotto/claude-viewer-open.js; \
     test -r /usr/share/grotto/claude-desktop-version
