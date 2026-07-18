@@ -14,8 +14,10 @@ CODEX_CLI_VERSION ?= latest
 check:
 	sh -n files/grotto-openclaw-entrypoint
 	bash -n runtimes/chatgpt-desktop/root/defaults/autostart
-	bash -n runtimes/chatgpt-desktop/root/usr/local/bin/grotto-chatgpt-auth
+	bash -n runtimes/chatgpt-desktop/root/defaults/autostart_wayland
+	python3 -m py_compile runtimes/chatgpt-desktop/root/usr/local/bin/grotto-chatgpt-auth
 	bash -n runtimes/chatgpt-desktop/root/custom-cont-init.d/10-grotto-chatgpt-permissions
+	python3 tests/test_window_manager_config.py
 
 check-container-engine:
 	@if [ -z "$(CONTAINER_ENGINE)" ]; then \

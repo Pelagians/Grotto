@@ -130,7 +130,6 @@ ENV TITLE="ChatGPT Desktop" \
     START_DOCKER=false \
     PIXELFLUX_WAYLAND=true \
     AUTO_GPU=true \
-    NO_DECOR=true \
     RESTART_APP=true \
     FILE_MANAGER_PATH=/workspace \
     GROTTO_RUNTIME=chatgpt-desktop \
@@ -216,25 +215,38 @@ COPY --from=builder /opt/codex-cli /opt/codex-cli
 COPY runtimes/chatgpt-desktop/root/ /
 COPY tests/chatgpt-desktop-runtime.sh /usr/local/libexec/grotto-chatgpt-desktop-smoke
 COPY tests/test_grotto_doctor.py /usr/local/libexec/test-grotto-doctor.py
+COPY tests/test_window_manager_config.py /usr/local/libexec/test-window-manager-config.py
 
 RUN set -eux; \
     chmod 0755 \
         /defaults/autostart \
+        /defaults/autostart_wayland \
         /usr/local/bin/grotto-doctor \
         /usr/local/bin/grotto-chatgpt-auth \
+        /usr/local/libexec/grotto-configure-openbox \
         /usr/local/libexec/grotto-chatgpt-desktop-smoke \
         /custom-cont-init.d/10-grotto-chatgpt-permissions; \
     bash -n /defaults/autostart; \
+    bash -n /defaults/autostart_wayland; \
     python3 -m py_compile /usr/local/bin/grotto-chatgpt-auth; \
     python3 /usr/local/bin/grotto-chatgpt-auth --self-test; \
     bash -n /custom-cont-init.d/10-grotto-chatgpt-permissions; \
     bash -n /usr/local/libexec/grotto-chatgpt-desktop-smoke; \
     python3 -m py_compile \
         /usr/local/bin/grotto-doctor \
+        /usr/local/libexec/grotto-configure-openbox \
+        /usr/local/libexec/test-window-manager-config.py \
         /usr/local/libexec/test-grotto-doctor.py; \
+    /usr/local/libexec/grotto-configure-openbox /etc/xdg/openbox/rc.xml; \
+    GROTTO_OPENBOX_CONFIG=/etc/xdg/openbox/rc.xml \
+    GROTTO_LABWC_CONFIG=/defaults/labwc.xml \
+    GROTTO_WINDOW_CONFIGURATOR=/usr/local/libexec/grotto-configure-openbox \
+        python3 /usr/local/libexec/test-window-manager-config.py; \
     GROTTO_DOCTOR_UNDER_TEST=/usr/local/bin/grotto-doctor \
         python3 /usr/local/libexec/test-grotto-doctor.py; \
-    rm -f /usr/local/libexec/test-grotto-doctor.py; \
+    rm -f \
+        /usr/local/libexec/test-grotto-doctor.py \
+        /usr/local/libexec/test-window-manager-config.py; \
     rm -rf /usr/local/bin/__pycache__ /usr/local/libexec/__pycache__; \
     shellcheck \
         /defaults/autostart \

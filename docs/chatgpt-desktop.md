@@ -127,6 +127,26 @@ podman run --rm \
 Open `https://localhost:3001`. Selkies uses a self-signed certificate unless a
 reverse proxy terminates TLS.
 
+## Window behavior
+
+ChatGPT is presented as the desktop surface rather than as an ordinary floating
+window. In both Selkies session modes, the visible `codex-desktop` browser
+window is borderless, maximized to the stream, and kept on the bottom layer.
+This is deliberately not the window manager's special fullscreen state:
+borderless maximization fills the same canvas without giving ChatGPT fullscreen
+stacking behavior over transient windows.
+
+Native file choosers, Electron dialogs, and utility windows remain decorated
+and windowed. They are unmaximized, raised, and focused above ChatGPT when they
+open. ChatGPT ignores client-generated focus requests in Labwc; direct user
+clicks still focus it normally. The equivalent Openbox rule declines initial
+focus and keeps ChatGPT below dialog windows.
+
+The image supplies policies for both the default Wayland/Labwc path and the
+X11/Openbox fallback. It also refreshes the persistent autostart files on every
+container initialization so switching session modes or upgrading from an older
+Selkies base cannot leave the base terminal launcher in `/config`.
+
 For a CPU/X11 fallback, omit `/dev/dri` and use:
 
 ```bash

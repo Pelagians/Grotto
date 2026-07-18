@@ -1,0 +1,164 @@
+#!/usr/bin/env python3
+"""Install Grotto's single-application stacking policy into Openbox."""
+
+from __future__ import annotations
+
+import argparse
+import os
+from pathlib import Path
+import stat
+import xml.etree.ElementTree as ET
+
+
+START_MARKER = "Grotto ChatGPT Desktop window policy: start"
+END_MARKER = "Grotto ChatGPT Desktop window policy: end"
+MATCH_ATTRIBUTES = {
+    "name",
+    "class",
+    "groupName",
+    "groupClass",
+    "role",
+    "title",
+    "type",
+}
+
+
+def local_name(tag: object) -> str:
+    if not isinstance(tag, str):
+        return ""
+    return tag.rsplit("}", 1)[-1]
+
+
+def namespace_of(root: ET.Element) -> str:
+    if isinstance(root.tag, str) and root.tag.startswith("{"):
+        return root.tag[1:].split("}", 1)[0]
+    return ""
+
+
+def configure_openbox(config_path: Path) -> None:
+    parser = ET.XMLParser(target=ET.TreeBuilder(insert_comments=True))
+    tree = ET.parse(config_path, parser=parser)
+    root = tree.getroot()
+    namespace = namespace_of(root)
+    if namespace:
+        ET.register_namespace("", namespace)
+
+    def qualified(tag: str) -> str:
+        return f"{{{namespace}}}{tag}" if namespace else tag
+
+    applications = next(
+        (child for child in root if local_name(child.tag) == "applications"),
+        None,
+    )
+    if applications is None:
+        raise ValueError(f"{config_path}: Openbox <applications> section not found")
+
+    # Make repeated image-build or test invocations idempotent.
+    in_managed_block = False
+    for child in list(applications):
+        if child.tag is ET.Comment:
+            text = (child.text or "").strip()
+            if START_MARKER in text:
+                in_managed_block = True
+                applications.remove(child)
+                continue
+            if END_MARKER in text:
+                applications.remove(child)
+                in_managed_block = False
+                continue
+        if in_managed_block:
+            applications.remove(child)
+
+    # Selkies' default catch-all maximizes every top-level, including GTK file
+    # choosers. Remove only that exact vendor rule; preserve unrelated rules.
+    for application in list(applications):
+        if local_name(application.tag) != "application":
+            continue
+        if application.attrib.get("class") != "*":
+            continue
+        if set(application.attrib).intersection(MATCH_ATTRIBUTES) != {"class"}:
+            continue
+        element_children = [
+            child for child in application if isinstance(child.tag, str)
+        ]
+        settings = {
+            local_name(child.tag): (child.text or "").strip().lower()
+            for child in element_children
+        }
+        if (
+            settings
+            and set(settings).issubset({"decor", "maximized"})
+            and settings.get("maximized") == "yes"
+            and settings.get("decor", "no") == "no"
+        ):
+            applications.remove(application)
+
+    def add_rule(attributes: dict[str, str], settings: tuple[tuple[str, str], ...]) -> None:
+        application = ET.SubElement(
+            applications,
+            qualified("application"),
+            attributes,
+        )
+        for tag, value in settings:
+            child = ET.SubElement(application, qualified(tag))
+            child.text = value
+
+    applications.append(ET.Comment(f" {START_MARKER} "))
+    add_rule(
+        {
+            "class": "codex-desktop",
+            "role": "browser-window",
+            "type": "normal",
+        },
+        (
+            ("decor", "no"),
+            ("focus", "no"),
+            ("layer", "below"),
+            # Borderless maximization is visually fullscreen without the
+            # fullscreen stacking layer that can obscure transient dialogs.
+            ("fullscreen", "no"),
+            ("maximized", "yes"),
+        ),
+    )
+    for window_type in ("dialog", "utility"):
+        add_rule(
+            {"class": "*", "type": window_type},
+            (
+                ("decor", "yes"),
+                ("focus", "yes"),
+                ("layer", "above"),
+                ("fullscreen", "no"),
+                ("maximized", "no"),
+            ),
+        )
+    applications.append(ET.Comment(f" {END_MARKER} "))
+
+    ET.indent(tree, space="  ")
+    original_mode = stat.S_IMODE(config_path.stat().st_mode)
+    temporary_path = config_path.with_name(f".{config_path.name}.grotto-tmp")
+    tree.write(
+        temporary_path,
+        encoding="UTF-8",
+        xml_declaration=True,
+        short_empty_elements=True,
+    )
+    os.chmod(temporary_path, original_mode)
+    os.replace(temporary_path, config_path)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "config",
+        nargs="?",
+        type=Path,
+        default=Path("/etc/xdg/openbox/rc.xml"),
+    )
+    args = parser.parse_args()
+    configure_openbox(args.config)
+    print(f"[grotto] Installed Openbox window policy in {args.config}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
