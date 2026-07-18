@@ -7,6 +7,7 @@ export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-/config/.config}"
 export XDG_CACHE_HOME="${XDG_CACHE_HOME:-/config/.cache}"
 export XDG_DATA_HOME="${XDG_DATA_HOME:-/config/.local/share}"
 export XDG_STATE_HOME="${XDG_STATE_HOME:-/config/.local/state}"
+export BROWSER="${BROWSER:-/usr/local/bin/grotto-claude-browser}"
 
 expected_fingerprint=31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE
 keyring=/usr/share/keyrings/claude-desktop-archive-keyring.asc
@@ -22,11 +23,20 @@ case "$architecture" in
     *) echo "Unsupported architecture: $architecture" >&2; exit 1 ;;
 esac
 
-command -v claude-desktop >/dev/null
-command -v gnome-keyring-daemon >/dev/null
-command -v selkies >/dev/null
+for command_name in \
+    claude-desktop firefox-esr gnome-keyring-daemon selkies \
+    xdg-mime
+do
+    command -v "$command_name" >/dev/null
+done
+
 test -x /usr/bin/claude-desktop
+test -x /usr/bin/firefox-esr
+test -x /usr/local/bin/grotto-claude-browser
+test -x /usr/local/bin/grotto-claude-url-handler
 test -x /lsiopy/bin/selkies
+test -r /usr/share/applications/grotto-claude-browser.desktop
+test -r /usr/share/applications/grotto-claude-url-handler.desktop
 test -r "$keyring"
 test -r "$repository"
 test -s "$version_file"
@@ -60,6 +70,16 @@ do
     : > "$probe"
     rm -f "$probe"
 done
+
+xdg-mime default grotto-claude-browser.desktop text/html
+xdg-mime default grotto-claude-browser.desktop x-scheme-handler/http
+xdg-mime default grotto-claude-browser.desktop x-scheme-handler/https
+xdg-mime default grotto-claude-url-handler.desktop x-scheme-handler/claude
+
+test "$(xdg-mime query default text/html)" = grotto-claude-browser.desktop
+test "$(xdg-mime query default x-scheme-handler/http)" = grotto-claude-browser.desktop
+test "$(xdg-mime query default x-scheme-handler/https)" = grotto-claude-browser.desktop
+test "$(xdg-mime query default x-scheme-handler/claude)" = grotto-claude-url-handler.desktop
 
 test "$(stat -c '%a' "$CLAUDE_CONFIG_DIR")" = 700
 test "$(stat -c '%a' "$XDG_DATA_HOME/keyrings")" = 700
