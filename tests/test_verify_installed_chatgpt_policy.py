@@ -25,8 +25,8 @@ SAFE_BROWSER_BUNDLE = r'''
 function codexLinuxTrustedBrowserClientSha256s(hashes) {
   return hashes;
 }
-function makeRuntime({nodePath:a,nodeReplPath:b,shouldUseWslPaths:c,
-  trustedBrowserClientSha256s:d}) {
+function makeRuntime({trustedBrowserClientSha256s:d,shouldUseWslPaths:c,
+  nodeReplPath:b,nodePath:a}) {
   d=codexLinuxTrustedBrowserClientSha256s(d);
   return {nodePath:a,nodeReplPath:b,shouldUseWslPaths:c,
     trustedBrowserClientSha256s:d};
@@ -97,7 +97,7 @@ const config = {[`mcp_servers.${name}`]:{startup_timeout_sec:120}};
 
     def test_ambiguous_changed_bundle_fails_closed(self) -> None:
         temporary, root = self.fixture(
-            {"resources/app/chunk.js": "const changed = 'node_repl';"}
+            {"resources/app/chunk.js": "const changed={nodeReplPath:value};"}
         )
         with temporary, self.assertRaisesRegex(
             policy.VerificationError, "ambiguous"
