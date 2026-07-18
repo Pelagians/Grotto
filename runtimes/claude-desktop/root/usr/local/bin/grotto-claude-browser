@@ -1,22 +1,14 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import json
 import os
+import subprocess
 import sys
-import tempfile
-import time
-import uuid
 from pathlib import Path
 from urllib.parse import urlparse
 
 MAX_URL_LENGTH = 16 * 1024
-DEFAULT_EVENT_FILE = Path("/usr/share/selkies/web/grotto-claude-open-url.json")
-
-
-def event_file() -> Path:
-    configured = os.environ.get("GROTTO_CLAUDE_VIEWER_EVENT_FILE")
-    return Path(configured) if configured else DEFAULT_EVENT_FILE
+FIREFOX_PATH = Path("/usr/bin/firefox-esr")
 
 
 def validate_url(value: str) -> str:
@@ -24,43 +16,36 @@ def validate_url(value: str) -> str:
         raise ValueError("authentication URL is too long")
     parsed = urlparse(value)
     if parsed.scheme != "https" or not parsed.netloc:
-        raise ValueError("Claude viewer bridge only opens absolute HTTPS URLs")
+        raise ValueError("Claude authentication browser only opens absolute HTTPS URLs")
     return value
 
 
-def wait_for_event_file(path: Path, timeout_seconds: float = 10.0) -> None:
-    deadline = time.monotonic() + timeout_seconds
-    while not path.exists():
-        if time.monotonic() >= deadline:
-            raise FileNotFoundError(f"Selkies viewer event file is not ready: {path}")
-        time.sleep(0.25)
-
-
-def write_event(url: str, path: Path | None = None) -> dict[str, object]:
-    target = path or event_file()
+def launch_url(url: str) -> None:
     validated = validate_url(url)
-    wait_for_event_file(target)
+    if not FIREFOX_PATH.is_file():
+        raise FileNotFoundError(f"authentication browser is missing: {FIREFOX_PATH}")
 
-    event: dict[str, object] = {
-        "version": 1,
-        "id": uuid.uuid4().hex,
-        "created_at": int(time.time() * 1000),
-        "url": validated,
-    }
+    cache_dir = Path(os.environ.get("XDG_CACHE_HOME", "/config/.cache")) / "grotto"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    log_path = cache_dir / "claude-auth-browser.log"
 
-    # The event file is pre-created and owned by the Selkies desktop user. A
-    # brief partial read is harmless because the viewer retries JSON parsing.
-    with target.open("w", encoding="utf-8") as handle:
-        json.dump(event, handle, separators=(",", ":"))
-        handle.write("\n")
-        handle.flush()
-        os.fsync(handle.fileno())
+    environment = os.environ.copy()
+    environment.setdefault("HOME", "/config")
 
-    return event
+    with log_path.open("ab", buffering=0) as log_file:
+        subprocess.Popen(
+            [str(FIREFOX_PATH), "--new-window", validated],
+            env=environment,
+            stdin=subprocess.DEVNULL,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+            close_fds=True,
+        )
 
 
 def self_test() -> int:
-    assert validate_url("https://accounts.google.com/o/oauth2/auth")
+    assert validate_url("https://claude.ai/login/popup-google-auth")
     for invalid in ("http://example.com", "file:///tmp/test", "javascript:alert(1)"):
         try:
             validate_url(invalid)
@@ -68,18 +53,7 @@ def self_test() -> int:
             pass
         else:
             raise AssertionError(f"accepted unsafe URL: {invalid}")
-
-    with tempfile.TemporaryDirectory() as temporary_directory:
-        target = Path(temporary_directory) / "event.json"
-        target.write_text("{}\n", encoding="utf-8")
-        event = write_event("https://example.com/login", target)
-        stored = json.loads(target.read_text(encoding="utf-8"))
-        assert stored == event
-        assert stored["version"] == 1
-        assert stored["url"] == "https://example.com/login"
-        assert isinstance(stored["id"], str) and stored["id"]
-        assert isinstance(stored["created_at"], int)
-
+    assert FIREFOX_PATH == Path("/usr/bin/firefox-esr")
     print("grotto-claude-browser self-test passed")
     return 0
 
@@ -90,22 +64,14 @@ def main() -> int:
 
     urls = [argument for argument in sys.argv[1:] if argument]
     if not urls:
-        print("No URL was provided to the Claude viewer bridge", file=sys.stderr)
+        print("No URL was provided to the Claude authentication browser", file=sys.stderr)
         return 64
 
     try:
         for url in urls:
-            write_event(url)
+            launch_url(url)
     except Exception as exc:  # noqa: BLE001
-        cache_dir = Path(os.environ.get("XDG_CACHE_HOME", "/config/.cache")) / "grotto"
-        try:
-            cache_dir.mkdir(parents=True, exist_ok=True)
-            (cache_dir / "claude-viewer-bridge-error.log").write_text(
-                f"{exc}\n", encoding="utf-8"
-            )
-        except OSError:
-            pass
-        print(f"Unable to send the URL to the Selkies viewer: {exc}", file=sys.stderr)
+        print(f"Unable to open the Claude authentication browser: {exc}", file=sys.stderr)
         return 1
 
     return 0
