@@ -109,7 +109,7 @@ class CodexDesktopLinuxPatchTest(unittest.TestCase):
         self.assertIn(f"function {ASSET_CALLER}", self.implementation)
         self.assertRegex(
             self.implementation,
-            rf"module\.exports\s*=.*{re.escape(ASSET_CALLER)}",
+            rf"module\.exports\s*=[\s\S]*{re.escape(ASSET_CALLER)}",
         )
 
     def test_trusted_client_hash_logic_remains_present(self) -> None:
@@ -153,7 +153,9 @@ class CodexDesktopLinuxPatchTest(unittest.TestCase):
         check_index = text.index("git apply --check --whitespace=error-all")
         apply_index = text.index("git apply --whitespace=error-all")
         install_index = text.index("./install.sh --fresh")
-        verify_index = text.index("grotto-verify-installed-chatgpt-policy")
+        verify_index = text.index(
+            "python3 /usr/local/libexec/grotto-verify-installed-chatgpt-policy"
+        )
         self.assertLess(copy_index, check_index)
         self.assertLess(check_index, apply_index)
         self.assertLess(apply_index, install_index)
