@@ -75,7 +75,7 @@ def launch_callback(uri: str) -> None:
 
 def serve() -> int:
     directory = bridge_dir()
-    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    directory.mkdir(parents=True, exist_ok=True, mode=0o777)
 
     lock_path = directory / "claude-listener.lock"
     lock_file = lock_path.open("a+")
@@ -90,7 +90,7 @@ def serve() -> int:
 
     server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     server.bind(str(path))
-    path.chmod(0o600)
+    path.chmod(0o666)
     server.listen(8)
 
     stopping = False
