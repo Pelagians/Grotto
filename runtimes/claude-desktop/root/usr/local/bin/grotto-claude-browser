@@ -1,8 +1,107 @@
-#!/bin/bash
-set -Eeuo pipefail
+#!/usr/bin/env python3
+from __future__ import annotations
 
-if (($# == 0)); then
-    exec /usr/bin/firefox-esr
-fi
+import json
+import os
+import socket
+import sys
+from pathlib import Path
+from urllib.parse import urlparse
 
-exec /usr/bin/firefox-esr --new-window "$@"
+MAX_MESSAGE_BYTES = 64 * 1024
+
+
+def bridge_dir() -> Path:
+    return Path(os.environ.get("GROTTO_CLAUDE_BRIDGE_DIR", "/run/grotto/claude-bridge"))
+
+
+def host_socket() -> Path:
+    return bridge_dir() / "host.sock"
+
+
+def validate_url(value: str) -> str:
+    parsed = urlparse(value)
+    if parsed.scheme != "https" or not parsed.netloc:
+        raise ValueError("Claude host browser bridge only opens absolute HTTPS URLs")
+    return value
+
+
+def send_open_request(url: str) -> None:
+    payload = json.dumps(
+        {
+            "action": "open",
+            "url": validate_url(url),
+        },
+        separators=(",", ":"),
+    ).encode("utf-8") + b"\n"
+
+    if len(payload) > MAX_MESSAGE_BYTES:
+        raise ValueError("authentication URL is too long")
+
+    path = host_socket()
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+        connection.settimeout(5)
+        connection.connect(str(path))
+        connection.sendall(payload)
+
+        response = b""
+        while b"\n" not in response:
+            chunk = connection.recv(4096)
+            if not chunk:
+                break
+            response += chunk
+            if len(response) > MAX_MESSAGE_BYTES:
+                raise RuntimeError("host bridge response is too large")
+
+    message = json.loads(response.split(b"\n", 1)[0].decode("utf-8"))
+    if not isinstance(message, dict) or not message.get("ok"):
+        error = message.get("error", "host browser bridge rejected the request") if isinstance(message, dict) else "invalid host bridge response"
+        raise RuntimeError(str(error))
+
+
+def self_test() -> int:
+    assert validate_url("https://accounts.google.com/o/oauth2/auth")
+    for invalid in ("http://example.com", "file:///tmp/test", "javascript:alert(1)"):
+        try:
+            validate_url(invalid)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"accepted unsafe URL: {invalid}")
+    assert host_socket().name == "host.sock"
+    print("grotto-claude-browser self-test passed")
+    return 0
+
+
+def main() -> int:
+    if len(sys.argv) == 2 and sys.argv[1] == "--self-test":
+        return self_test()
+
+    urls = [argument for argument in sys.argv[1:] if argument]
+    if not urls:
+        print("No URL was provided to the Claude host browser bridge", file=sys.stderr)
+        return 64
+
+    try:
+        for url in urls:
+            send_open_request(url)
+    except Exception as exc:  # noqa: BLE001
+        cache_dir = Path(os.environ.get("XDG_CACHE_HOME", "/config/.cache")) / "grotto"
+        try:
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            (cache_dir / "claude-browser-bridge-error.log").write_text(f"{exc}\n", encoding="utf-8")
+        except OSError:
+            pass
+        print(
+            f"Unable to open the host browser: {exc}. "
+            "Install and start contrib/claude-host-bridge/grotto-claude-host-bridge on the host, "
+            "then mount its runtime directory into /run/grotto/claude-bridge.",
+            file=sys.stderr,
+        )
+        return 1
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
