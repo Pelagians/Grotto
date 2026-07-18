@@ -73,10 +73,12 @@ RUN set -eux; \
 
 COPY patches/codex-desktop-linux/disable-auto-approved-node-repl.patch \
     /tmp/disable-auto-approved-node-repl.patch
+COPY runtimes/chatgpt-desktop/verify-installed-policy.py \
+    /usr/local/libexec/grotto-verify-installed-chatgpt-policy
 
-# Keep the wrapper pinned while disabling its extracted-app patch that
-# auto-approves arbitrary node_repl JavaScript. Both the preflight and apply
-# are strict: any upstream source drift fails this image build.
+# Keep the wrapper pinned while retaining its Browser Use trusted-client hash
+# adjustment and removing only automatic node_repl JavaScript approval. Both
+# the preflight and apply are strict: upstream source drift fails the build.
 RUN set -eux; \
     test "$(git rev-parse HEAD)" = "${CODEX_DESKTOP_LINUX_REF}"; \
     git apply --check --whitespace=error-all \
@@ -84,10 +86,13 @@ RUN set -eux; \
     git apply --whitespace=error-all \
         /tmp/disable-auto-approved-node-repl.patch; \
     git diff --check; \
-    ! grep -q 'browser-use-node-repl-approval' \
+    grep -q 'browser-use-node-repl-approval' \
         scripts/patches/core/all-linux/main-process/browser-integrations/patch.js; \
-    ! grep -q 'applyBrowserUseNodeReplApprovalAssets' \
+    grep -q 'applyBrowserUseNodeReplApprovalAssets' \
         scripts/patches/core/all-linux/main-process/browser-integrations/patch.js; \
+    grep -q 'codexLinuxTrustedBrowserClientSha256s' \
+        scripts/patches/impl/main-process/browser.js; \
+    ! grep -q 'approval_mode' scripts/patches/impl/main-process/browser.js; \
     rm -f /tmp/disable-auto-approved-node-repl.patch
 
 # The upstream installer downloads the official ChatGPT DMG, checks the
@@ -99,6 +104,13 @@ RUN set -eux; \
         ./install.sh --fresh; \
     test -x /opt/chatgpt/start.sh; \
     test -x /opt/chatgpt/resources/node-runtime/bin/node; \
+    install -d -m 0755 /opt/grotto-build; \
+    python3 /usr/local/libexec/grotto-verify-installed-chatgpt-policy \
+        --root /opt/chatgpt \
+        --wrapper-revision "${CODEX_DESKTOP_LINUX_REF}" \
+        --manifest /opt/grotto-build/chatgpt-desktop-security.json; \
+    test -s /opt/grotto-build/chatgpt-desktop-security.json; \
+    test "$(stat -c '%a' /opt/grotto-build/chatgpt-desktop-security.json)" = 444; \
     rm -rf \
         /root/.cache/codex-desktop \
         /src/Codex.dmg \
@@ -231,6 +243,8 @@ RUN set -eux; \
 
 COPY --from=builder /opt/chatgpt /opt/chatgpt
 COPY --from=builder /opt/codex-cli /opt/codex-cli
+COPY --from=builder /opt/grotto-build/chatgpt-desktop-security.json \
+    /usr/share/grotto/chatgpt-desktop-security.json
 COPY runtimes/chatgpt-desktop/root/ /
 COPY tests/chatgpt-desktop-runtime.sh /usr/local/libexec/grotto-chatgpt-desktop-smoke
 COPY tests/test_grotto_doctor.py /usr/local/libexec/test-grotto-doctor.py
@@ -305,6 +319,8 @@ RUN set -eux; \
     test -x /lsiopy/bin/selkies; \
     test "$(command -v selkies)" = /lsiopy/bin/selkies; \
     test -x /opt/chatgpt/start.sh; \
+    test -r /usr/share/grotto/chatgpt-desktop-security.json; \
+    test "$(stat -c '%a' /usr/share/grotto/chatgpt-desktop-security.json)" = 444; \
     test -x /opt/codex-cli/bin/codex; \
     test "$(head -n 1 /opt/codex-cli/lib/node_modules/@openai/codex/bin/codex.js)" = '#!/opt/chatgpt/resources/node-runtime/bin/node'; \
     env -i HOME=/tmp PATH=/usr/bin:/bin /opt/codex-cli/bin/codex --version
