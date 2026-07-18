@@ -1,8 +1,9 @@
 diff --git a/scripts/patches/core/all-linux/main-process/browser-integrations/patch.js b/scripts/patches/core/all-linux/main-process/browser-integrations/patch.js
-index dce1ae0..595361a 100644
+index dce1ae0..399eaee 100644
 --- a/scripts/patches/core/all-linux/main-process/browser-integrations/patch.js
 +++ b/scripts/patches/core/all-linux/main-process/browser-integrations/patch.js
-@@ -38,6 +38,6 @@ module.exports = [
+@@ -36,7 +36,7 @@ module.exports = [
+           : patchStatusFromChange(Boolean(result?.changed), warnings, "optional"),
        reason:
          result?.matched === 0
 -          ? "Browser Use node_repl mcp config bundle not found"
@@ -11,7 +12,7 @@ index dce1ae0..595361a 100644
      }),
    }),
 diff --git a/scripts/patches/impl/main-process/browser.js b/scripts/patches/impl/main-process/browser.js
-index a6a6c5a..3813777 100644
+index a6a6c5a..c4f10c1 100644
 --- a/scripts/patches/impl/main-process/browser.js
 +++ b/scripts/patches/impl/main-process/browser.js
 @@ -1,5 +1,6 @@
@@ -21,7 +22,7 @@ index a6a6c5a..3813777 100644
  const fs = require("node:fs");
  const path = require("node:path");
  
-@@ -195,7 +196,7 @@ function applyLinuxBundledPluginReconcileStaleSnapshotPatch(currentSource) {
+@@ -191,7 +192,7 @@ function applyLinuxBundledPluginReconcileStaleSnapshotPatch(currentSource) {
    );
  }
  
@@ -30,11 +31,10 @@ index a6a6c5a..3813777 100644
    let patchedSource = currentSource;
    let patchedTrustedHashes = false;
    const hasTrustedHashesRuntimeBuilder =
-@@ -218,22 +219,45 @@ function applyBrowserUseNodeReplApprovalPatch(currentSource) {
-       },
+@@ -219,20 +220,42 @@ function applyBrowserUseNodeReplApprovalPatch(currentSource) {
      );
    }
--
+ 
 -  // The node_repl MCP server config is a standalone object literal in a
 -  // separate build chunk. Insert the js auto-approval there.
 -  const mcpServerConfigRegex =
@@ -49,7 +49,6 @@ index a6a6c5a..3813777 100644
 -      return `${configPrefix}tools:{js:{approval_mode:\`approve\`}},${configSuffix}`;
 -    },
 -  );
- 
 +  // Current builds validate the Browser Use host configuration in a webview
 +  // schema instead of a main-process runtime builder. Preserve the same trust
 +  // adjustment there using hashes derived from the extracted official app.
@@ -86,12 +85,10 @@ index a6a6c5a..3813777 100644
 +      helper +
 +      patchedSource.slice(helperInsertionIndex);
 +  }
-+
+ 
    if (
      patchedTrustedHashes &&
-     !patchedSource.includes("function codexLinuxTrustedBrowserClientSha256s(")
-@@ -276,43 +300,103 @@ function applyBrowserUseNodeReplApprovalPatch(currentSource) {
-     );
+@@ -271,41 +294,97 @@ function applyBrowserUseNodeReplApprovalPatch(currentSource) {
    }
  
    if (
@@ -208,7 +205,7 @@ index a6a6c5a..3813777 100644
        } catch {
          return false;
        }
-@@ -321,7 +405,10 @@ function applyBrowserUseNodeReplApprovalAssets(extractedDir) {
+@@ -315,7 +394,10 @@ function applyBrowserUseNodeReplApprovalAssets(extractedDir) {
    const pendingWrites = [];
    for (const candidate of candidates) {
      const currentSource = fs.readFileSync(candidate, "utf8");
