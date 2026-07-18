@@ -26,13 +26,8 @@ check:
 	bash -n runtimes/claude-desktop/root/defaults/autostart_wayland
 	bash -n runtimes/claude-desktop/root/custom-cont-init.d/10-grotto-claude-permissions
 	python3 -m py_compile runtimes/claude-desktop/root/usr/local/bin/grotto-claude-browser
-	python3 -m py_compile runtimes/claude-desktop/root/usr/local/bin/grotto-claude-callback-relay
 	python3 runtimes/claude-desktop/root/usr/local/bin/grotto-claude-browser --self-test
-	python3 runtimes/claude-desktop/root/usr/local/bin/grotto-claude-callback-relay --self-test
-	grep -Fq 'target="_blank"' runtimes/claude-desktop/root/usr/share/grotto/claude-viewer-open.js
-	grep -Fq 'parsed.protocol !== "https:"' runtimes/claude-desktop/root/usr/share/grotto/claude-viewer-open.js
-	grep -Fq 'new URL("grotto/claude-callback", scriptUrl)' runtimes/claude-desktop/root/usr/share/grotto/claude-viewer-open.js
-	grep -Fq 'startsWith("claude://")' runtimes/claude-desktop/root/usr/share/grotto/claude-viewer-open.js
+	bash -n runtimes/claude-desktop/root/usr/local/bin/grotto-claude-url-handler
 	bash -n tests/claude-desktop-runtime.sh
 	CODEX_DESKTOP_LINUX_SOURCE="$(CODEX_DESKTOP_LINUX_SOURCE)" python3 tests/test_codex_desktop_linux_patch.py
 	python3 tests/test_grotto_doctor.py
