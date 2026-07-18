@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.machinery
 import importlib.util
 import json
@@ -21,18 +22,24 @@ policy = importlib.util.module_from_spec(SPEC)
 sys.modules[LOADER.name] = policy
 LOADER.exec_module(policy)
 
-SAFE_BROWSER_BUNDLE = r'''
-function codexLinuxTrustedBrowserClientSha256s(hashes) {
-  return hashes;
-}
-function makeRuntime({trustedBrowserClientSha256s:d,shouldUseWslPaths:c,
-  nodeReplPath:b,nodePath:a}) {
-  d=codexLinuxTrustedBrowserClientSha256s(d);
-  return {nodePath:a,nodeReplPath:b,shouldUseWslPaths:c,
-    trustedBrowserClientSha256s:d};
-}
-const config = {[`mcp_servers.${name}`]:{args:[],command:cmd,env,
-  startup_timeout_sec:120}};
+BROWSER_CLIENT = "export const browserClient = 'browser';\n"
+CHROME_CLIENT = "export const browserClient = 'chrome';\n"
+TRUSTED_HASHES = [
+    hashlib.sha256(BROWSER_CLIENT.encode()).hexdigest(),
+    hashlib.sha256(CHROME_CLIENT.encode()).hexdigest(),
+]
+SAFE_BROWSER_BUNDLE = f'''
+const __codexLinuxBundledBrowserClientSha256s={json.dumps(TRUSTED_HASHES)};
+function codexLinuxTrustedBrowserClientSha256s(hashes) {{
+  return Array.from(new Set([...hashes,...__codexLinuxBundledBrowserClientSha256s]));
+}}
+const hostConfigSchema={{
+  browserClientPath:pathSchema,
+  nodeReplPath:pathSchema,
+  trustedBrowserClientSha256s:hashSchema.transform(
+    codexLinuxTrustedBrowserClientSha256s
+  )
+}};
 '''
 
 
@@ -47,8 +54,15 @@ class InstalledPolicyVerifierTest(unittest.TestCase):
             path.write_text(source, encoding="utf-8")
         return temporary, root
 
+    def safe_sources(self, bundle: str = SAFE_BROWSER_BUNDLE) -> dict[str, str]:
+        return {
+            "content/webview/assets/app.js": bundle,
+            "resources/plugins/openai-bundled/plugins/browser/scripts/browser-client.mjs": BROWSER_CLIENT,
+            "resources/plugins/openai-bundled/plugins/chrome/scripts/browser-client.mjs": CHROME_CLIENT,
+        }
+
     def test_trusted_hash_present_and_auto_approval_absent_passes(self) -> None:
-        temporary, root = self.fixture({"resources/app/main.js": SAFE_BROWSER_BUNDLE})
+        temporary, root = self.fixture(self.safe_sources())
         with temporary:
             inspection = policy.inspect_installed_application(root)
 
@@ -65,7 +79,7 @@ class InstalledPolicyVerifierTest(unittest.TestCase):
         for index, unsafe in enumerate(variants):
             with self.subTest(index=index):
                 temporary, root = self.fixture(
-                    {"resources/app/main.js": SAFE_BROWSER_BUNDLE + unsafe}
+                    self.safe_sources(SAFE_BROWSER_BUNDLE + unsafe)
                 )
                 with temporary, self.assertRaisesRegex(
                     policy.VerificationError, "automatic approval"
@@ -74,13 +88,20 @@ class InstalledPolicyVerifierTest(unittest.TestCase):
 
     def test_browser_use_without_trusted_hash_patch_fails(self) -> None:
         source = r'''
-function makeRuntime({nodePath:a,nodeReplPath:b,shouldUseWslPaths:c,
-  trustedBrowserClientSha256s:d}) { return d; }
-const config = {[`mcp_servers.${name}`]:{startup_timeout_sec:120}};
+const hostConfigSchema={browserClientPath:pathSchema,nodeReplPath:pathSchema,
+  trustedBrowserClientSha256s:hashSchema};
 '''
-        temporary, root = self.fixture({"resources/app/main.js": source})
+        temporary, root = self.fixture(self.safe_sources(source))
         with temporary, self.assertRaisesRegex(
-            policy.VerificationError, "without the trusted-client hash adjustment"
+            policy.VerificationError, "without a verified trusted-client hash adjustment"
+        ):
+            policy.inspect_installed_application(root)
+
+    def test_embedded_hash_mismatch_fails(self) -> None:
+        mismatch = SAFE_BROWSER_BUNDLE.replace(TRUSTED_HASHES[0], "0" * 64)
+        temporary, root = self.fixture(self.safe_sources(mismatch))
+        with temporary, self.assertRaisesRegex(
+            policy.VerificationError, "do not match the installed clients"
         ):
             policy.inspect_installed_application(root)
 
@@ -112,7 +133,7 @@ const config = {[`mcp_servers.${name}`]:{startup_timeout_sec:120}};
             policy.inspect_installed_application(root)
 
     def test_manifest_is_derived_and_immutable(self) -> None:
-        temporary, root = self.fixture({"resources/app/main.js": SAFE_BROWSER_BUNDLE})
+        temporary, root = self.fixture(self.safe_sources())
         with temporary:
             inspection = policy.inspect_installed_application(root)
             manifest = inspection.manifest("7d4049b")
