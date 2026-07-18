@@ -20,7 +20,6 @@ ENV TITLE="Claude Desktop" \
     FILE_MANAGER_PATH=/workspace \
     GROTTO_RUNTIME=claude-desktop \
     GROTTO_BUILD_REVISION="$GROTTO_BUILD_REVISION" \
-    GROTTO_CLAUDE_VIEWER_EVENT_FILE=/usr/share/selkies/web/grotto-claude-open-url.json \
     CLAUDE_CONFIG_DIR=/config/.claude \
     XDG_CONFIG_HOME=/config/.config \
     XDG_CACHE_HOME=/config/.cache \
@@ -50,6 +49,7 @@ RUN set -eux; \
         dbus-x11 \
         desktop-file-utils \
         findutils \
+        firefox-esr \
         gh \
         git \
         gnome-keyring \
@@ -113,50 +113,25 @@ RUN set -eux; \
         /defaults/autostart_wayland \
         /custom-cont-init.d/10-grotto-claude-permissions \
         /usr/local/bin/grotto-claude-browser \
-        /usr/local/bin/grotto-claude-callback-relay \
+        /usr/local/bin/grotto-claude-url-handler \
         /usr/local/libexec/grotto-claude-desktop-smoke; \
     bash -n /defaults/autostart; \
     bash -n /defaults/autostart_wayland; \
     bash -n /custom-cont-init.d/10-grotto-claude-permissions; \
+    bash -n /usr/local/bin/grotto-claude-url-handler; \
     bash -n /usr/local/libexec/grotto-claude-desktop-smoke; \
-    python3 -m py_compile \
-        /usr/local/bin/grotto-claude-browser \
-        /usr/local/bin/grotto-claude-callback-relay; \
+    python3 -m py_compile /usr/local/bin/grotto-claude-browser; \
     python3 /usr/local/bin/grotto-claude-browser --self-test; \
-    python3 /usr/local/bin/grotto-claude-callback-relay --self-test; \
     rm -rf /usr/local/bin/__pycache__; \
     desktop-file-validate \
-        /usr/share/applications/grotto-claude-browser.desktop; \
+        /usr/share/applications/grotto-claude-browser.desktop \
+        /usr/share/applications/grotto-claude-url-handler.desktop; \
     update-desktop-database /usr/share/applications; \
-    python3 -c 'from pathlib import Path; p=Path("/defaults/default.conf"); text=p.read_text(encoding="utf-8"); marker="  error_page 500 502 503 504 /50x.html;\n"; snippet="  location = SUBFOLDERgrotto/claude-callback {\n    limit_except POST { deny all; }\n    proxy_set_header Host $host;\n    proxy_set_header X-Forwarded-Proto $scheme;\n    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n    proxy_http_version 1.1;\n    proxy_buffering off;\n    proxy_connect_timeout 2s;\n    proxy_read_timeout 5s;\n    client_max_body_size 64k;\n    proxy_pass http://127.0.0.1:17888/callback;\n  }\n"; assert text.count(marker) == 2; p.write_text(text.replace(marker, snippet + marker), encoding="utf-8")'; \
-    test "$(grep -Fc 'location = SUBFOLDERgrotto/claude-callback' /defaults/default.conf)" = 2; \
-    test "$(grep -Fc 'proxy_pass http://127.0.0.1:17888/callback;' /defaults/default.conf)" = 2; \
-    dashboard_count=0; \
-    for dashboard in /usr/share/selkies/selkies-dashboard*; do \
-        [ -d "$dashboard" ] || continue; \
-        index="$dashboard/index.html"; \
-        test -f "$index"; \
-        install -m 0644 \
-            /usr/share/grotto/claude-viewer-open.js \
-            "$dashboard/grotto-claude-viewer-open.js"; \
-        printf '%s\n' \
-            '{"version":1,"id":"","created_at":0,"url":""}' \
-            > "$dashboard/grotto-claude-open-url.json"; \
-        chown abc:abc "$dashboard/grotto-claude-open-url.json"; \
-        chmod 0644 "$dashboard/grotto-claude-open-url.json"; \
-        if ! grep -q 'grotto-claude-viewer-open.js' "$index"; then \
-            sed -i \
-                's#</body>#<script src="grotto-claude-viewer-open.js"></script></body>#' \
-                "$index"; \
-        fi; \
-        grep -q 'grotto-claude-viewer-open.js' "$index"; \
-        dashboard_count=$((dashboard_count + 1)); \
-    done; \
-    test "$dashboard_count" -gt 0; \
     for command_name in \
         bash claude-desktop curl dbus-launch desktop-file-validate find \
-        gh git gnome-keyring-daemon gpg jq lsof pip3 pkg-config python3 rg \
-        shellcheck sqlite3 unzip update-desktop-database xdg-mime xdg-open zip; \
+        firefox-esr gh git gnome-keyring-daemon gpg jq lsof pip3 pkg-config \
+        python3 rg shellcheck sqlite3 unzip update-desktop-database xdg-mime \
+        xdg-open zip; \
     do \
         command -v "$command_name"; \
     done; \
@@ -183,6 +158,7 @@ RUN set -eux; \
         /cache/uv; \
     install -d -o abc -g abc -m 0700 \
         /config/.claude \
+        /config/.mozilla \
         /config/.local/share/keyrings; \
     icon="$(find /usr/share/icons -type f -iname '*claude*.png' 2>/dev/null | sort -V | tail -n 1 || true)"; \
     if [ -n "$icon" ]; then \
@@ -191,10 +167,11 @@ RUN set -eux; \
     test -x /lsiopy/bin/selkies; \
     test "$(command -v selkies)" = /lsiopy/bin/selkies; \
     test -x /usr/bin/claude-desktop; \
+    test -x /usr/bin/firefox-esr; \
     test -x /usr/local/bin/grotto-claude-browser; \
-    test -x /usr/local/bin/grotto-claude-callback-relay; \
+    test -x /usr/local/bin/grotto-claude-url-handler; \
     test -r /usr/share/applications/grotto-claude-browser.desktop; \
-    test -r /usr/share/grotto/claude-viewer-open.js; \
+    test -r /usr/share/applications/grotto-claude-url-handler.desktop; \
     test -r /usr/share/grotto/claude-desktop-version
 
 WORKDIR /workspace
