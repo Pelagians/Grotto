@@ -69,7 +69,7 @@ The installer performs four user-level actions:
 1. Copies the bridge to `~/.local/bin/grotto-claude-host-bridge`.
 2. Starts `grotto-claude-host-bridge.service` through the systemd user manager.
 3. Registers the host's `claude://` handler.
-4. Creates the private runtime directory beneath `$XDG_RUNTIME_DIR`.
+4. Creates the shared bridge directory inside the private user runtime root.
 
 Check its state with:
 
@@ -101,9 +101,13 @@ Claude Desktop
 ```
 
 The host endpoint accepts only absolute `https://` URLs. The container endpoint
-accepts only `claude://` callbacks. Both sockets are created in a mode-0700
-user runtime directory and have mode 0600. The bridge does not mount the Podman
-socket, expose a TCP listener, or provide a general command-execution channel.
+accepts only `claude://` callbacks. The parent `$XDG_RUNTIME_DIR` remains private
+to the logged-in host user. The mounted child directory and sockets use broad
+Unix mode bits so processes on opposite sides of rootless Podman's UID namespace
+can connect; they are reachable only through that private parent on the host and
+through the explicit bind mount in the Claude container. The bridge does not
+mount the Podman socket, expose a TCP listener, or provide a general
+command-execution channel.
 
 ## Run with Intel or AMD graphics
 
@@ -111,7 +115,7 @@ socket, expose a TCP listener, or provide a general command-execution channel.
 mkdir -p claude-config workspace tools cache
 BRIDGE_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/grotto/claude-bridge"
 mkdir -p "$BRIDGE_DIR"
-chmod 0700 "$BRIDGE_DIR"
+chmod 0777 "$BRIDGE_DIR"
 
 podman run --rm \
   --name grotto-claude-desktop \
