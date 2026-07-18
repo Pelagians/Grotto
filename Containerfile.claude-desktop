@@ -1,0 +1,161 @@
+# syntax=docker/dockerfile:1.7
+
+ARG SELKIES_BASE_IMAGE=ghcr.io/linuxserver/baseimage-selkies:debiantrixie@sha256:ac7fd6d182238b4a99e66554c5e75be48a714e2a0c9da81bd18e171ff9ba3dd5
+ARG GROTTO_BUILD_REVISION=unknown
+
+FROM ${SELKIES_BASE_IMAGE}
+
+ARG CLAUDE_DESKTOP_VERSION=
+ARG SELKIES_BASE_IMAGE
+ARG GROTTO_BUILD_REVISION
+
+LABEL io.pelagians.grotto.selkies-base-image="$SELKIES_BASE_IMAGE" \
+      org.opencontainers.image.revision="$GROTTO_BUILD_REVISION"
+
+ENV TITLE="Claude Desktop" \
+    START_DOCKER=false \
+    PIXELFLUX_WAYLAND=true \
+    AUTO_GPU=true \
+    RESTART_APP=true \
+    FILE_MANAGER_PATH=/workspace \
+    GROTTO_RUNTIME=claude-desktop \
+    GROTTO_BUILD_REVISION="$GROTTO_BUILD_REVISION" \
+    CLAUDE_CONFIG_DIR=/config/.claude \
+    XDG_CONFIG_HOME=/config/.config \
+    XDG_CACHE_HOME=/config/.cache \
+    XDG_DATA_HOME=/config/.local/share \
+    XDG_STATE_HOME=/config/.local/state \
+    ELECTRON_OZONE_PLATFORM_HINT=auto \
+    GTK_USE_PORTAL=1 \
+    CARGO_HOME=/tools/cargo \
+    MISE_DATA_DIR=/tools/mise \
+    NPM_CONFIG_CACHE=/cache/npm \
+    NPM_CONFIG_PREFIX=/tools/npm \
+    PIP_CACHE_DIR=/cache/pip \
+    PIPX_BIN_DIR=/tools/bin \
+    PIPX_HOME=/tools/pipx \
+    PNPM_HOME=/tools/pnpm \
+    PYTHONUSERBASE=/tools/python \
+    UV_CACHE_DIR=/cache/uv \
+    PATH=/tools/bin:/tools/npm/bin:/tools/pnpm:/tools/cargo/bin:/tools/mise/shims:/lsiopy/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+RUN set -eux; \
+    apt-get update -o Acquire::Retries=5; \
+    apt-get install --no-install-recommends -y \
+        bash \
+        ca-certificates \
+        curl \
+        dbus-x11 \
+        findutils \
+        gh \
+        git \
+        gnome-keyring \
+        gpg \
+        jq \
+        libsecret-1-0 \
+        libsecret-tools \
+        lsof \
+        openssh-client \
+        pkg-config \
+        python3 \
+        python3-pip \
+        ripgrep \
+        shellcheck \
+        sqlite3 \
+        unzip \
+        xdg-utils \
+        zip; \
+    install -d -m 0755 /usr/share/keyrings; \
+    curl --proto '=https' --tlsv1.2 -fsSLo \
+        /usr/share/keyrings/claude-desktop-archive-keyring.asc \
+        https://downloads.claude.ai/claude-desktop/key.asc; \
+    fingerprint="$( \
+        gpg --batch --show-keys --with-colons \
+            /usr/share/keyrings/claude-desktop-archive-keyring.asc \
+        | awk -F: '$1 == "fpr" { print $10; exit }' \
+    )"; \
+    test "$fingerprint" = 31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE; \
+    architecture="$(dpkg --print-architecture)"; \
+    case "$architecture" in \
+        amd64|arm64) ;; \
+        *) echo "Unsupported architecture: $architecture" >&2; exit 1 ;; \
+    esac; \
+    printf '%s\n' \
+        "deb [arch=${architecture} signed-by=/usr/share/keyrings/claude-desktop-archive-keyring.asc] https://downloads.claude.ai/claude-desktop/apt/stable stable main" \
+        > /etc/apt/sources.list.d/claude-desktop.list; \
+    apt-get update -o Acquire::Retries=5; \
+    candidate="$(apt-cache policy claude-desktop | awk '/Candidate:/ { print $2; exit }')"; \
+    test -n "$candidate"; \
+    test "$candidate" != '(none)'; \
+    if [ -n "$CLAUDE_DESKTOP_VERSION" ]; then \
+        apt-get install --no-install-recommends -y \
+            "claude-desktop=${CLAUDE_DESKTOP_VERSION}"; \
+    else \
+        apt-get install --no-install-recommends -y claude-desktop; \
+    fi; \
+    command -v claude-desktop; \
+    install -d -m 0755 /usr/share/grotto; \
+    dpkg-query -W -f='${Version}\n' claude-desktop \
+        > /usr/share/grotto/claude-desktop-version; \
+    test -s /usr/share/grotto/claude-desktop-version; \
+    rm -rf /var/lib/apt/lists/*
+
+COPY runtimes/claude-desktop/root/ /
+COPY tests/claude-desktop-runtime.sh \
+    /usr/local/libexec/grotto-claude-desktop-smoke
+
+RUN set -eux; \
+    chmod 0755 \
+        /defaults/autostart \
+        /defaults/autostart_wayland \
+        /custom-cont-init.d/10-grotto-claude-permissions \
+        /usr/local/libexec/grotto-claude-desktop-smoke; \
+    bash -n /defaults/autostart; \
+    bash -n /defaults/autostart_wayland; \
+    bash -n /custom-cont-init.d/10-grotto-claude-permissions; \
+    bash -n /usr/local/libexec/grotto-claude-desktop-smoke; \
+    for command_name in \
+        bash claude-desktop curl dbus-launch find gh git \
+        gnome-keyring-daemon gpg jq lsof pip3 pkg-config python3 rg \
+        shellcheck sqlite3 unzip xdg-open zip; \
+    do \
+        command -v "$command_name"; \
+    done; \
+    install -d -o abc -g abc -m 0755 \
+        /config \
+        /config/.cache \
+        /config/.config \
+        /config/.local \
+        /config/.local/share \
+        /config/.local/state \
+        /workspace \
+        /tools \
+        /tools/bin \
+        /tools/cargo \
+        /tools/mise \
+        /tools/npm \
+        /tools/pnpm \
+        /tools/python \
+        /tools/pipx \
+        /tools/venvs \
+        /cache \
+        /cache/npm \
+        /cache/pip \
+        /cache/uv; \
+    install -d -o abc -g abc -m 0700 \
+        /config/.claude \
+        /config/.local/share/keyrings; \
+    icon="$(find /usr/share/icons -type f -iname '*claude*.png' 2>/dev/null | sort -V | tail -n 1 || true)"; \
+    if [ -n "$icon" ]; then \
+        install -m 0644 "$icon" /usr/share/selkies/www/icon.png; \
+    fi; \
+    test -x /lsiopy/bin/selkies; \
+    test "$(command -v selkies)" = /lsiopy/bin/selkies; \
+    test -x /usr/bin/claude-desktop; \
+    test -r /usr/share/grotto/claude-desktop-version
+
+WORKDIR /workspace
+
+EXPOSE 3001
+
+VOLUME ["/config", "/workspace", "/tools", "/cache"]
