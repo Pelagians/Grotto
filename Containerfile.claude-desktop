@@ -106,6 +106,8 @@ RUN set -eux; \
 COPY runtimes/claude-desktop/root/ /
 COPY tests/claude-desktop-runtime.sh \
     /usr/local/libexec/grotto-claude-desktop-smoke
+COPY tests/test_claude_window_manager_config.py \
+    /usr/local/libexec/test-claude-window-manager-config.py
 
 RUN set -eux; \
     chmod 0755 \
@@ -114,19 +116,29 @@ RUN set -eux; \
         /custom-cont-init.d/10-grotto-claude-permissions \
         /usr/local/bin/grotto-claude-browser \
         /usr/local/bin/grotto-claude-url-handler \
+        /usr/local/libexec/grotto-configure-openbox \
         /usr/local/libexec/grotto-claude-desktop-smoke; \
     bash -n /defaults/autostart; \
     bash -n /defaults/autostart_wayland; \
     bash -n /custom-cont-init.d/10-grotto-claude-permissions; \
     bash -n /usr/local/bin/grotto-claude-url-handler; \
     bash -n /usr/local/libexec/grotto-claude-desktop-smoke; \
-    python3 -m py_compile /usr/local/bin/grotto-claude-browser; \
+    python3 -m py_compile \
+        /usr/local/bin/grotto-claude-browser \
+        /usr/local/libexec/grotto-configure-openbox \
+        /usr/local/libexec/test-claude-window-manager-config.py; \
     python3 /usr/local/bin/grotto-claude-browser --self-test; \
-    rm -rf /usr/local/bin/__pycache__; \
     desktop-file-validate \
         /usr/share/applications/grotto-claude-browser.desktop \
         /usr/share/applications/grotto-claude-url-handler.desktop; \
     update-desktop-database /usr/share/applications; \
+    /usr/local/libexec/grotto-configure-openbox /etc/xdg/openbox/rc.xml; \
+    GROTTO_CLAUDE_OPENBOX_CONFIG=/etc/xdg/openbox/rc.xml \
+    GROTTO_CLAUDE_LABWC_CONFIG=/defaults/labwc.xml \
+    GROTTO_CLAUDE_WINDOW_CONFIGURATOR=/usr/local/libexec/grotto-configure-openbox \
+        python3 /usr/local/libexec/test-claude-window-manager-config.py; \
+    rm -f /usr/local/libexec/test-claude-window-manager-config.py; \
+    rm -rf /usr/local/bin/__pycache__ /usr/local/libexec/__pycache__; \
     for command_name in \
         bash claude-desktop curl dbus-launch desktop-file-validate find \
         firefox-esr gh git gnome-keyring-daemon gpg jq lsof pip3 pkg-config \
@@ -170,6 +182,8 @@ RUN set -eux; \
     test -x /usr/bin/firefox-esr; \
     test -x /usr/local/bin/grotto-claude-browser; \
     test -x /usr/local/bin/grotto-claude-url-handler; \
+    test -x /usr/local/libexec/grotto-configure-openbox; \
+    test -r /defaults/labwc.xml; \
     test -r /usr/share/applications/grotto-claude-browser.desktop; \
     test -r /usr/share/applications/grotto-claude-url-handler.desktop; \
     test -r /usr/share/grotto/claude-desktop-version
