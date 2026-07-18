@@ -74,6 +74,8 @@ jq -e '.schema_version == 1' "$report" >/dev/null
 jq -e '.identity.user == "abc"' "$report" >/dev/null
 jq -e '.ok == null' "$report" >/dev/null
 jq -e '.active_probe == false' "$report" >/dev/null
+# $security and $policy below are jq variables, not shell variables.
+# shellcheck disable=SC2016
 jq --slurpfile security "$security_manifest" -e '
   $security[0] as $policy |
   .node_repl_exposed == $policy.node_repl.exposed and
