@@ -12,6 +12,12 @@ expected_fingerprint=31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE
 keyring=/usr/share/keyrings/claude-desktop-archive-keyring.asc
 repository=/etc/apt/sources.list.d/claude-desktop.list
 version_file=/usr/share/grotto/claude-desktop-version
+architecture="$(dpkg --print-architecture)"
+
+case "$architecture" in
+    amd64|arm64) ;;
+    *) echo "Unsupported architecture: $architecture" >&2; exit 1 ;;
+esac
 
 command -v claude-desktop >/dev/null
 command -v gnome-keyring-daemon >/dev/null
@@ -27,7 +33,7 @@ gpg --batch --show-keys --with-colons "$keyring" \
     | grep -Fx "$expected_fingerprint"
 
 grep -Fx \
-    'deb [arch=amd64 signed-by=/usr/share/keyrings/claude-desktop-archive-keyring.asc] https://downloads.claude.ai/claude-desktop/apt/stable stable main' \
+    "deb [arch=${architecture} signed-by=/usr/share/keyrings/claude-desktop-archive-keyring.asc] https://downloads.claude.ai/claude-desktop/apt/stable stable main" \
     "$repository"
 
 installed_version="$(dpkg-query -W -f='${Version}' claude-desktop)"
