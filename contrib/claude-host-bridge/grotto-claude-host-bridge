@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import os
 import shutil
@@ -106,6 +107,13 @@ def serve() -> int:
     bridge_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     bridge_dir.chmod(0o700)
 
+    lock_file = (bridge_dir / "host-listener.lock").open("a+")
+    try:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        print("Claude host browser bridge is already running", file=sys.stderr)
+        return 1
+
     path = host_socket_path()
     path.unlink(missing_ok=True)
 
@@ -156,17 +164,17 @@ def serve() -> int:
     finally:
         server.close()
         path.unlink(missing_ok=True)
+        lock_file.close()
 
     return 0
 
 
 def callback(uri: str) -> int:
-    validated = validate_claude_uri(uri)
     send_message(
         claude_socket_path(),
         {
             "action": "callback",
-            "uri": validated,
+            "uri": validate_claude_uri(uri),
         },
     )
     return 0
@@ -239,6 +247,17 @@ def install() -> int:
 
     systemd_ready = run_optional(["systemctl", "--user", "daemon-reload"])
     if systemd_ready:
+        run_optional(
+            [
+                "systemctl",
+                "--user",
+                "import-environment",
+                "DISPLAY",
+                "WAYLAND_DISPLAY",
+                "XAUTHORITY",
+                "DBUS_SESSION_BUS_ADDRESS",
+            ]
+        )
         systemd_ready = run_optional(
             ["systemctl", "--user", "enable", "--now", "grotto-claude-host-bridge.service"]
         )
@@ -247,8 +266,8 @@ def install() -> int:
     print(f"Bridge directory: {runtime_root()}")
     if not systemd_ready:
         print(
-            "A systemd user service was installed but could not be started. "
-            f"Run '{binary} serve' in your host desktop session before signing in.",
+            "The systemd user service could not be started. "
+            f"Run '{binary} serve' in the host desktop session before signing in.",
             file=sys.stderr,
         )
     return 0
@@ -263,8 +282,7 @@ def uninstall() -> int:
     host_socket_path().unlink(missing_ok=True)
     desktop.unlink(missing_ok=True)
     unit.unlink(missing_ok=True)
-    if Path(__file__).resolve() != binary:
-        binary.unlink(missing_ok=True)
+    binary.unlink(missing_ok=True)
     run_optional(["systemctl", "--user", "daemon-reload"])
     run_optional(["update-desktop-database", str(desktop.parent)])
     print("Removed the Grotto Claude host bridge")
@@ -309,8 +327,6 @@ def self_test() -> int:
     else:
         raise AssertionError("accepted non-Claude callback")
 
-    encoded = json.dumps({"action": "open", "url": "https://example.com"})
-    assert json.loads(encoded)["action"] == "open"
     print("grotto-claude-host-bridge self-test passed")
     return 0
 
@@ -324,11 +340,13 @@ def parse_args() -> argparse.Namespace:
     subparsers.add_parser("install", help="install the user service and claude:// handler")
     subparsers.add_parser("uninstall", help="remove the user service and handler")
     subparsers.add_parser("status", help="show bridge status")
-    subparsers.add_parser("--self-test", help=argparse.SUPPRESS)
     return parser.parse_args()
 
 
 def main() -> int:
+    if sys.argv[1:] == ["--self-test"]:
+        return self_test()
+
     args = parse_args()
     if args.command == "serve":
         return serve()
@@ -340,8 +358,6 @@ def main() -> int:
         return uninstall()
     if args.command == "status":
         return status()
-    if args.command == "--self-test":
-        return self_test()
     raise AssertionError(f"unhandled command: {args.command}")
 
 
