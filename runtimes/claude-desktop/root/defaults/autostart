@@ -7,7 +7,6 @@ export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-/config/.config}"
 export XDG_CACHE_HOME="${XDG_CACHE_HOME:-/config/.cache}"
 export XDG_DATA_HOME="${XDG_DATA_HOME:-/config/.local/share}"
 export XDG_STATE_HOME="${XDG_STATE_HOME:-/config/.local/state}"
-export GROTTO_CLAUDE_VIEWER_EVENT_FILE="${GROTTO_CLAUDE_VIEWER_EVENT_FILE:-/usr/share/selkies/web/grotto-claude-open-url.json}"
 export BROWSER="${BROWSER:-/usr/local/bin/grotto-claude-browser}"
 
 install -d -m 0755 \
@@ -19,15 +18,16 @@ install -d -m 0755 \
     /workspace
 install -d -m 0700 \
     "$CLAUDE_CONFIG_DIR" \
-    "$XDG_DATA_HOME/keyrings"
+    "$XDG_DATA_HOME/keyrings" \
+    /config/.mozilla
 
-# Claude Desktop delegates Google OAuth to the system browser. Grotto registers
-# a restricted HTTPS handler that publishes the URL into Selkies' authenticated
-# web root. The connected viewer then presents a browser-native link, ensuring
-# the page opens on the device actually viewing the streamed session.
+# Claude Desktop delegates Google OAuth to the system browser. Grotto launches
+# Firefox ESR inside the same Selkies desktop so the browser's claude:// return
+# opens Claude Desktop in the container rather than on the viewer's device.
 xdg-mime default grotto-claude-browser.desktop text/html
 xdg-mime default grotto-claude-browser.desktop x-scheme-handler/http
 xdg-mime default grotto-claude-browser.desktop x-scheme-handler/https
+xdg-mime default grotto-claude-url-handler.desktop x-scheme-handler/claude
 
 # Claude and desktop extensions use the Secret Service API for sensitive state.
 # Selkies normally provides a session D-Bus. Start only the secrets component
@@ -40,12 +40,6 @@ if command -v gnome-keyring-daemon >/dev/null 2>&1; then
         eval "$keyring_environment"
     fi
 fi
-
-# The browser cannot register a web handler for Anthropic's claude:// scheme.
-# Start the loopback-only callback relay after the keyring setup so callbacks
-# launch Claude with the same graphical-session and Secret Service environment.
-/usr/local/bin/grotto-claude-callback-relay \
-    >> "$XDG_CACHE_HOME/grotto/claude-callback-relay.log" 2>&1 &
 
 cd /workspace
 exec /usr/bin/claude-desktop
