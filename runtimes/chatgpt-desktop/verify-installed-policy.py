@@ -33,10 +33,11 @@ TRUST_HELPER_APPLICATION_RE = re.compile(
     r"[A-Za-z_$][\w$]*\s*=\s*codexLinuxTrustedBrowserClientSha256s\s*\("
 )
 RUNTIME_BUILDER_RE = re.compile(
-    r"function\s+[A-Za-z_$][\w$]*\s*\(\s*\{[^{}]{0,4096}"
-    r"nodePath\s*:[^{}]{0,4096}nodeReplPath\s*:[^{}]{0,4096}"
-    r"shouldUseWslPaths\s*:[^{}]{0,4096}"
-    r"trustedBrowserClientSha256s\s*:",
+    r"function\s+[A-Za-z_$][\w$]*\s*\(\s*\{"
+    r"(?=[^{}]{0,4096}nodePath\s*:)"
+    r"(?=[^{}]{0,4096}nodeReplPath\s*:)"
+    r"(?=[^{}]{0,4096}shouldUseWslPaths\s*:)"
+    r"[^{}]{0,4096}trustedBrowserClientSha256s\s*:",
     re.DOTALL,
 )
 NODE_REPL_MARKERS = (
