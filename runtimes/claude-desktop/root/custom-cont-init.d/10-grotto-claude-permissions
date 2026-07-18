@@ -29,21 +29,8 @@ install -d -o abc -g abc -m 0755 \
     /cache/xdg
 install -d -o abc -g abc -m 0700 \
     /config/.claude \
+    /config/.mozilla \
     /config/.local/share/keyrings
-
-# LinuxServer copies the selected packaged dashboard into the live web root after
-# custom initialization. Repair the URL-event file ownership after PUID/PGID
-# remapping so cp -a carries the current abc identity into the served dashboard.
-while IFS= read -r event_file; do
-    chown abc:abc "$event_file"
-    chmod 0644 "$event_file"
-done < <(
-    find /usr/share/selkies \
-        -maxdepth 2 \
-        -type f \
-        -name grotto-claude-open-url.json \
-        -print
-)
 
 # The Selkies base seeds these only for a new configuration volume. Refresh the
 # launchers on every image start so upgrades and display-mode switches use the
@@ -64,7 +51,8 @@ chown abc:abc \
     /cache/npm /cache/pip /cache/uv /cache/xdg
 chown -R abc:abc \
     /config/.claude \
+    /config/.mozilla \
     /config/.cache \
     /config/.config \
     /config/.local
-chmod 0700 /config/.claude /config/.local/share/keyrings
+chmod 0700 /config/.claude /config/.mozilla /config/.local/share/keyrings
