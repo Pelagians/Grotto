@@ -90,22 +90,42 @@ For a CPU/X11 fallback, omit `/dev/dri` and use:
 
 ## Authentication and secrets
 
-Sign in through Claude Desktop's own first-run interface. The image does not
-bake credentials or add a separate authentication helper.
+Sign in through Claude Desktop's first-run interface. The image does not bake
+credentials or copy Claude Code CLI tokens into the desktop application.
+
+`Sign in with Google` requires an external browser rather than an embedded
+Electron webview. The image includes Firefox ESR and registers it as the
+HTTP/HTTPS browser inside the Selkies desktop. Clicking the Google button opens
+a Firefox window in the same streamed session. Complete Google authentication
+there, then accept the browser's request to return to Claude Desktop if it
+prompts to open a `claude://` link.
+
+The same-session browser is intentional. Opening the login URL on the Podman
+host would leave the OAuth return protocol on the host, where it could not
+reach Claude Desktop inside the container. Grotto registers
+`x-scheme-handler/claude` to `/usr/local/bin/grotto-claude-url-handler`, which
+passes the return URL to the running desktop application.
+
+Firefox state is stored beneath `/config` because the container sets
+`HOME=/config`. Treat it as sensitive alongside the Claude session. To retry
+from a completely clean browser and Claude session, stop the container and
+remove only the relevant test configuration directory after backing up anything
+that must be retained.
 
 Claude application state is redirected under `/config` by setting `HOME` and
 the XDG paths to persistent locations. The launcher also starts the Secret
 Service component of `gnome-keyring-daemon` when possible, and persists its
 keyring data under `/config/.local/share/keyrings`.
 
-Treat `/config` as sensitive. It can contain authenticated sessions, Claude
-settings, extension credentials, MCP configuration, and Claude Code state.
+Treat `/config` as sensitive. It can contain authenticated sessions, browser
+cookies, Claude settings, extension credentials, MCP configuration, and Claude
+Code state.
 
 ## Persistent state
 
 | Path | Purpose | Persistence |
 | --- | --- | --- |
-| `/config` | Claude sessions, settings, keyrings, and application state | Required |
+| `/config` | Claude sessions, browser profile, settings, keyrings, and application state | Required |
 | `/workspace` | Project repositories and working files | Required |
 | `/tools` | User-installed tools and language environments | Recommended |
 | `/cache` | Disposable package caches | Optional |
@@ -114,9 +134,10 @@ Important paths inside `/config` include:
 
 - `/config/.claude` for Claude Code settings and state
 - `/config/.claude.json` when created by Claude
-- `/config/.config` for application configuration
+- `/config/.config` for application configuration and URL-handler associations
 - `/config/.cache` for application cache and logs
 - `/config/.local/share/keyrings` for Secret Service state
+- `/config/.mozilla` for the Firefox profile used during authentication
 
 The container initialization script repairs ownership only for Grotto-managed
 configuration, tool, and cache paths. It does not recursively rewrite the
@@ -126,7 +147,8 @@ mounted project workspace.
 
 The image includes a practical baseline for local development and MCP servers:
 Git, GitHub CLI, SSH, curl, jq, Python, pip, ripgrep, shellcheck, SQLite,
-archive tools, D-Bus utilities, and Secret Service support.
+archive tools, D-Bus utilities, Secret Service support, and Firefox ESR for
+account authentication.
 
 Persistent installation paths match `grotto-chatgpt-desktop`:
 
@@ -168,14 +190,16 @@ podman run --rm \
 ```
 
 The smoke test verifies the package, repository signing key, recorded version,
-Selkies executable, Secret Service dependency, and writable persistent roots.
-It intentionally does not launch the graphical client or authenticate.
+Selkies executable, Firefox executable, Secret Service dependency, writable
+persistent roots, HTTP/HTTPS browser association, and `claude://` return
+handler. It intentionally does not launch the graphical client or authenticate.
 
 The remaining integration checks require an actual Selkies session:
 
 1. Claude renders in Wayland/Labwc and X11/Openbox modes.
-2. Authentication survives replacement of the container.
-3. File and folder selection can access `/workspace`.
-4. Claude Code can edit a mounted repository and invoke installed tools.
-5. Secret Service state survives restart without plaintext fallback flags.
-6. The runtime works under rootless Podman without disabling SELinux or seccomp.
+2. `Sign in with Google` opens Firefox inside Selkies and returns to Claude.
+3. Authentication survives replacement of the container.
+4. File and folder selection can access `/workspace`.
+5. Claude Code can edit a mounted repository and invoke installed tools.
+6. Secret Service state survives restart without plaintext fallback flags.
+7. The runtime works under rootless Podman without disabling SELinux or seccomp.
