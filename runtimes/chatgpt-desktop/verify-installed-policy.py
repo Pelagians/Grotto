@@ -108,8 +108,8 @@ def marker_contexts(
     sources: Iterable[tuple[pathlib.Path, str]],
     marker: str,
     *,
-    limit: int = 8,
-    radius: int = 900,
+    limit: int = 16,
+    radius: int = 350,
 ) -> list[str]:
     """Return bounded, whitespace-normalized source context for CI diagnosis."""
     contexts: list[str] = []
@@ -167,11 +167,7 @@ def inspect_installed_application(root: pathlib.Path) -> Inspection:
         if not trusted_hash_behavior:
             evidence = sorted(browser_use_markers) + browser_client_artifacts
             diagnostic_contexts: list[str] = []
-            for marker in (
-                "trustedBrowserClientSha256s",
-                "nodeReplPath",
-                "browserClientPath",
-            ):
+            for marker in ("trustedBrowserClientSha256s", "nodeReplPath"):
                 diagnostic_contexts.extend(
                     f"{marker}: {context}"
                     for context in marker_contexts(root, sources, marker)
