@@ -8,6 +8,7 @@ import importlib.util
 import json
 import pathlib
 import stat
+import sys
 import tempfile
 import unittest
 
@@ -17,6 +18,7 @@ LOADER = importlib.machinery.SourceFileLoader("grotto_installed_policy", str(VER
 SPEC = importlib.util.spec_from_loader(LOADER.name, LOADER)
 assert SPEC is not None
 policy = importlib.util.module_from_spec(SPEC)
+sys.modules[LOADER.name] = policy
 LOADER.exec_module(policy)
 
 SAFE_BROWSER_BUNDLE = r'''
