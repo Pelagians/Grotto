@@ -7,12 +7,15 @@ Browser Use descriptor and its trusted-client SHA-256 adjustment. It removes
 only the wrapper's insertion of `tools.js.approval_mode = approve` into the
 Browser Use MCP configuration.
 
-The image build then inspects the installed Electron application below
-`/opt/chatgpt`. The verifier scans JavaScript bundles using structural patterns
-that tolerate whitespace and minification. It rejects automatic Node REPL
-approval, requires the trusted-client helper when Browser Use is present, and
-fails the build when the bundle structure cannot be classified safely. A
-successful inspection writes the read-only manifest
+The wrapper applies Linux compatibility changes to the bundled Browser Use
+clients after its Electron schema patch runs. During the image build, Grotto
+therefore rebinds the schema's trusted-client literals to the SHA-256 values of
+the final installed Browser and Chrome client files. The same maintained
+verifier then rescans the completed application below `/opt/chatgpt`, rejects
+automatic Node REPL approval, requires the trusted-client helper when Browser
+Use is present, recomputes the final client hashes, and fails the build when the
+bundle structure cannot be classified safely. A successful inspection writes
+the read-only manifest
 `/usr/share/grotto/chatgpt-desktop-security.json`.
 
 `grotto-doctor` reads that manifest for the Node REPL exposure, automatic
