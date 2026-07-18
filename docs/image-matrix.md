@@ -6,7 +6,7 @@ Grotto currently publishes three OCI images.
 | --- | --- | --- | --- | --- |
 | `ghcr.io/pelagians/grotto-openclaw:latest` | Agent application | General OpenClaw gateway with curated baseline tools and a persistent user toolchain | `/config`, `/workspace`, `/tools`, `/cache` | `18789` |
 | `ghcr.io/pelagians/grotto-chatgpt-desktop:latest` | Interactive workbench | Selkies-streamed ChatGPT Desktop and Codex workspace | `/config`, `/workspace`, `/tools`, `/cache` | `3001` |
-| `ghcr.io/pelagians/grotto-claude-desktop:latest` | Interactive workbench | Selkies-streamed official Claude Desktop Linux application and Code workspace | `/config`, `/workspace`, `/tools`, `/cache`; ephemeral `/run/grotto/claude-bridge` mount | `3001` |
+| `ghcr.io/pelagians/grotto-claude-desktop:latest` | Interactive workbench | Selkies-streamed official Claude Desktop Linux application and Code workspace | `/config`, `/workspace`, `/tools`, `/cache` | `3001` |
 
 ## Grotto OpenClaw
 
@@ -56,11 +56,12 @@ The image provides:
 - Selkies HTTPS streaming
 - persistent application, keyring, and Claude state
 - a mounted project workspace and persistent user toolchain
-- an optional Unix-socket bridge that opens Google OAuth in the host browser and returns `claude://` callbacks to the running Selkies session
+- an image-contained viewer bridge that presents HTTPS authentication links in the browser viewing the Selkies session
 
 The image does not provide:
 
 - a bundled web browser
+- a host-side browser service or callback daemon
 - the separate `claude-code` CLI package
 - validated Cowork KVM/QEMU passthrough
 - workflow orchestration
