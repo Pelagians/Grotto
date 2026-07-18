@@ -14,7 +14,7 @@ diff --git a/scripts/patches/impl/main-process/browser.js b/scripts/patches/impl
 index a6a6c5a..3813777 100644
 --- a/scripts/patches/impl/main-process/browser.js
 +++ b/scripts/patches/impl/main-process/browser.js
-@@ -1,6 +1,7 @@
+@@ -1,5 +1,6 @@
  "use strict";
  
 +const crypto = require("node:crypto");
