@@ -64,7 +64,7 @@ podman build \
   .
 ```
 
-Google sign-in uses an image-contained Selkies viewer bridge. Claude publishes the HTTPS login URL into the authenticated dashboard, which presents a browser-native link on the device viewing the session. The image does not bundle a browser or require a host service.
+Google sign-in uses an image-contained Selkies viewer bridge. The HTTPS login opens in the browser viewing the session, then the copied `claude://` return link is relayed back to Claude Desktop through the same authenticated Selkies origin. The image does not bundle a browser or require host software.
 
 See [`docs/claude-desktop.md`](docs/claude-desktop.md) for authentication, persistent state, Selkies, GPU, Claude Code, and Cowork boundaries.
 
