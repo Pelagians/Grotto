@@ -74,14 +74,17 @@ class CodexDesktopLinuxPatchTest(unittest.TestCase):
         if head != cls.pin:
             raise AssertionError(f"expected pinned wrapper {cls.pin}, got {head}")
         run(
-            ["git", "apply", "--recount", "--whitespace=error-all", str(PATCH)],
+            ["git", "apply", "--check", "--whitespace=error-all", str(PATCH)],
             cwd=cls.upstream,
         )
-        canonical = run(
-            ["git", "diff", "--", str(REGISTRY), str(IMPLEMENTATION)],
+        run(
+            ["git", "apply", "--whitespace=error-all", str(PATCH)],
             cwd=cls.upstream,
-        ).stdout
-        raise AssertionError("CANONICAL_PATCH_BEGIN\n" + canonical + "CANONICAL_PATCH_END")
+        )
+        cls.registry = (cls.upstream / REGISTRY).read_text(encoding="utf-8")
+        cls.implementation = (cls.upstream / IMPLEMENTATION).read_text(
+            encoding="utf-8"
+        )
 
     @classmethod
     def tearDownClass(cls) -> None:
