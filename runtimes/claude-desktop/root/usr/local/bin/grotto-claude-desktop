@@ -1,11 +1,15 @@
 #!/bin/bash
 set -Eeuo pipefail
 
-# Electron enables client-side Wayland window decorations by default. Claude's
-# Linux window already supplies its own top chrome, which produces a second
-# minimize/maximize/close strip under Selkies. Request compositor-managed
-# decoration instead; Grotto's Labwc/Openbox policy then removes decoration from
-# the main Claude surface while leaving secondary windows managed normally.
+# Grotto's primary Claude lane is X11/Openbox. Disable Chromium's custom
+# titlebar so Claude cannot render its own minimize/maximize/close overlay, then
+# ask Electron for a native system frame. Openbox removes that native frame from
+# the main Claude surface while retaining normal frames for Firefox and dialogs.
+export CLAUDE_NATIVE_TITLEBAR="${CLAUDE_NATIVE_TITLEBAR:-1}"
+export ELECTRON_FORCE_IS_PACKAGED="${ELECTRON_FORCE_IS_PACKAGED:-true}"
+export ELECTRON_USE_SYSTEM_TITLE_BAR="${ELECTRON_USE_SYSTEM_TITLE_BAR:-1}"
+
 exec /usr/bin/claude-desktop \
-    --disable-features=WaylandWindowDecorations \
+    --ozone-platform=x11 \
+    --disable-features=CustomTitlebar,WaylandWindowDecorations \
     "$@"
