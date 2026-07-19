@@ -23,10 +23,9 @@ jobs:
     name: Verify official Claude titlebar source
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    env:
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
       - name: Download and patch official package
         shell: bash
         run: |
@@ -36,8 +35,11 @@ jobs:
           extract="$work/extract"
           report="$work/report.json"
           keyring="$work/claude-desktop-key.asc"
+          patcher="$work/grotto-patch-claude-titlebar"
           mkdir -p "$work" "$extract"
 
+          curl --proto '=https' --tlsv1.2 -fsSLo "$patcher" \
+            "https://raw.githubusercontent.com/Pelagians/Grotto/${SOURCE_SHA}/runtimes/claude-desktop/root/usr/local/libexec/grotto-patch-claude-titlebar"
           curl --proto '=https' --tlsv1.2 -fsSLo "$keyring" \
             https://downloads.claude.ai/claude-desktop/key.asc
           fingerprint="$(
@@ -62,10 +64,10 @@ jobs:
           bundle="$extract/usr/lib/claude-desktop/resources/app.asar"
           test -f "$bundle"
 
-          python3 "$GITHUB_WORKSPACE/runtimes/claude-desktop/root/usr/local/libexec/grotto-patch-claude-titlebar" \
+          python3 "$patcher" \
             --bundle "$bundle" \
             --report "$report"
-          python3 "$GITHUB_WORKSPACE/runtimes/claude-desktop/root/usr/local/libexec/grotto-patch-claude-titlebar" \
+          python3 "$patcher" \
             --bundle "$bundle" \
             --verify
 
