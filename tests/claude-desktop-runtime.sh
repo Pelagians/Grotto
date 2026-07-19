@@ -13,6 +13,8 @@ expected_fingerprint=31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE
 keyring=/usr/share/keyrings/claude-desktop-archive-keyring.asc
 repository=/etc/apt/sources.list.d/claude-desktop.list
 version_file=/usr/share/grotto/claude-desktop-version
+openbox_config=/etc/xdg/openbox/rc.xml
+labwc_config=/defaults/labwc.xml
 architecture="$(dpkg --print-architecture)"
 gnupg_home="$(mktemp -d)"
 chmod 0700 "$gnupg_home"
@@ -33,21 +35,39 @@ test -x /usr/bin/claude-desktop
 test -x /usr/bin/firefox-esr
 test -x /usr/local/bin/grotto-claude-browser
 test -x /usr/local/bin/grotto-claude-url-handler
+test -x /usr/local/libexec/grotto-configure-openbox
 test -x /lsiopy/bin/selkies
 test -r /usr/share/applications/grotto-claude-browser.desktop
 test -r /usr/share/applications/grotto-claude-url-handler.desktop
+test -r "$openbox_config"
+test -r "$labwc_config"
 test -r "$keyring"
 test -r "$repository"
 test -s "$version_file"
 
 python3 /usr/local/bin/grotto-claude-browser --self-test
 bash -n /usr/local/bin/grotto-claude-url-handler
+python3 -m py_compile /usr/local/libexec/grotto-configure-openbox
 
 if [[ -e /usr/local/bin/grotto-claude-callback-relay ]] || \
    [[ -e /usr/share/grotto/claude-viewer-open.js ]]; then
     echo "Obsolete external-viewer authentication bridge is still installed" >&2
     exit 1
 fi
+
+grep -Fq 'Grotto Claude Desktop window policy: start' "$openbox_config"
+grep -Fq 'class="com.anthropic.Claude"' "$openbox_config"
+grep -Fq 'class="claude-desktop"' "$openbox_config"
+grep -Fq 'class="firefox*"' "$openbox_config"
+grep -Fq '<fullscreen>yes</fullscreen>' "$openbox_config"
+grep -Fq '<layer>below</layer>' "$openbox_config"
+
+grep -Fq 'identifier="com.anthropic.Claude"' "$labwc_config"
+grep -Fq 'identifier="claude-desktop"' "$labwc_config"
+grep -Fq 'identifier="firefox*"' "$labwc_config"
+grep -Fq 'serverDecoration="no"' "$labwc_config"
+grep -Fq '<action name="ToggleFullscreen"' "$labwc_config"
+grep -Fq '<action name="ToggleAlwaysOnTop"' "$labwc_config"
 
 gpg --batch --homedir "$gnupg_home" --show-keys --with-colons "$keyring" \
     | awk -F: '$1 == "fpr" { print $10; exit }' \
