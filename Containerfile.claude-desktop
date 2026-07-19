@@ -121,6 +121,7 @@ RUN set -eux; \
         /usr/local/bin/grotto-claude-desktop \
         /usr/local/bin/grotto-claude-url-handler \
         /usr/local/libexec/grotto-configure-openbox \
+        /usr/local/libexec/grotto-patch-claude-titlebar \
         /usr/local/libexec/grotto-claude-desktop-smoke; \
     bash -n /defaults/autostart; \
     bash -n /defaults/autostart_wayland; \
@@ -131,8 +132,15 @@ RUN set -eux; \
     python3 -m py_compile \
         /usr/local/bin/grotto-claude-browser \
         /usr/local/libexec/grotto-configure-openbox \
+        /usr/local/libexec/grotto-patch-claude-titlebar \
         /usr/local/libexec/test-claude-window-manager-config.py; \
     python3 /usr/local/bin/grotto-claude-browser --self-test; \
+    python3 /usr/local/libexec/grotto-patch-claude-titlebar --self-test; \
+    python3 /usr/local/libexec/grotto-patch-claude-titlebar; \
+    python3 /usr/local/libexec/grotto-patch-claude-titlebar --verify; \
+    jq -e \
+        '.mode == "x11-native-titlebar" and .marker == "GROTTO_X11_NATIVE_TITLEBAR"' \
+        /usr/share/grotto/claude-titlebar-patch.json >/dev/null; \
     grep -Fq -- '--ozone-platform=x11' \
         /usr/local/bin/grotto-claude-desktop; \
     grep -Fq -- '--disable-features=CustomTitlebar,WaylandWindowDecorations' \
@@ -195,6 +203,8 @@ RUN set -eux; \
     test -x /usr/local/bin/grotto-claude-desktop; \
     test -x /usr/local/bin/grotto-claude-url-handler; \
     test -x /usr/local/libexec/grotto-configure-openbox; \
+    test -x /usr/local/libexec/grotto-patch-claude-titlebar; \
+    test -r /usr/share/grotto/claude-titlebar-patch.json; \
     test -r /defaults/labwc.xml; \
     test -r /usr/share/applications/grotto-claude-browser.desktop; \
     test -r /usr/share/applications/grotto-claude-url-handler.desktop; \
