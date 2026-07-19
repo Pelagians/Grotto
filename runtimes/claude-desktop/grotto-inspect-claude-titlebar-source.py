@@ -8,6 +8,7 @@ import importlib.util
 import json
 from pathlib import Path
 import sys
+from typing import Any, Iterator
 
 TERMS = (
     b"titleBarStyle",
@@ -15,9 +16,13 @@ TERMS = (
     b"setTitleBarOverlay",
     b"BrowserWindow",
     b"autoHideMenuBar",
+    b"frame:",
 )
-CONTEXT_RADIUS = 180
-MAX_MATCHES_PER_TERM = 3
+TEXT_SUFFIXES = {".js", ".mjs", ".cjs", ".html", ".css"}
+CONTEXT_RADIUS = 160
+MAX_CONTEXTS_PER_FILE = 3
+MAX_CANDIDATES = 30
+MAX_FILE_SIZE = 64 * 1024 * 1024
 
 
 def load_patcher(path: Path):
@@ -30,6 +35,18 @@ def load_patcher(path: Path):
     return module
 
 
+def walk_entries(files: dict[str, Any], prefix: str = "") -> Iterator[tuple[str, dict[str, Any]]]:
+    for name, raw_entry in files.items():
+        if not isinstance(raw_entry, dict):
+            continue
+        path = f"{prefix}/{name}" if prefix else name
+        children = raw_entry.get("files")
+        if isinstance(children, dict):
+            yield from walk_entries(children, path)
+        else:
+            yield path, raw_entry
+
+
 def sanitize(raw: bytes) -> str:
     return (
         raw.decode("utf-8", errors="replace")
@@ -37,6 +54,26 @@ def sanitize(raw: bytes) -> str:
         .replace("\n", " ")
         .replace("\t", " ")
     )
+
+
+def entry_content(patcher, bundle: Path, entry: dict[str, Any], path: str, data: bytes) -> bytes:
+    if entry.get("unpacked"):
+        return (Path(f"{bundle}.unpacked") / path).read_bytes()
+    return patcher.packed_content(entry, data)
+
+
+def contexts_for(source: bytes, term: bytes) -> list[dict[str, object]]:
+    contexts: list[dict[str, object]] = []
+    start = 0
+    while len(contexts) < MAX_CONTEXTS_PER_FILE:
+        index = source.find(term, start)
+        if index < 0:
+            break
+        left = max(0, index - CONTEXT_RADIUS)
+        right = min(len(source), index + len(term) + CONTEXT_RADIUS)
+        contexts.append({"offset": index, "text": sanitize(source[left:right])})
+        start = index + len(term)
+    return contexts
 
 
 def main() -> int:
@@ -47,36 +84,49 @@ def main() -> int:
     patcher = load_patcher(Path(sys.argv[1]))
     bundle = Path(sys.argv[2])
     header, data = patcher.read_asar(bundle)
-    entry = patcher.locate_entry(header, patcher.TARGET_PATH)
-    target = patcher.unpacked_target(bundle)
-    source = target.read_bytes() if entry.get("unpacked") else patcher.packed_content(entry, data)
 
-    print(json.dumps({"target": patcher.TARGET_PATH, "size": len(source)}))
-    for term in TERMS:
-        positions: list[int] = []
-        start = 0
-        while len(positions) < MAX_MATCHES_PER_TERM:
-            index = source.find(term, start)
-            if index < 0:
-                break
-            positions.append(index)
-            start = index + len(term)
+    candidates = 0
+    for path, entry in walk_entries(header["files"]):
+        if Path(path).suffix.lower() not in TEXT_SUFFIXES:
+            continue
+        try:
+            size = int(entry.get("size", 0))
+        except (TypeError, ValueError):
+            continue
+        if size <= 0 or size > MAX_FILE_SIZE:
+            continue
 
-        contexts = []
-        for index in positions:
-            left = max(0, index - CONTEXT_RADIUS)
-            right = min(len(source), index + len(term) + CONTEXT_RADIUS)
-            contexts.append({"offset": index, "text": sanitize(source[left:right])})
+        source = entry_content(patcher, bundle, entry, path, data)
+        counts = {term.decode("ascii"): source.count(term) for term in TERMS}
+        counts = {term: count for term, count in counts.items() if count}
+        if not counts:
+            continue
+
+        preferred_term = next(
+            (
+                term
+                for term in TERMS
+                if term.decode("ascii") in counts
+                and term not in {b"BrowserWindow", b"frame:"}
+            ),
+            next(term for term in TERMS if term.decode("ascii") in counts),
+        )
         print(
             json.dumps(
                 {
-                    "term": term.decode("ascii"),
-                    "count": source.count(term),
-                    "contexts": contexts,
+                    "path": path,
+                    "size": len(source),
+                    "counts": counts,
+                    "contexts": contexts_for(source, preferred_term),
                 },
                 ensure_ascii=True,
             )
         )
+        candidates += 1
+        if candidates >= MAX_CANDIDATES:
+            break
+
+    print(json.dumps({"candidateCount": candidates}))
     return 0
 
 
