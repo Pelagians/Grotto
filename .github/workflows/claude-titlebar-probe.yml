@@ -36,13 +36,10 @@ jobs:
           report="$work/report.json"
           keyring="$work/claude-desktop-key.asc"
           patcher="$work/grotto-patch-claude-titlebar"
-          inspector="$work/grotto-inspect-claude-titlebar-source.py"
           mkdir -p "$work" "$extract"
 
           curl --proto '=https' --tlsv1.2 -fsSLo "$patcher" \
             "https://raw.githubusercontent.com/Pelagians/Grotto/${SOURCE_SHA}/runtimes/claude-desktop/root/usr/local/libexec/grotto-patch-claude-titlebar"
-          curl --proto '=https' --tlsv1.2 -fsSLo "$inspector" \
-            "https://raw.githubusercontent.com/Pelagians/Grotto/${SOURCE_SHA}/runtimes/claude-desktop/grotto-inspect-claude-titlebar-source.py"
           curl --proto '=https' --tlsv1.2 -fsSLo "$keyring" \
             https://downloads.claude.ai/claude-desktop/key.asc
           fingerprint="$(
@@ -67,7 +64,6 @@ jobs:
           bundle="$extract/usr/lib/claude-desktop/resources/app.asar"
           test -f "$bundle"
 
-          python3 "$inspector" "$patcher" "$bundle"
           python3 "$patcher" \
             --bundle "$bundle" \
             --report "$report"
@@ -78,5 +74,5 @@ jobs:
           jq -e '
             .mode == "x11-native-titlebar" and
             .marker == "GROTTO_X11_NATIVE_TITLEBAR" and
-            .target == ".vite/build/index.js"
+            (.target | startswith(".vite/build/") and endswith(".js"))
           ' "$report" >/dev/null
