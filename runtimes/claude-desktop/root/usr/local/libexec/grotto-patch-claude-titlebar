@@ -12,14 +12,15 @@ import re
 import stat
 import struct
 import tempfile
-from typing import Any
+from typing import Any, Iterator
 
 PATCH_MARKER = "GROTTO_X11_NATIVE_TITLEBAR"
-TARGET_PATH = ".vite/build/index.js"
 DEFAULT_REPORT_PATH = Path("/usr/share/grotto/claude-titlebar-patch.json")
 TITLEBAR_PATTERN = re.compile(
     rb'titleBarStyle:"hidden",titleBarOverlay:([A-Za-z_$][\w$]*)'
 )
+TEXT_SUFFIXES = {".js", ".mjs", ".cjs"}
+MAX_SOURCE_SIZE = 64 * 1024 * 1024
 
 
 def read_asar(bundle: Path) -> tuple[dict[str, Any], bytes]:
@@ -62,6 +63,21 @@ def encode_header(header: dict[str, Any]) -> bytes:
     return size_pickle + header_pickle
 
 
+def walk_entries(
+    files: dict[str, Any],
+    prefix: str = "",
+) -> Iterator[tuple[str, dict[str, Any]]]:
+    for name, raw_entry in files.items():
+        if not isinstance(raw_entry, dict):
+            continue
+        path = f"{prefix}/{name}" if prefix else name
+        children = raw_entry.get("files")
+        if isinstance(children, dict):
+            yield from walk_entries(children, path)
+        else:
+            yield path, raw_entry
+
+
 def locate_entry(header: dict[str, Any], path: str) -> dict[str, Any]:
     files = header["files"]
     entry: dict[str, Any] | None = None
@@ -90,6 +106,94 @@ def packed_content(entry: dict[str, Any], data: bytes) -> bytes:
     if len(content) != size:
         raise ValueError("ASAR target extends beyond packed data")
     return content
+
+
+def unpacked_target(bundle: Path, path: str) -> Path:
+    return Path(f"{bundle}.unpacked") / path
+
+
+def entry_content(
+    bundle: Path,
+    path: str,
+    entry: dict[str, Any],
+    data: bytes,
+) -> bytes:
+    if entry.get("unpacked"):
+        return unpacked_target(bundle, path).read_bytes()
+    return packed_content(entry, data)
+
+
+def source_entries(
+    bundle: Path,
+    header: dict[str, Any],
+    data: bytes,
+) -> Iterator[tuple[str, dict[str, Any], bytes]]:
+    for path, entry in walk_entries(header["files"]):
+        if Path(path).suffix.lower() not in TEXT_SUFFIXES:
+            continue
+        try:
+            size = int(entry.get("size", 0))
+        except (TypeError, ValueError):
+            continue
+        if size <= 0 or size > MAX_SOURCE_SIZE:
+            continue
+        yield path, entry, entry_content(bundle, path, entry, data)
+
+
+def discover_upstream_target(
+    bundle: Path,
+    header: dict[str, Any],
+    data: bytes,
+) -> tuple[str, dict[str, Any], bytes]:
+    candidates: list[tuple[str, dict[str, Any], bytes, int]] = []
+    total_matches = 0
+    for path, entry, source in source_entries(bundle, header, data):
+        count = len(TITLEBAR_PATTERN.findall(source))
+        if not count:
+            continue
+        total_matches += count
+        candidates.append((path, entry, source, count))
+
+    if total_matches != 1 or len(candidates) != 1:
+        summary = [{"path": path, "matches": count} for path, _, _, count in candidates]
+        raise ValueError(
+            "Claude main-window titlebar pattern matched "
+            f"{total_matches} times across {len(candidates)} files; expected 1: "
+            f"{json.dumps(summary, sort_keys=True)}"
+        )
+    path, entry, source, _count = candidates[0]
+    return path, entry, source
+
+
+def discover_patched_target(
+    bundle: Path,
+    header: dict[str, Any],
+    data: bytes,
+) -> tuple[str, dict[str, Any], bytes]:
+    marker = PATCH_MARKER.encode("ascii")
+    candidates: list[tuple[str, dict[str, Any], bytes, int]] = []
+    marker_count = 0
+    upstream_count = 0
+    for path, entry, source in source_entries(bundle, header, data):
+        count = source.count(marker)
+        upstream_count += len(TITLEBAR_PATTERN.findall(source))
+        if not count:
+            continue
+        marker_count += count
+        candidates.append((path, entry, source, count))
+
+    if marker_count != 1 or len(candidates) != 1:
+        summary = [{"path": path, "markers": count} for path, _, _, count in candidates]
+        raise ValueError(
+            f"Claude titlebar patch marker count is {marker_count}; expected 1: "
+            f"{json.dumps(summary, sort_keys=True)}"
+        )
+    if upstream_count:
+        raise ValueError(
+            f"Claude titlebar bundle still contains {upstream_count} upstream pattern(s)"
+        )
+    path, entry, source, _count = candidates[0]
+    return path, entry, source
 
 
 def update_integrity(entry: dict[str, Any], content: bytes) -> None:
@@ -148,21 +252,11 @@ def find_bundle() -> Path:
     return bundles[0]
 
 
-def unpacked_target(bundle: Path) -> Path:
-    return Path(f"{bundle}.unpacked") / TARGET_PATH
-
-
 def verify(bundle: Path) -> dict[str, Any]:
     header, data = read_asar(bundle)
-    entry = locate_entry(header, TARGET_PATH)
+    path, entry, source = discover_patched_target(bundle, header, data)
     if not entry.get("unpacked"):
         raise ValueError("Claude titlebar target is not marked unpacked")
-    target = unpacked_target(bundle)
-    source = target.read_bytes()
-    if source.count(PATCH_MARKER.encode("ascii")) != 1:
-        raise ValueError("Claude titlebar patch marker count is not 1")
-    if TITLEBAR_PATTERN.search(source):
-        raise ValueError("Claude titlebar source still contains the upstream pattern")
     if b'process.platform==="linux"?"default":"hidden"' not in source:
         raise ValueError("Claude Linux titleBarStyle native branch is missing")
     if b'process.platform==="linux"?!1:' not in source:
@@ -179,7 +273,7 @@ def verify(bundle: Path) -> dict[str, Any]:
 
     return {
         "bundle": str(bundle),
-        "target": TARGET_PATH,
+        "target": path,
         "marker": PATCH_MARKER,
         "sha256": hashlib.sha256(source).hexdigest(),
         "size": len(source),
@@ -203,13 +297,8 @@ def preserve_ownership(path: Path, source_stat: os.stat_result) -> None:
 
 def patch(bundle: Path, report_path: Path) -> dict[str, Any]:
     header, data = read_asar(bundle)
-    entry = locate_entry(header, TARGET_PATH)
-    target = unpacked_target(bundle)
-
-    if entry.get("unpacked"):
-        source = target.read_bytes()
-    else:
-        source = packed_content(entry, data)
+    path, entry, source = discover_upstream_target(bundle, header, data)
+    target = unpacked_target(bundle, path)
     patched = patch_source(source)
 
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -257,6 +346,7 @@ def self_test() -> None:
     assert b'titleBarOverlay:process.platform==="linux"?!1:vo' in patched
     assert patch_source(patched) == patched
 
+    target_path = ".vite/build/index.chunk-test.js"
     header = {
         "files": {
             ".vite": {
@@ -264,9 +354,13 @@ def self_test() -> None:
                     "build": {
                         "files": {
                             "index.js": {
+                                "size": 20,
+                                "offset": str(len(fixture)),
+                            },
+                            "index.chunk-test.js": {
                                 "size": len(fixture),
                                 "offset": "0",
-                            }
+                            },
                         }
                     }
                 }
@@ -275,9 +369,10 @@ def self_test() -> None:
     }
     with tempfile.TemporaryDirectory() as temporary_directory:
         bundle = Path(temporary_directory) / "app.asar"
-        bundle.write_bytes(encode_header(header) + fixture)
-        report = patch(bundle, Path(temporary_directory) / "report.json")
-        assert report["mode"] == "x11-native-titlebar"
+        bundle.write_bytes(encode_header(header) + fixture + b"export{main as default}")
+        report_path = Path(temporary_directory) / "report.json"
+        report = patch(bundle, report_path)
+        assert report["target"] == target_path
         assert verify(bundle)["marker"] == PATCH_MARKER
 
 
