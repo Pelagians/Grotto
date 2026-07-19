@@ -1,0 +1,143 @@
+#!/usr/bin/env python3
+"""Print bounded titlebar-related snippets from Claude Desktop's ASAR bundle."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+import struct
+import sys
+
+SEARCH_TERMS = (
+    b"titleBarOverlay",
+    b"titleBarStyle",
+    b"setTitleBarOverlay",
+    b"window-controls",
+    b"windowControls",
+    b"BrowserWindow",
+    b"minimize",
+    b"maximize",
+)
+TEXT_SUFFIXES = {".js", ".mjs", ".cjs", ".html", ".css"}
+MAX_FILE_SIZE = 32 * 1024 * 1024
+MAX_SNIPPETS = 100
+SNIPPET_RADIUS = 260
+
+
+def read_header(bundle: Path) -> tuple[dict[str, object], int]:
+    with bundle.open("rb") as handle:
+        size_pickle = handle.read(8)
+        if len(size_pickle) != 8:
+            raise ValueError(f"{bundle}: incomplete ASAR size pickle")
+        header_size = struct.unpack_from("<I", size_pickle, 4)[0]
+        if not 8 <= header_size <= 128 * 1024 * 1024:
+            raise ValueError(f"{bundle}: implausible ASAR header size {header_size}")
+        header_pickle = handle.read(header_size)
+        if len(header_pickle) != header_size:
+            raise ValueError(f"{bundle}: incomplete ASAR header")
+
+    if len(header_pickle) < 8:
+        raise ValueError(f"{bundle}: malformed ASAR header pickle")
+    json_size = struct.unpack_from("<I", header_pickle, 4)[0]
+    raw_json = header_pickle[8 : 8 + json_size].rstrip(b"\x00")
+    header = json.loads(raw_json.decode("utf-8"))
+    if not isinstance(header, dict) or not isinstance(header.get("files"), dict):
+        raise ValueError(f"{bundle}: ASAR header lacks files mapping")
+    return header, 8 + header_size
+
+
+def walk(files: dict[str, object], prefix: str = ""):
+    for name, raw_entry in files.items():
+        if not isinstance(raw_entry, dict):
+            continue
+        path = f"{prefix}/{name}" if prefix else name
+        children = raw_entry.get("files")
+        if isinstance(children, dict):
+            yield from walk(children, path)
+            continue
+        yield path, raw_entry
+
+
+def sanitize(raw: bytes) -> str:
+    return (
+        raw.decode("utf-8", errors="replace")
+        .replace("\r", " ")
+        .replace("\n", " ")
+        .replace("\t", " ")
+    )
+
+
+def main() -> int:
+    roots = (Path("/usr/lib/claude-desktop"), Path("/opt/claude-desktop"))
+    bundles = sorted(
+        bundle
+        for root in roots
+        if root.exists()
+        for bundle in root.rglob("app.asar")
+    )
+    if len(bundles) != 1:
+        print(
+            f"Expected exactly one Claude app.asar, found {len(bundles)}: {bundles}",
+            file=sys.stderr,
+        )
+        return 1
+
+    bundle = bundles[0]
+    header, data_offset = read_header(bundle)
+    print(f"GROTTO_CLAUDE_ASAR={bundle}")
+    print(f"GROTTO_CLAUDE_ASAR_DATA_OFFSET={data_offset}")
+
+    snippet_count = 0
+    with bundle.open("rb") as handle:
+        for path, entry in walk(header["files"]):
+            suffix = Path(path).suffix.lower()
+            if suffix not in TEXT_SUFFIXES or entry.get("unpacked"):
+                continue
+            try:
+                size = int(entry.get("size", 0))
+                offset = int(entry["offset"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if size <= 0 or size > MAX_FILE_SIZE:
+                continue
+
+            handle.seek(data_offset + offset)
+            content = handle.read(size)
+            counts = {term.decode(): content.count(term) for term in SEARCH_TERMS}
+            counts = {term: count for term, count in counts.items() if count}
+            if not counts:
+                continue
+
+            print(
+                f"GROTTO_CLAUDE_CANDIDATE={path} size={size} "
+                f"terms={json.dumps(counts, sort_keys=True)}"
+            )
+            for term in SEARCH_TERMS:
+                start = 0
+                for _ in range(4):
+                    index = content.find(term, start)
+                    if index < 0:
+                        break
+                    left = max(0, index - SNIPPET_RADIUS)
+                    right = min(len(content), index + len(term) + SNIPPET_RADIUS)
+                    print(
+                        "GROTTO_CLAUDE_SNIPPET="
+                        + json.dumps(
+                            {
+                                "file": path,
+                                "term": term.decode(),
+                                "offset": index,
+                                "text": sanitize(content[left:right]),
+                            },
+                            ensure_ascii=True,
+                        )
+                    )
+                    snippet_count += 1
+                    if snippet_count >= MAX_SNIPPETS:
+                        return 0
+                    start = index + len(term)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
