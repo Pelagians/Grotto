@@ -1,0 +1,267 @@
+#!/usr/bin/env python3
+"""Patch Claude Desktop's main BrowserWindow into X11-native titlebar mode."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import stat
+import struct
+import tempfile
+from typing import Any
+
+PATCH_MARKER = "GROTTO_X11_NATIVE_TITLEBAR"
+TARGET_PATH = ".vite/build/index.js"
+REPORT_PATH = Path("/usr/share/grotto/claude-titlebar-patch.json")
+TITLEBAR_PATTERN = re.compile(
+    rb'titleBarStyle:"hidden",titleBarOverlay:([A-Za-z_$][\w$]*)'
+)
+
+
+def read_asar(bundle: Path) -> tuple[dict[str, Any], int, bytes]:
+    with bundle.open("rb") as handle:
+        size_pickle = handle.read(8)
+        if len(size_pickle) != 8:
+            raise ValueError(f"{bundle}: incomplete ASAR size pickle")
+        size_payload, header_size = struct.unpack("<II", size_pickle)
+        if size_payload != 4:
+            raise ValueError(f"{bundle}: unexpected ASAR size-pickle payload {size_payload}")
+        if not 8 <= header_size <= 128 * 1024 * 1024:
+            raise ValueError(f"{bundle}: implausible ASAR header size {header_size}")
+        header_pickle = handle.read(header_size)
+        if len(header_pickle) != header_size:
+            raise ValueError(f"{bundle}: incomplete ASAR header")
+        data = handle.read()
+
+    if len(header_pickle) < 8:
+        raise ValueError(f"{bundle}: malformed ASAR header pickle")
+    payload_size, json_size = struct.unpack_from("<II", header_pickle, 0)
+    if payload_size + 4 != len(header_pickle):
+        raise ValueError(
+            f"{bundle}: ASAR header payload mismatch "
+            f"({payload_size} + 4 != {len(header_pickle)})"
+        )
+    raw_json = header_pickle[8 : 8 + json_size]
+    header = json.loads(raw_json.decode("utf-8"))
+    if not isinstance(header, dict) or not isinstance(header.get("files"), dict):
+        raise ValueError(f"{bundle}: ASAR header lacks files mapping")
+    return header, 8 + header_size, data
+
+
+def encode_header(header: dict[str, Any]) -> bytes:
+    raw_json = json.dumps(
+        header,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    string_payload = struct.pack("<I", len(raw_json)) + raw_json
+    string_payload += b"\x00" * ((-len(string_payload)) % 4)
+    header_pickle = struct.pack("<I", len(string_payload)) + string_payload
+    return struct.pack("<II", 4, len(header_pickle)) + header_pickle
+
+
+def locate_entry(header: dict[str, Any], path: str) -> dict[str, Any]:
+    files = header["files"]
+    entry: dict[str, Any] | None = None
+    for component in path.split("/"):
+        raw_entry = files.get(component)
+        if not isinstance(raw_entry, dict):
+            raise ValueError(f"ASAR target missing: {path}")
+        entry = raw_entry
+        children = raw_entry.get("files")
+        if component != path.split("/")[-1]:
+            if not isinstance(children, dict):
+                raise ValueError(f"ASAR target path is not a directory: {component}")
+            files = children
+    assert entry is not None
+    return entry
+
+
+def packed_content(entry: dict[str, Any], data: bytes) -> bytes:
+    try:
+        offset = int(entry["offset"])
+        size = int(entry["size"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("ASAR target lacks packed offset/size") from exc
+    content = data[offset : offset + size]
+    if len(content) != size:
+        raise ValueError("ASAR target extends beyond packed data")
+    return content
+
+
+def update_integrity(entry: dict[str, Any], content: bytes) -> None:
+    integrity = entry.get("integrity")
+    if not isinstance(integrity, dict):
+        return
+    algorithm = str(integrity.get("algorithm", "SHA256")).upper()
+    if algorithm != "SHA256":
+        raise ValueError(f"Unsupported ASAR integrity algorithm: {algorithm}")
+    block_size = int(integrity.get("blockSize", 4 * 1024 * 1024))
+    if block_size <= 0:
+        raise ValueError(f"Invalid ASAR integrity block size: {block_size}")
+    integrity["algorithm"] = "SHA256"
+    integrity["hash"] = hashlib.sha256(content).hexdigest()
+    integrity["blockSize"] = block_size
+    integrity["blocks"] = [
+        hashlib.sha256(content[offset : offset + block_size]).hexdigest()
+        for offset in range(0, len(content), block_size)
+    ]
+
+
+def patch_source(source: bytes) -> bytes:
+    marker = PATCH_MARKER.encode("ascii")
+    if marker in source:
+        if len(TITLEBAR_PATTERN.findall(source)) != 0:
+            raise ValueError("Claude titlebar marker exists beside unpatched source")
+        return source
+
+    matches = list(TITLEBAR_PATTERN.finditer(source))
+    if len(matches) != 1:
+        raise ValueError(
+            f"Claude main-window titlebar pattern matched {len(matches)} times; expected 1"
+        )
+    overlay_alias = matches[0].group(1)
+    replacement = (
+        b'titleBarStyle:process.platform==="linux"?"default":"hidden",'
+        b'titleBarOverlay:process.platform==="linux"?!1:'
+        + overlay_alias
+        + b"/*"
+        + marker
+        + b"*/"
+    )
+    return source[: matches[0].start()] + replacement + source[matches[0].end() :]
+
+
+def find_bundle() -> Path:
+    roots = (Path("/usr/lib/claude-desktop"), Path("/opt/claude-desktop"))
+    bundles = sorted(
+        bundle
+        for root in roots
+        if root.exists()
+        for bundle in root.rglob("app.asar")
+    )
+    if len(bundles) != 1:
+        raise ValueError(f"Expected one Claude app.asar, found {len(bundles)}: {bundles}")
+    return bundles[0]
+
+
+def unpacked_target(bundle: Path) -> Path:
+    return Path(f"{bundle}.unpacked") / TARGET_PATH
+
+
+def verify(bundle: Path) -> dict[str, Any]:
+    header, _data_offset, data = read_asar(bundle)
+    entry = locate_entry(header, TARGET_PATH)
+    if not entry.get("unpacked"):
+        raise ValueError("Claude titlebar target is not marked unpacked")
+    target = unpacked_target(bundle)
+    source = target.read_bytes()
+    if source.count(PATCH_MARKER.encode("ascii")) != 1:
+        raise ValueError("Claude titlebar patch marker count is not 1")
+    if TITLEBAR_PATTERN.search(source):
+        raise ValueError("Claude titlebar source still contains the upstream pattern")
+    if b'process.platform==="linux"?"default":"hidden"' not in source:
+        raise ValueError("Claude Linux titleBarStyle native branch is missing")
+    if b'process.platform==="linux"?!1:' not in source:
+        raise ValueError("Claude Linux titleBarOverlay disable branch is missing")
+
+    size = int(entry.get("size", -1))
+    if size != len(source):
+        raise ValueError(f"Claude unpacked target size mismatch: {size} != {len(source)}")
+    integrity = entry.get("integrity")
+    if isinstance(integrity, dict):
+        expected = hashlib.sha256(source).hexdigest()
+        if integrity.get("hash") != expected:
+            raise ValueError("Claude unpacked target integrity hash is stale")
+
+    return {
+        "bundle": str(bundle),
+        "target": TARGET_PATH,
+        "marker": PATCH_MARKER,
+        "sha256": hashlib.sha256(source).hexdigest(),
+        "size": len(source),
+        "mode": "x11-native-titlebar",
+        "packedDataBytesRetained": len(data),
+    }
+
+
+def patch(bundle: Path) -> dict[str, Any]:
+    header, _data_offset, data = read_asar(bundle)
+    entry = locate_entry(header, TARGET_PATH)
+    target = unpacked_target(bundle)
+
+    if entry.get("unpacked"):
+        source = target.read_bytes()
+    else:
+        source = packed_content(entry, data)
+    patched = patch_source(source)
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary_target = target.with_name(f".{target.name}.grotto-tmp")
+    temporary_target.write_bytes(patched)
+    os.chmod(temporary_target, 0o644)
+    os.replace(temporary_target, target)
+
+    entry["size"] = len(patched)
+    entry["unpacked"] = True
+    entry.pop("offset", None)
+    update_integrity(entry, patched)
+
+    encoded_header = encode_header(header)
+    original_stat = bundle.stat()
+    with tempfile.NamedTemporaryFile(
+        mode="wb",
+        dir=bundle.parent,
+        prefix=f".{bundle.name}.grotto-",
+        delete=False,
+    ) as handle:
+        temporary_bundle = Path(handle.name)
+        handle.write(encoded_header)
+        handle.write(data)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.chmod(temporary_bundle, stat.S_IMODE(original_stat.st_mode))
+    os.chown(temporary_bundle, original_stat.st_uid, original_stat.st_gid)
+    os.replace(temporary_bundle, bundle)
+
+    report = verify(bundle)
+    REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    REPORT_PATH.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    return report
+
+
+def self_test() -> None:
+    fixture = (
+        b'const x={titleBarStyle:"hidden",titleBarOverlay:vo,'
+        b'webPreferences:{preload:"main.js"}};'
+    )
+    patched = patch_source(fixture)
+    assert PATCH_MARKER.encode() in patched
+    assert b'titleBarStyle:process.platform==="linux"?"default":"hidden"' in patched
+    assert b'titleBarOverlay:process.platform==="linux"?!1:vo' in patched
+    assert patch_source(patched) == patched
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--verify", action="store_true")
+    parser.add_argument("--self-test", action="store_true")
+    arguments = parser.parse_args()
+
+    if arguments.self_test:
+        self_test()
+        print("Claude titlebar patch self-test passed")
+        return 0
+
+    bundle = find_bundle()
+    report = verify(bundle) if arguments.verify else patch(bundle)
+    print(json.dumps(report, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
