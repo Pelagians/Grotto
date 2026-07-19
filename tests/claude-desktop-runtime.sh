@@ -13,6 +13,7 @@ expected_fingerprint=31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE
 keyring=/usr/share/keyrings/claude-desktop-archive-keyring.asc
 repository=/etc/apt/sources.list.d/claude-desktop.list
 version_file=/usr/share/grotto/claude-desktop-version
+titlebar_report=/usr/share/grotto/claude-titlebar-patch.json
 openbox_config=/etc/xdg/openbox/rc.xml
 labwc_config=/defaults/labwc.xml
 architecture="$(dpkg --print-architecture)"
@@ -26,7 +27,7 @@ case "$architecture" in
 esac
 
 for command_name in \
-    claude-desktop firefox-esr gnome-keyring-daemon python3 selkies xdg-mime
+    claude-desktop firefox-esr gnome-keyring-daemon jq python3 selkies xdg-mime
 do
     command -v "$command_name" >/dev/null
 done
@@ -34,8 +35,10 @@ done
 test -x /usr/bin/claude-desktop
 test -x /usr/bin/firefox-esr
 test -x /usr/local/bin/grotto-claude-browser
+test -x /usr/local/bin/grotto-claude-desktop
 test -x /usr/local/bin/grotto-claude-url-handler
 test -x /usr/local/libexec/grotto-configure-openbox
+test -x /usr/local/libexec/grotto-patch-claude-titlebar
 test -x /lsiopy/bin/selkies
 test -r /usr/share/applications/grotto-claude-browser.desktop
 test -r /usr/share/applications/grotto-claude-url-handler.desktop
@@ -44,19 +47,42 @@ test -r "$labwc_config"
 test -r "$keyring"
 test -r "$repository"
 test -s "$version_file"
+test -r "$titlebar_report"
 
 python3 /usr/local/bin/grotto-claude-browser --self-test
+bash -n /usr/local/bin/grotto-claude-desktop
 bash -n /usr/local/bin/grotto-claude-url-handler
+python3 /usr/local/libexec/grotto-patch-claude-titlebar --self-test
+python3 /usr/local/libexec/grotto-patch-claude-titlebar --verify
+jq -e '
+  .mode == "x11-native-titlebar" and
+  .marker == "GROTTO_X11_NATIVE_TITLEBAR" and
+  .target == ".vite/build/index.js" and
+  (.sha256 | type == "string" and length == 64) and
+  (.size | type == "number" and . > 0)
+' "$titlebar_report" >/dev/null
+
+grep -Fq -- '--ozone-platform=x11' /usr/local/bin/grotto-claude-desktop
+grep -Fq -- '--disable-features=CustomTitlebar,WaylandWindowDecorations' \
+    /usr/local/bin/grotto-claude-desktop
+grep -Fq 'ELECTRON_USE_SYSTEM_TITLE_BAR' /usr/local/bin/grotto-claude-desktop
+grep -Fq 'exec /usr/local/bin/grotto-claude-desktop' /defaults/autostart
+grep -Fq 'exec /usr/local/bin/grotto-claude-desktop "$uri"' \
+    /usr/local/bin/grotto-claude-url-handler
 python3 - <<'PY'
 from pathlib import Path
 
-path = Path("/usr/local/libexec/grotto-configure-openbox")
-compile(path.read_text(encoding="utf-8"), str(path), "exec")
+for path in (
+    Path("/usr/local/libexec/grotto-configure-openbox"),
+    Path("/usr/local/libexec/grotto-patch-claude-titlebar"),
+):
+    compile(path.read_text(encoding="utf-8"), str(path), "exec")
 PY
 
 if [[ -e /usr/local/bin/grotto-claude-callback-relay ]] || \
-   [[ -e /usr/share/grotto/claude-viewer-open.js ]]; then
-    echo "Obsolete external-viewer authentication bridge is still installed" >&2
+   [[ -e /usr/share/grotto/claude-viewer-open.js ]] || \
+   [[ -e /usr/local/libexec/grotto-inspect-claude-asar ]]; then
+    echo "Obsolete Claude browser-bridge or ASAR-inspection code is still installed" >&2
     exit 1
 fi
 
