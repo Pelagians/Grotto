@@ -16,20 +16,19 @@ from typing import Any
 
 PATCH_MARKER = "GROTTO_X11_NATIVE_TITLEBAR"
 TARGET_PATH = ".vite/build/index.js"
-REPORT_PATH = Path("/usr/share/grotto/claude-titlebar-patch.json")
+DEFAULT_REPORT_PATH = Path("/usr/share/grotto/claude-titlebar-patch.json")
 TITLEBAR_PATTERN = re.compile(
     rb'titleBarStyle:"hidden",titleBarOverlay:([A-Za-z_$][\w$]*)'
 )
 
 
-def read_asar(bundle: Path) -> tuple[dict[str, Any], int, bytes]:
+def read_asar(bundle: Path) -> tuple[dict[str, Any], bytes]:
+    """Read an Electron ASAR header and return its relative-offset data region."""
     with bundle.open("rb") as handle:
         size_pickle = handle.read(8)
         if len(size_pickle) != 8:
             raise ValueError(f"{bundle}: incomplete ASAR size pickle")
-        size_payload, header_size = struct.unpack("<II", size_pickle)
-        if size_payload != 4:
-            raise ValueError(f"{bundle}: unexpected ASAR size-pickle payload {size_payload}")
+        header_size = struct.unpack_from("<I", size_pickle, 4)[0]
         if not 8 <= header_size <= 128 * 1024 * 1024:
             raise ValueError(f"{bundle}: implausible ASAR header size {header_size}")
         header_pickle = handle.read(header_size)
@@ -39,20 +38,18 @@ def read_asar(bundle: Path) -> tuple[dict[str, Any], int, bytes]:
 
     if len(header_pickle) < 8:
         raise ValueError(f"{bundle}: malformed ASAR header pickle")
-    payload_size, json_size = struct.unpack_from("<II", header_pickle, 0)
-    if payload_size + 4 != len(header_pickle):
-        raise ValueError(
-            f"{bundle}: ASAR header payload mismatch "
-            f"({payload_size} + 4 != {len(header_pickle)})"
-        )
-    raw_json = header_pickle[8 : 8 + json_size]
+    json_size = struct.unpack_from("<I", header_pickle, 4)[0]
+    if json_size <= 0 or 8 + json_size > len(header_pickle):
+        raise ValueError(f"{bundle}: invalid ASAR JSON size {json_size}")
+    raw_json = header_pickle[8 : 8 + json_size].rstrip(b"\x00")
     header = json.loads(raw_json.decode("utf-8"))
     if not isinstance(header, dict) or not isinstance(header.get("files"), dict):
         raise ValueError(f"{bundle}: ASAR header lacks files mapping")
-    return header, 8 + header_size, data
+    return header, data
 
 
 def encode_header(header: dict[str, Any]) -> bytes:
+    """Serialize an ASAR JSON header using Chromium Pickle framing."""
     raw_json = json.dumps(
         header,
         ensure_ascii=False,
@@ -61,19 +58,21 @@ def encode_header(header: dict[str, Any]) -> bytes:
     string_payload = struct.pack("<I", len(raw_json)) + raw_json
     string_payload += b"\x00" * ((-len(string_payload)) % 4)
     header_pickle = struct.pack("<I", len(string_payload)) + string_payload
-    return struct.pack("<II", 4, len(header_pickle)) + header_pickle
+    size_pickle = struct.pack("<II", 4, len(header_pickle))
+    return size_pickle + header_pickle
 
 
 def locate_entry(header: dict[str, Any], path: str) -> dict[str, Any]:
     files = header["files"]
     entry: dict[str, Any] | None = None
-    for component in path.split("/"):
+    components = path.split("/")
+    for index, component in enumerate(components):
         raw_entry = files.get(component)
         if not isinstance(raw_entry, dict):
             raise ValueError(f"ASAR target missing: {path}")
         entry = raw_entry
-        children = raw_entry.get("files")
-        if component != path.split("/")[-1]:
+        if index != len(components) - 1:
+            children = raw_entry.get("files")
             if not isinstance(children, dict):
                 raise ValueError(f"ASAR target path is not a directory: {component}")
             files = children
@@ -115,7 +114,7 @@ def update_integrity(entry: dict[str, Any], content: bytes) -> None:
 def patch_source(source: bytes) -> bytes:
     marker = PATCH_MARKER.encode("ascii")
     if marker in source:
-        if len(TITLEBAR_PATTERN.findall(source)) != 0:
+        if TITLEBAR_PATTERN.search(source):
             raise ValueError("Claude titlebar marker exists beside unpatched source")
         return source
 
@@ -154,7 +153,7 @@ def unpacked_target(bundle: Path) -> Path:
 
 
 def verify(bundle: Path) -> dict[str, Any]:
-    header, _data_offset, data = read_asar(bundle)
+    header, data = read_asar(bundle)
     entry = locate_entry(header, TARGET_PATH)
     if not entry.get("unpacked"):
         raise ValueError("Claude titlebar target is not marked unpacked")
@@ -189,8 +188,21 @@ def verify(bundle: Path) -> dict[str, Any]:
     }
 
 
-def patch(bundle: Path) -> dict[str, Any]:
-    header, _data_offset, data = read_asar(bundle)
+def preserve_ownership(path: Path, source_stat: os.stat_result) -> None:
+    current = path.stat()
+    if (current.st_uid, current.st_gid) == (source_stat.st_uid, source_stat.st_gid):
+        return
+    if os.geteuid() != 0:
+        raise PermissionError(
+            f"Cannot preserve ownership for {path}: "
+            f"{current.st_uid}:{current.st_gid} != "
+            f"{source_stat.st_uid}:{source_stat.st_gid}"
+        )
+    os.chown(path, source_stat.st_uid, source_stat.st_gid)
+
+
+def patch(bundle: Path, report_path: Path) -> dict[str, Any]:
+    header, data = read_asar(bundle)
     entry = locate_entry(header, TARGET_PATH)
     target = unpacked_target(bundle)
 
@@ -225,12 +237,12 @@ def patch(bundle: Path) -> dict[str, Any]:
         handle.flush()
         os.fsync(handle.fileno())
     os.chmod(temporary_bundle, stat.S_IMODE(original_stat.st_mode))
-    os.chown(temporary_bundle, original_stat.st_uid, original_stat.st_gid)
+    preserve_ownership(temporary_bundle, original_stat)
     os.replace(temporary_bundle, bundle)
 
     report = verify(bundle)
-    REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    REPORT_PATH.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     return report
 
 
@@ -245,9 +257,34 @@ def self_test() -> None:
     assert b'titleBarOverlay:process.platform==="linux"?!1:vo' in patched
     assert patch_source(patched) == patched
 
+    header = {
+        "files": {
+            ".vite": {
+                "files": {
+                    "build": {
+                        "files": {
+                            "index.js": {
+                                "size": len(fixture),
+                                "offset": "0",
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        bundle = Path(temporary_directory) / "app.asar"
+        bundle.write_bytes(encode_header(header) + fixture)
+        report = patch(bundle, Path(temporary_directory) / "report.json")
+        assert report["mode"] == "x11-native-titlebar"
+        assert verify(bundle)["marker"] == PATCH_MARKER
+
 
 def main() -> int:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--bundle", type=Path)
+    parser.add_argument("--report", type=Path, default=DEFAULT_REPORT_PATH)
     parser.add_argument("--verify", action="store_true")
     parser.add_argument("--self-test", action="store_true")
     arguments = parser.parse_args()
@@ -257,8 +294,8 @@ def main() -> int:
         print("Claude titlebar patch self-test passed")
         return 0
 
-    bundle = find_bundle()
-    report = verify(bundle) if arguments.verify else patch(bundle)
+    bundle = arguments.bundle or find_bundle()
+    report = verify(bundle) if arguments.verify else patch(bundle, arguments.report)
     print(json.dumps(report, sort_keys=True))
     return 0
 
