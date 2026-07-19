@@ -62,11 +62,17 @@
     </windowRule>
 
     <!--
-      Claude is the persistent desktop surface. Electron package revisions have
-      used several app_id values, so match any normal window whose identifier
-      contains "claude". Labwc glob matching is case-insensitive.
+      Claude is the persistent desktop surface. True fullscreen removes both
+      client and server window controls; the bottom layer keeps authentication,
+      file-selection, and alert windows visible above it.
     -->
-    <windowRule identifier="*claude*" type="normal" serverDecoration="no">
+    <windowRule identifier="com.anthropic.Claude" title="Claude*" type="normal" serverDecoration="no">
+      <ignoreFocusRequest>yes</ignoreFocusRequest>
+      <action name="ToggleFullscreen" />
+      <action name="Lower" />
+      <action name="ToggleAlwaysOnBottom" />
+    </windowRule>
+    <windowRule identifier="claude-desktop" title="Claude*" type="normal" serverDecoration="no">
       <ignoreFocusRequest>yes</ignoreFocusRequest>
       <action name="ToggleFullscreen" />
       <action name="Lower" />
