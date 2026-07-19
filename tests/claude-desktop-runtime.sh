@@ -1,8 +1,6 @@
 #!/bin/bash
 set -Eeuo pipefail
 
-trap 'status=$?; printf "Claude runtime smoke test failed at line %s (exit %s)\n" "$LINENO" "$status" >&2; exit "$status"' ERR
-
 export HOME="${HOME:-/config}"
 export CLAUDE_CONFIG_DIR="${CLAUDE_CONFIG_DIR:-/config/.claude}"
 export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-/config/.config}"
