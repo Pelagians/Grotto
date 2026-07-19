@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Print bounded structural contexts for Claude's current titlebar source."""
+"""Print bounded titlebar contexts from Claude's current ASAR chunks."""
 
 from __future__ import annotations
 
@@ -14,14 +14,10 @@ TERMS = (
     b"titleBarStyle",
     b"titleBarOverlay",
     b"setTitleBarOverlay",
-    b"BrowserWindow",
-    b"autoHideMenuBar",
-    b"frame:",
 )
-TEXT_SUFFIXES = {".js", ".mjs", ".cjs", ".html", ".css"}
-CONTEXT_RADIUS = 160
-MAX_CONTEXTS_PER_FILE = 3
-MAX_CANDIDATES = 30
+TEXT_SUFFIXES = {".js", ".mjs", ".cjs"}
+CONTEXT_RADIUS = 260
+MAX_CONTEXTS_PER_TERM = 4
 MAX_FILE_SIZE = 64 * 1024 * 1024
 
 
@@ -65,7 +61,7 @@ def entry_content(patcher, bundle: Path, entry: dict[str, Any], path: str, data:
 def contexts_for(source: bytes, term: bytes) -> list[dict[str, object]]:
     contexts: list[dict[str, object]] = []
     start = 0
-    while len(contexts) < MAX_CONTEXTS_PER_FILE:
+    while len(contexts) < MAX_CONTEXTS_PER_TERM:
         index = source.find(term, start)
         if index < 0:
             break
@@ -85,7 +81,7 @@ def main() -> int:
     bundle = Path(sys.argv[2])
     header, data = patcher.read_asar(bundle)
 
-    candidates = 0
+    candidate_count = 0
     for path, entry in walk_entries(header["files"]):
         if Path(path).suffix.lower() not in TEXT_SUFFIXES:
             continue
@@ -97,36 +93,33 @@ def main() -> int:
             continue
 
         source = entry_content(patcher, bundle, entry, path, data)
-        counts = {term.decode("ascii"): source.count(term) for term in TERMS}
-        counts = {term: count for term, count in counts.items() if count}
-        if not counts:
+        term_results = []
+        for term in TERMS:
+            count = source.count(term)
+            if count:
+                term_results.append(
+                    {
+                        "term": term.decode("ascii"),
+                        "count": count,
+                        "contexts": contexts_for(source, term),
+                    }
+                )
+        if not term_results:
             continue
 
-        preferred_term = next(
-            (
-                term
-                for term in TERMS
-                if term.decode("ascii") in counts
-                and term not in {b"BrowserWindow", b"frame:"}
-            ),
-            next(term for term in TERMS if term.decode("ascii") in counts),
-        )
         print(
             json.dumps(
                 {
                     "path": path,
                     "size": len(source),
-                    "counts": counts,
-                    "contexts": contexts_for(source, preferred_term),
+                    "terms": term_results,
                 },
                 ensure_ascii=True,
             )
         )
-        candidates += 1
-        if candidates >= MAX_CANDIDATES:
-            break
+        candidate_count += 1
 
-    print(json.dumps({"candidateCount": candidates}))
+    print(json.dumps({"candidateCount": candidate_count}))
     return 0
 
 
