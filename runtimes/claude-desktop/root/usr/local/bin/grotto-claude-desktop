@@ -1,0 +1,11 @@
+#!/bin/bash
+set -Eeuo pipefail
+
+# Electron enables client-side Wayland window decorations by default. Claude's
+# Linux window already supplies its own top chrome, which produces a second
+# minimize/maximize/close strip under Selkies. Request compositor-managed
+# decoration instead; Grotto's Labwc/Openbox policy then removes decoration from
+# the main Claude surface while leaving secondary windows managed normally.
+exec /usr/bin/claude-desktop \
+    --disable-features=WaylandWindowDecorations \
+    "$@"
