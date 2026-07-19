@@ -67,7 +67,7 @@ grep -Fq -- '--disable-features=CustomTitlebar,WaylandWindowDecorations' \
     /usr/local/bin/grotto-claude-desktop
 grep -Fq 'ELECTRON_USE_SYSTEM_TITLE_BAR' /usr/local/bin/grotto-claude-desktop
 grep -Fq 'exec /usr/local/bin/grotto-claude-desktop' /defaults/autostart
-grep -Fq 'exec /usr/local/bin/grotto-claude-desktop "$uri"' \
+grep -Fq 'exec /usr/local/bin/grotto-claude-desktop' \
     /usr/local/bin/grotto-claude-url-handler
 python3 - <<'PY'
 from pathlib import Path
