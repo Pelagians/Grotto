@@ -115,12 +115,14 @@ RUN set -eux; \
         /defaults/autostart_wayland \
         /custom-cont-init.d/10-grotto-claude-permissions \
         /usr/local/bin/grotto-claude-browser \
+        /usr/local/bin/grotto-claude-desktop \
         /usr/local/bin/grotto-claude-url-handler \
         /usr/local/libexec/grotto-configure-openbox \
         /usr/local/libexec/grotto-claude-desktop-smoke; \
     bash -n /defaults/autostart; \
     bash -n /defaults/autostart_wayland; \
     bash -n /custom-cont-init.d/10-grotto-claude-permissions; \
+    bash -n /usr/local/bin/grotto-claude-desktop; \
     bash -n /usr/local/bin/grotto-claude-url-handler; \
     bash -n /usr/local/libexec/grotto-claude-desktop-smoke; \
     python3 -m py_compile \
@@ -128,6 +130,8 @@ RUN set -eux; \
         /usr/local/libexec/grotto-configure-openbox \
         /usr/local/libexec/test-claude-window-manager-config.py; \
     python3 /usr/local/bin/grotto-claude-browser --self-test; \
+    grep -Fq -- '--disable-features=WaylandWindowDecorations' \
+        /usr/local/bin/grotto-claude-desktop; \
     desktop-file-validate \
         /usr/share/applications/grotto-claude-browser.desktop \
         /usr/share/applications/grotto-claude-url-handler.desktop; \
@@ -181,6 +185,7 @@ RUN set -eux; \
     test -x /usr/bin/claude-desktop; \
     test -x /usr/bin/firefox-esr; \
     test -x /usr/local/bin/grotto-claude-browser; \
+    test -x /usr/local/bin/grotto-claude-desktop; \
     test -x /usr/local/bin/grotto-claude-url-handler; \
     test -x /usr/local/libexec/grotto-configure-openbox; \
     test -r /defaults/labwc.xml; \
