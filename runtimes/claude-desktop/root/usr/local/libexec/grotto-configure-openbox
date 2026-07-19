@@ -21,7 +21,7 @@ MATCH_ATTRIBUTES = {
     "title",
     "type",
 }
-MAIN_CLASSES = ("com.anthropic.Claude", "claude-desktop")
+MAIN_CLASS = "*claude*"
 
 
 def local_name(tag: object) -> str:
@@ -128,19 +128,18 @@ def configure_openbox(config_path: Path) -> None:
         ),
     )
 
-    # Claude's main surface stays true-fullscreen and below all transient work.
-    # Fullscreen also removes Claude's client window controls from the stream.
-    for class_name in MAIN_CLASSES:
-        add_rule(
-            {"class": class_name, "name": "Claude*", "type": "normal"},
-            (
-                ("decor", "no"),
-                ("focus", "no"),
-                ("layer", "below"),
-                ("fullscreen", "yes"),
-                ("maximized", "no"),
-            ),
-        )
+    # Claude package revisions have used several WM_CLASS values. Openbox glob
+    # matching catches all of them without relying on the mutable window title.
+    add_rule(
+        {"class": MAIN_CLASS, "type": "normal"},
+        (
+            ("decor", "no"),
+            ("focus", "no"),
+            ("layer", "below"),
+            ("fullscreen", "yes"),
+            ("maximized", "no"),
+        ),
+    )
 
     for window_type in ("dialog", "utility"):
         add_rule(
