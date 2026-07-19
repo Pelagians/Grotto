@@ -32,6 +32,31 @@ The installed package version is recorded at:
 The default build tracks the current stable package candidate. A specific
 version can be selected with `CLAUDE_DESKTOP_VERSION=<apt-version>`.
 
+### X11 titlebar patch
+
+Claude's Linux main window creates an integrated Electron titlebar containing
+minimize, maximize, and close controls. Window-manager decoration rules cannot
+remove those controls because they are part of the application window itself.
+
+Grotto applies a strict build-time patch to Claude's `.vite/build/index.js`
+entry inside `app.asar`. On Linux, the patched main `BrowserWindow` requests
+`titleBarStyle: "default"` and disables `titleBarOverlay`. The patch must match
+exactly one upstream main-window option; an upstream source change fails the
+image build rather than silently restoring the controls.
+
+The modified JavaScript file is stored through Electron's supported
+`app.asar.unpacked` path. The ASAR header, size, and SHA-256 integrity metadata
+are updated and verified after patching. Build details are recorded at:
+
+```text
+/usr/share/grotto/claude-titlebar-patch.json
+```
+
+Openbox then removes the resulting native frame from Claude's main window. This
+two-stage policy leaves neither the application overlay controls nor an outer
+window-manager titlebar, while Firefox and transient windows retain usable
+window chrome.
+
 ## Local build
 
 ```bash
@@ -100,6 +125,37 @@ port, browser extension, or Selkies fork.
 - no credentials are baked into the image
 - `/config` must be treated as sensitive
 
+## Window management
+
+X11 with Openbox is the primary Claude runtime mode. The image defaults to:
+
+```text
+PIXELFLUX_WAYLAND=false
+ELECTRON_OZONE_PLATFORM_HINT=x11
+CLAUDE_NATIVE_TITLEBAR=1
+ELECTRON_USE_SYSTEM_TITLE_BAR=1
+```
+
+The launcher also passes `--ozone-platform=x11` and disables Chromium's
+`CustomTitlebar` feature. These launch controls complement the strict bundle
+patch; they are not the sole mechanism for removing Claude's client controls.
+
+The managed Openbox policy provides the workbench behavior:
+
+- Claude stays true-fullscreen, undecorated, and on the bottom layer
+- Claude does not reclaim focus from foreground windows
+- Firefox opens windowed, focused, and above Claude
+- Firefox keeps one usable titlebar instead of receiving a duplicate frame
+- dialogs, utilities, and file pickers are unmaximized, raised, and focused
+- LinuxServer's catch-all maximization rule is removed
+
+The initialization script refreshes the managed Openbox configuration in the
+persistent `/config` volume on every start, so replacing an older container does
+not preserve stale window rules.
+
+A Labwc policy remains packaged as a secondary Wayland compatibility path, but
+X11/Openbox is the validated and documented default.
+
 ## Run with Intel or AMD graphics
 
 ```bash
@@ -116,7 +172,7 @@ podman run --rm \
   --env TZ=America/Vancouver \
   --env CUSTOM_USER=abc \
   --env PASSWORD=change-me \
-  --env PIXELFLUX_WAYLAND=true \
+  --env PIXELFLUX_WAYLAND=false \
   --env AUTO_GPU=true \
   --volume "$PWD/claude-config:/config:Z" \
   --volume "$PWD/workspace:/workspace:Z" \
@@ -128,7 +184,7 @@ podman run --rm \
 Open `https://localhost:3001`. Selkies uses a self-signed certificate unless a
 reverse proxy terminates TLS.
 
-For a CPU/X11 fallback, omit `/dev/dri` and use:
+For a CPU-rendered X11 fallback, omit `/dev/dri` and use:
 
 ```bash
 --env PIXELFLUX_WAYLAND=false \
@@ -242,17 +298,19 @@ podman run --rm \
 
 The smoke test verifies the package, repository signing key, recorded version,
 Selkies executable, Firefox ESR, Secret Service dependency, writable persistent
-roots, HTTPS-only browser handler, `claude://` handler, and MIME associations.
-It intentionally does not launch the graphical clients or perform real
+roots, HTTPS-only browser handler, `claude://` handler, MIME associations,
+X11 launcher policy, titlebar patch manifest, and the patched ASAR contents. It
+intentionally does not launch the graphical clients or perform real
 authentication.
 
 The remaining integration checks require an actual Selkies session:
 
-1. Claude renders in Wayland/Labwc and X11/Openbox modes.
-2. `Sign in with Google` opens Firefox inside Selkies.
-3. Firefox returns the `claude://` callback to remote Claude.
-4. Authentication survives replacement of the container.
-5. File and folder selection can access `/workspace`.
-6. Claude Code can edit a mounted repository and invoke installed tools.
-7. Secret Service state survives restart without plaintext fallback flags.
-8. The runtime works under rootless Podman without disabling SELinux or seccomp.
+1. Claude renders fullscreen in the primary X11/Openbox mode without any window controls.
+2. Firefox, file pickers, dialogs, and utilities remain windowed and focused above Claude.
+3. `Sign in with Google` opens Firefox inside Selkies.
+4. Firefox returns the `claude://` callback to remote Claude.
+5. Authentication survives replacement of the container.
+6. File and folder selection can access `/workspace`.
+7. Claude Code can edit a mounted repository and invoke installed tools.
+8. Secret Service state survives restart without plaintext fallback flags.
+9. The runtime works under rootless Podman without disabling SELinux or seccomp.
