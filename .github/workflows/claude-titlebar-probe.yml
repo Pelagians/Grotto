@@ -1,0 +1,76 @@
+name: Claude Titlebar Probe
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - Containerfile.claude-desktop
+      - runtimes/claude-desktop/**
+      - tests/claude-desktop-runtime.sh
+      - .github/workflows/claude-titlebar-probe.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: claude-titlebar-probe-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  upstream-package:
+    name: Verify official Claude titlebar source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Download and patch official package
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          work="$RUNNER_TEMP/claude-titlebar-probe"
+          extract="$work/extract"
+          report="$work/report.json"
+          keyring="$work/claude-desktop-key.asc"
+          mkdir -p "$work" "$extract"
+
+          curl --proto '=https' --tlsv1.2 -fsSLo "$keyring" \
+            https://downloads.claude.ai/claude-desktop/key.asc
+          fingerprint="$(
+            gpg --batch --show-keys --with-colons "$keyring" \
+              | awk -F: '$1 == "fpr" { print $10; exit }'
+          )"
+          test "$fingerprint" = 31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE
+
+          sudo install -m 0644 "$keyring" \
+            /usr/share/keyrings/claude-desktop-archive-keyring.asc
+          printf '%s\n' \
+            'deb [arch=amd64 signed-by=/usr/share/keyrings/claude-desktop-archive-keyring.asc] https://downloads.claude.ai/claude-desktop/apt/stable stable main' \
+            | sudo tee /etc/apt/sources.list.d/claude-desktop.list >/dev/null
+          sudo apt-get update -qq
+
+          cd "$work"
+          apt-get download -qq claude-desktop
+          package="$(find "$work" -maxdepth 1 -type f -name 'claude-desktop_*_amd64.deb' -print -quit)"
+          test -n "$package"
+          dpkg-deb -x "$package" "$extract"
+
+          bundle="$extract/usr/lib/claude-desktop/resources/app.asar"
+          test -f "$bundle"
+
+          python3 "$GITHUB_WORKSPACE/runtimes/claude-desktop/root/usr/local/libexec/grotto-patch-claude-titlebar" \
+            --bundle "$bundle" \
+            --report "$report"
+          python3 "$GITHUB_WORKSPACE/runtimes/claude-desktop/root/usr/local/libexec/grotto-patch-claude-titlebar" \
+            --bundle "$bundle" \
+            --verify
+
+          jq -e '
+            .mode == "x11-native-titlebar" and
+            .marker == "GROTTO_X11_NATIVE_TITLEBAR" and
+            .target == ".vite/build/index.js"
+          ' "$report" >/dev/null
