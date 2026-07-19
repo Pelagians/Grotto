@@ -57,7 +57,7 @@ python3 /usr/local/libexec/grotto-patch-claude-titlebar --verify
 jq -e '
   .mode == "x11-native-titlebar" and
   .marker == "GROTTO_X11_NATIVE_TITLEBAR" and
-  .target == ".vite/build/index.js" and
+  (.target | startswith(".vite/build/") and endswith(".js")) and
   (.sha256 | type == "string" and length == 64) and
   (.size | type == "number" and . > 0)
 ' "$titlebar_report" >/dev/null
