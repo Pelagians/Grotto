@@ -1,6 +1,8 @@
 #!/bin/bash
 set -Eeuo pipefail
 
+trap 'status=$?; printf "Claude runtime smoke test failed at line %s (exit %s)\n" "$LINENO" "$status" >&2; exit "$status"' ERR
+
 export HOME="${HOME:-/config}"
 export CLAUDE_CONFIG_DIR="${CLAUDE_CONFIG_DIR:-/config/.claude}"
 export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-/config/.config}"
@@ -47,7 +49,12 @@ test -s "$version_file"
 
 python3 /usr/local/bin/grotto-claude-browser --self-test
 bash -n /usr/local/bin/grotto-claude-url-handler
-python3 -m py_compile /usr/local/libexec/grotto-configure-openbox
+python3 - <<'PY'
+from pathlib import Path
+
+path = Path("/usr/local/libexec/grotto-configure-openbox")
+compile(path.read_text(encoding="utf-8"), str(path), "exec")
+PY
 
 if [[ -e /usr/local/bin/grotto-claude-callback-relay ]] || \
    [[ -e /usr/share/grotto/claude-viewer-open.js ]]; then
