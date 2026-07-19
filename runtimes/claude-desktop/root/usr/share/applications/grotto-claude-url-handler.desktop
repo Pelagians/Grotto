@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Claude Desktop URL handler
+Comment=Return Claude authentication links to Claude Desktop
+Exec=/usr/local/bin/grotto-claude-url-handler %u
+Terminal=false
+NoDisplay=true
+MimeType=x-scheme-handler/claude;
+Categories=Utility;

@@ -1,0 +1,81 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import os
+import subprocess
+import sys
+from pathlib import Path
+from urllib.parse import urlparse
+
+MAX_URL_LENGTH = 16 * 1024
+FIREFOX_PATH = Path("/usr/bin/firefox-esr")
+
+
+def validate_url(value: str) -> str:
+    if len(value.encode("utf-8")) > MAX_URL_LENGTH:
+        raise ValueError("authentication URL is too long")
+    parsed = urlparse(value)
+    if parsed.scheme != "https" or not parsed.netloc:
+        raise ValueError("Claude authentication browser only opens absolute HTTPS URLs")
+    return value
+
+
+def launch_url(url: str) -> None:
+    validated = validate_url(url)
+    if not FIREFOX_PATH.is_file():
+        raise FileNotFoundError(f"authentication browser is missing: {FIREFOX_PATH}")
+
+    cache_dir = Path(os.environ.get("XDG_CACHE_HOME", "/config/.cache")) / "grotto"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    log_path = cache_dir / "claude-auth-browser.log"
+
+    environment = os.environ.copy()
+    environment.setdefault("HOME", "/config")
+
+    with log_path.open("ab", buffering=0) as log_file:
+        subprocess.Popen(
+            [str(FIREFOX_PATH), "--new-window", validated],
+            env=environment,
+            stdin=subprocess.DEVNULL,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+            close_fds=True,
+        )
+
+
+def self_test() -> int:
+    assert validate_url("https://claude.ai/login/popup-google-auth")
+    for invalid in ("http://example.com", "file:///tmp/test", "javascript:alert(1)"):
+        try:
+            validate_url(invalid)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"accepted unsafe URL: {invalid}")
+    assert FIREFOX_PATH == Path("/usr/bin/firefox-esr")
+    print("grotto-claude-browser self-test passed")
+    return 0
+
+
+def main() -> int:
+    if len(sys.argv) == 2 and sys.argv[1] == "--self-test":
+        return self_test()
+
+    urls = [argument for argument in sys.argv[1:] if argument]
+    if not urls:
+        print("No URL was provided to the Claude authentication browser", file=sys.stderr)
+        return 64
+
+    try:
+        for url in urls:
+            launch_url(url)
+    except Exception as exc:  # noqa: BLE001
+        print(f"Unable to open the Claude authentication browser: {exc}", file=sys.stderr)
+        return 1
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

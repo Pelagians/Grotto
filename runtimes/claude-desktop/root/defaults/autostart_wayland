@@ -1,0 +1,5 @@
+#!/bin/bash
+set -Eeuo pipefail
+
+# Keep the application startup path identical in Labwc and Openbox sessions.
+exec /defaults/autostart

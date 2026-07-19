@@ -1,0 +1,70 @@
+#!/usr/bin/with-contenv bash
+# shellcheck shell=bash
+set -Eeuo pipefail
+
+# LinuxServer adjusts the abc account to PUID/PGID before custom init scripts run.
+install -d -o abc -g abc -m 0755 \
+    /config \
+    /config/.cache \
+    /config/.config \
+    /config/.config/labwc \
+    /config/.config/openbox \
+    /config/.local \
+    /config/.local/share \
+    /config/.local/state \
+    /workspace \
+    /tools \
+    /tools/bin \
+    /tools/cargo \
+    /tools/mise \
+    /tools/npm \
+    /tools/pnpm \
+    /tools/python \
+    /tools/pipx \
+    /tools/venvs \
+    /cache \
+    /cache/npm \
+    /cache/pip \
+    /cache/uv \
+    /cache/xdg
+install -d -o abc -g abc -m 0700 \
+    /config/.claude \
+    /config/.mozilla \
+    /config/.local/share/keyrings
+
+# Refresh Grotto-managed launchers and window policy on every image start. This
+# prevents an existing /config volume from retaining LinuxServer's catch-all
+# maximization or duplicate server-side frames after an image update.
+install -o abc -g abc -m 0755 \
+    /defaults/autostart \
+    /config/.config/openbox/autostart
+install -o abc -g abc -m 0755 \
+    /defaults/autostart_wayland \
+    /config/.config/labwc/autostart
+install -o abc -g abc -m 0644 \
+    /defaults/labwc.xml \
+    /config/.config/labwc/rc.xml
+
+if [[ ! -f /config/.config/openbox/rc.xml ]]; then
+    install -o abc -g abc -m 0644 \
+        /etc/xdg/openbox/rc.xml \
+        /config/.config/openbox/rc.xml
+fi
+/usr/local/libexec/grotto-configure-openbox \
+    /config/.config/openbox/rc.xml
+chown abc:abc /config/.config/openbox/rc.xml
+
+# Repair application-owned state, but never recursively rewrite the mounted
+# project workspace or user-installed tool trees.
+chown abc:abc /workspace /tools /cache
+chown abc:abc \
+    /tools/bin /tools/cargo /tools/mise /tools/npm /tools/pnpm \
+    /tools/python /tools/pipx /tools/venvs \
+    /cache/npm /cache/pip /cache/uv /cache/xdg
+chown -R abc:abc \
+    /config/.claude \
+    /config/.mozilla \
+    /config/.cache \
+    /config/.config \
+    /config/.local
+chmod 0700 /config/.claude /config/.mozilla /config/.local/share/keyrings

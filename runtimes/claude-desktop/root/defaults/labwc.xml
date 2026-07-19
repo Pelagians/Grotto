@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<labwc_config>
+
+  <core>
+    <decoration>server</decoration>
+    <gap>0</gap>
+  </core>
+
+  <theme>
+    <name>Clearlooks</name>
+    <titlebar>
+      <layout>icon:iconify,max,close</layout>
+      <showTitle>yes</showTitle>
+    </titlebar>
+    <cornerRadius>8</cornerRadius>
+  </theme>
+
+  <keyboard>
+    <default />
+    <keybind key="A-F4"><action name="Close" /></keybind>
+    <keybind key="A-Escape"><action name="Close" /></keybind>
+    <keybind key="A-space"><action name="ShowMenu" menu="client-menu" /></keybind>
+    <keybind key="W-e"><action name="Execute" command="lab-sensible-terminal" /></keybind>
+  </keyboard>
+
+  <mouse>
+    <default />
+    <context name="Root">
+      <mousebind button="Left" action="Press" />
+      <mousebind button="Right" action="Press"><action name="ShowMenu" menu="root-menu" /></mousebind>
+      <mousebind button="Middle" action="Press"><action name="ShowMenu" menu="client-list-combined-menu" /></mousebind>
+    </context>
+    <context name="TitleBar">
+      <mousebind button="Right" action="Click"><action name="ShowMenu" menu="client-menu" /></mousebind>
+      <mousebind button="Middle" action="Click"><action name="ToggleMaximize" direction="vertical" /></mousebind>
+    </context>
+  </mouse>
+
+  <windowRules>
+    <!-- Secondary normal windows open windowed, raised, and focused. -->
+    <windowRule identifier="*" type="normal" serverDecoration="yes">
+      <ignoreFocusRequest>no</ignoreFocusRequest>
+      <action name="UnMaximize" />
+      <action name="Raise" />
+      <action name="Focus" />
+    </windowRule>
+
+    <!-- Firefox provides its own titlebar; suppress Labwc's duplicate frame. -->
+    <windowRule identifier="firefox*" type="normal" serverDecoration="no">
+      <ignoreFocusRequest>no</ignoreFocusRequest>
+      <action name="UnMaximize" />
+      <action name="ToggleAlwaysOnTop" />
+      <action name="Raise" />
+      <action name="Focus" />
+    </windowRule>
+    <windowRule identifier="org.mozilla.firefox*" type="normal" serverDecoration="no">
+      <ignoreFocusRequest>no</ignoreFocusRequest>
+      <action name="UnMaximize" />
+      <action name="ToggleAlwaysOnTop" />
+      <action name="Raise" />
+      <action name="Focus" />
+    </windowRule>
+
+    <!--
+      Claude is the persistent desktop surface. True fullscreen removes both
+      client and server window controls; the bottom layer keeps authentication,
+      file-selection, and alert windows visible above it.
+    -->
+    <windowRule identifier="com.anthropic.Claude" title="Claude*" type="normal" serverDecoration="no">
+      <ignoreFocusRequest>yes</ignoreFocusRequest>
+      <action name="ToggleFullscreen" />
+      <action name="Lower" />
+      <action name="ToggleAlwaysOnBottom" />
+    </windowRule>
+    <windowRule identifier="claude-desktop" title="Claude*" type="normal" serverDecoration="no">
+      <ignoreFocusRequest>yes</ignoreFocusRequest>
+      <action name="ToggleFullscreen" />
+      <action name="Lower" />
+      <action name="ToggleAlwaysOnBottom" />
+    </windowRule>
+
+    <!-- Native and Electron transient windows always escape inherited sizing. -->
+    <windowRule type="dialog" serverDecoration="yes">
+      <ignoreFocusRequest>no</ignoreFocusRequest>
+      <action name="UnMaximize" />
+      <action name="ToggleAlwaysOnTop" />
+      <action name="Raise" />
+      <action name="Focus" />
+    </windowRule>
+    <windowRule type="utility" serverDecoration="yes">
+      <ignoreFocusRequest>no</ignoreFocusRequest>
+      <action name="UnMaximize" />
+      <action name="ToggleAlwaysOnTop" />
+      <action name="Raise" />
+      <action name="Focus" />
+    </windowRule>
+
+    <windowRule identifier="pcmanfm-qt" type="desktop" title="pcmanfm-desktop0" serverDecoration="no">
+      <action name="Lower" />
+      <action name="ToggleAlwaysOnBottom" />
+    </windowRule>
+    <windowRule identifier="lxqt-panel" serverDecoration="no" />
+  </windowRules>
+
+</labwc_config>

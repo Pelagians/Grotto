@@ -1,0 +1,13 @@
+#!/bin/bash
+set -Eeuo pipefail
+
+uri="${1:-}"
+case "$uri" in
+    claude://*)
+        exec /usr/local/bin/grotto-claude-desktop "$uri"
+        ;;
+    *)
+        printf 'Unsupported Claude Desktop URL: %s\n' "$uri" >&2
+        exit 64
+        ;;
+esac

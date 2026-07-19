@@ -85,20 +85,27 @@ jobs:
             description: General OpenClaw gateway with curated baseline tools and persistent user-installed toolchains
             file: ./Containerfile
           - name: grotto-chatgpt-desktop
-            kind: desktop
+            kind: chatgpt-desktop
             image: ghcr.io/pelagians/grotto-chatgpt-desktop
             title: Grotto ChatGPT Desktop
             description: Selkies-streamed ChatGPT and Codex desktop workbench
             file: ./Containerfile.chatgpt-desktop
             wrapper_ref: 7d4049b68b17bc663b8a934326fefcaca99e8ceb
             codex_cli_version: 0.144.5
+          - name: grotto-claude-desktop
+            kind: claude-desktop
+            image: ghcr.io/pelagians/grotto-claude-desktop
+            title: Grotto Claude Desktop
+            description: Selkies-streamed official Claude Desktop Linux workbench
+            file: ./Containerfile.claude-desktop
+            claude_desktop_version: ''
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
       - name: Reclaim runner disk space
-        if: matrix.kind == 'desktop'
+        if: matrix.kind != 'agent'
         shell: bash
         run: |
           set -euxo pipefail
@@ -156,8 +163,8 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
 
-      - name: Build and publish desktop image
-        if: matrix.kind == 'desktop'
+      - name: Build and publish ChatGPT desktop image
+        if: matrix.kind == 'chatgpt-desktop'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -177,8 +184,27 @@ jobs:
           provenance: ${{ github.event_name != 'pull_request' }}
           sbom: ${{ github.event_name != 'pull_request' }}
 
-      - name: Smoke test desktop runtime
-        if: matrix.kind == 'desktop' && github.event_name == 'pull_request'
+      - name: Build and publish Claude desktop image
+        if: matrix.kind == 'claude-desktop'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.file }}
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          load: ${{ github.event_name == 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            CLAUDE_DESKTOP_VERSION=${{ matrix.claude_desktop_version }}
+            GROTTO_BUILD_REVISION=${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=min,scope=${{ matrix.name }}
+          provenance: ${{ github.event_name != 'pull_request' }}
+          sbom: ${{ github.event_name != 'pull_request' }}
+
+      - name: Smoke test ChatGPT desktop runtime
+        if: matrix.kind == 'chatgpt-desktop' && github.event_name == 'pull_request'
         shell: bash
         env:
           IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
@@ -191,4 +217,20 @@ jobs:
             --env HOME=/config \
             --env CODEX_HOME=/config/.codex \
             --entrypoint /usr/local/libexec/grotto-chatgpt-desktop-smoke \
+            "$image"
+
+      - name: Smoke test Claude desktop runtime
+        if: matrix.kind == 'claude-desktop' && github.event_name == 'pull_request'
+        shell: bash
+        env:
+          IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          image="$(head -n 1 <<< "$IMAGE_TAGS")"
+          docker run --rm \
+            --user abc \
+            --shm-size=2g \
+            --env HOME=/config \
+            --env CLAUDE_CONFIG_DIR=/config/.claude \
+            --entrypoint /usr/local/libexec/grotto-claude-desktop-smoke \
             "$image"
