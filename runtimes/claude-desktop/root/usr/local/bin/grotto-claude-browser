@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 
 MAX_URL_LENGTH = 16 * 1024
 FIREFOX_PATH = Path("/usr/bin/firefox-esr")
+ASAR_INSPECTOR = Path("/usr/local/libexec/grotto-inspect-claude-asar")
 
 
 def validate_url(value: str) -> str:
@@ -54,6 +55,8 @@ def self_test() -> int:
         else:
             raise AssertionError(f"accepted unsafe URL: {invalid}")
     assert FIREFOX_PATH == Path("/usr/bin/firefox-esr")
+    if ASAR_INSPECTOR.is_file():
+        subprocess.run([sys.executable, str(ASAR_INSPECTOR)], check=True)
     print("grotto-claude-browser self-test passed")
     return 0
 
