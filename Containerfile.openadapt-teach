@@ -1,0 +1,38 @@
+# syntax=docker/dockerfile:1.7
+FROM python:3.12.11-slim-bookworm
+
+ARG PLAYWRIGHT_VERSION=1.60.0
+ARG OPENADAPT_FLOW_WHEEL_URL="https://files.pythonhosted.org/packages/a7/20/dd8ccd56afb0c3c369f13adb85695acf4f0495a0a61553f576ec0977ab19/openadapt_flow-1.31.0-py3-none-any.whl"
+ARG OPENADAPT_FLOW_WHEEL_SHA256="81133db1528ad1bb1f26e3fcb6aea61b0651db6d905cf2e4943e8383c1f3d29c"
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
+    OPENADAPT_FLOW_NO_AUTO_INSTALL=1 \
+    OPENADAPT_FLOW_VLM_URL= \
+    OPENADAPT_FLOW_VLM_TOKEN= \
+    OPENADAPT_FLOW_API_KEY= \
+    OPENADAPT_API_KEY= \
+    OPENADAPT_CLOUD_URL= \
+    HOME=/tmp/openadapt-home
+
+RUN set -eux; \
+    python -c "import hashlib, pathlib, urllib.request; p=pathlib.Path('/tmp/openadapt_flow-1.31.0-py3-none-any.whl'); urllib.request.urlretrieve('${OPENADAPT_FLOW_WHEEL_URL}', p); actual=hashlib.sha256(p.read_bytes()).hexdigest(); assert actual == '${OPENADAPT_FLOW_WHEEL_SHA256}', (actual, '${OPENADAPT_FLOW_WHEEL_SHA256}')"; \
+    python -m pip install --no-cache-dir \
+      /tmp/openadapt_flow-1.31.0-py3-none-any.whl \
+      "playwright==${PLAYWRIGHT_VERSION}"; \
+    rm /tmp/openadapt_flow-1.31.0-py3-none-any.whl; \
+    useradd --create-home --uid 10001 --shell /usr/sbin/nologin teach-worker; \
+    install -d -o teach-worker -g teach-worker \
+      /work/source /work/decisions /work/bundle /tmp/openadapt-home
+
+COPY --chmod=0755 \
+  runtimes/openadapt-teach/grotto_openadapt_teach.py \
+  /usr/local/bin/grotto-openadapt-teach
+
+USER 10001:10001
+WORKDIR /work
+
+ENTRYPOINT ["python", "/usr/local/bin/grotto-openadapt-teach"]
+CMD ["--help"]

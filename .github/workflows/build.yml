@@ -92,6 +92,12 @@ jobs:
             file: ./Containerfile.chatgpt-desktop
             wrapper_ref: 7d4049b68b17bc663b8a934326fefcaca99e8ceb
             codex_cli_version: 0.144.5
+          - name: grotto-openadapt-teach
+            kind: worker
+            image: ghcr.io/pelagians/grotto-openadapt-teach
+            title: Grotto OpenAdapt Teach worker
+            description: UI-only OpenAdapt recording and compilation worker for caller-owned browser runtimes
+            file: ./Containerfile.openadapt-teach
 
     steps:
       - name: Check out repository
@@ -174,6 +180,21 @@ jobs:
             MAX_BUILD_THREADS=4
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=min,scope=${{ matrix.name }}
+          provenance: ${{ github.event_name != 'pull_request' }}
+          sbom: ${{ github.event_name != 'pull_request' }}
+
+      - name: Build and publish worker image
+        if: matrix.kind == 'worker'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.file }}
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
           provenance: ${{ github.event_name != 'pull_request' }}
           sbom: ${{ github.event_name != 'pull_request' }}
 

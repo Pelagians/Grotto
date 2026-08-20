@@ -1,4 +1,4 @@
-.PHONY: check check-container-engine image-openclaw image-chatgpt-desktop image-all
+.PHONY: check check-container-engine image-openclaw image-chatgpt-desktop image-openadapt-teach image-all
 
 DETECTED_CONTAINER_ENGINE := $(shell if command -v podman >/dev/null 2>&1 && podman info >/dev/null 2>&1; then printf 'podman'; elif command -v sudo >/dev/null 2>&1 && sudo -n podman info >/dev/null 2>&1; then printf 'sudo podman'; elif command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then printf 'docker'; fi)
 CONTAINER_ENGINE ?= $(DETECTED_CONTAINER_ENGINE)
@@ -8,6 +8,7 @@ endif
 
 GROTTO_OPENCLAW_IMAGE ?= grotto-openclaw:dev
 GROTTO_CHATGPT_DESKTOP_IMAGE ?= grotto-chatgpt-desktop:dev
+GROTTO_OPENADAPT_TEACH_IMAGE ?= grotto-openadapt-teach:dev
 CODEX_DESKTOP_LINUX_REF ?= 7d4049b68b17bc663b8a934326fefcaca99e8ceb
 CODEX_CLI_VERSION ?= latest
 CODEX_DESKTOP_LINUX_SOURCE ?=
@@ -25,6 +26,7 @@ check:
 	python3 tests/test_window_manager_config.py
 	python3 tests/test_window_manager_config.py --installed-image
 	python3 tests/test_verify_installed_chatgpt_policy.py
+	python3 tests/test_openadapt_teach_adapter.py
 
 check-container-engine:
 	@if [ -z "$(CONTAINER_ENGINE)" ]; then \
@@ -47,4 +49,10 @@ image-chatgpt-desktop: check-container-engine
 		-t $(GROTTO_CHATGPT_DESKTOP_IMAGE) \
 		.
 
-image-all: image-openclaw image-chatgpt-desktop
+image-openadapt-teach: check-container-engine
+	$(CONTAINER_ENGINE) build \
+		-f Containerfile.openadapt-teach \
+		-t $(GROTTO_OPENADAPT_TEACH_IMAGE) \
+		.
+
+image-all: image-openclaw image-chatgpt-desktop image-openadapt-teach
