@@ -10,8 +10,11 @@ Grotto currently publishes three OCI images.
 
 ## Grotto OpenAdapt Teach
 
+**Research spike.** The attachment seam is being proven or rejected; it is not
+yet a production runtime contract.
+
 The image provides the pinned OpenAdapt Flow browser engine and a thin
-loopback-CDP attachment adapter. It intentionally provides no browser, hosted
+context-scoped loopback-CDP attachment adapter. It intentionally provides no browser, hosted
 control plane, MCP server, connector credential, replay authority, or durable
 artifact store. See [`openadapt-teach.md`](openadapt-teach.md).
 

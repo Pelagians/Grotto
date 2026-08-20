@@ -27,6 +27,8 @@ check:
 	python3 tests/test_window_manager_config.py --installed-image
 	python3 tests/test_verify_installed_chatgpt_policy.py
 	python3 tests/test_openadapt_teach_adapter.py
+	python3 tests/test_openadapt_teach_policy.py
+	python3 tests/test_openadapt_compat_canary.py
 
 check-container-engine:
 	@if [ -z "$(CONTAINER_ENGINE)" ]; then \

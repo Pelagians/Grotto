@@ -10,15 +10,13 @@ import unittest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-ADAPTER_PATH = (
-    REPO_ROOT
-    / "runtimes"
-    / "openadapt-teach"
-    / "grotto_openadapt_teach.py"
-)
+RUNTIME_DIR = REPO_ROOT / "runtimes" / "openadapt-teach"
+ADAPTER_PATH = RUNTIME_DIR / "grotto_openadapt_teach.py"
 
 
 def load_adapter():
+    if str(RUNTIME_DIR) not in sys.path:
+        sys.path.insert(0, str(RUNTIME_DIR))
     spec = importlib.util.spec_from_file_location("grotto_openadapt_teach", ADAPTER_PATH)
     if spec is None or spec.loader is None:
         raise AssertionError("adapter module is not loadable")
@@ -28,31 +26,23 @@ def load_adapter():
     return module
 
 
-class FakePage:
-    def __init__(self, url: str = "about:blank") -> None:
-        self.url = url
-        self.bindings: list[str] = []
-        self.init_scripts: list[str] = []
-        self.evaluated_scripts: list[str] = []
-        self.goto_urls: list[str] = []
-        self.handlers: dict[str, object] = {}
-
-    def expose_binding(self, name, callback) -> None:
-        del callback
-        self.bindings.append(name)
-
-    def add_init_script(self, script) -> None:
-        self.init_scripts.append(script)
+class FakeFrame:
+    def __init__(self, name: str, *, raises: bool = False) -> None:
+        self.name = name
+        self.raises = raises
+        self.evaluated: list[str] = []
 
     def evaluate(self, script) -> None:
-        self.evaluated_scripts.append(script)
+        if self.raises:
+            raise RuntimeError("frame detached")
+        self.evaluated.append(script)
 
-    def goto(self, url) -> None:
+
+class FakePage:
+    def __init__(self, url: str = "http://target:8000/", frames=None) -> None:
         self.url = url
-        self.goto_urls.append(url)
-
-    def wait_for_load_state(self, state) -> None:
-        del state
+        self.frames = frames if frames is not None else [FakeFrame("main")]
+        self.handlers: dict[str, object] = {}
 
     def on(self, event, callback) -> None:
         self.handlers[event] = callback
@@ -60,7 +50,25 @@ class FakePage:
 
 class FakeContext:
     def __init__(self, pages) -> None:
-        self.pages = pages
+        self.pages = list(pages)
+        self.bindings: list[str] = []
+        self.init_scripts: list[str] = []
+        self.handlers: dict[str, object] = {}
+
+    def expose_binding(self, name, callback) -> None:
+        self.bindings.append(name)
+        self.binding_callback = callback
+
+    def add_init_script(self, script) -> None:
+        self.init_scripts.append(script)
+
+    def on(self, event, callback) -> None:
+        self.handlers[event] = callback
+
+    def open_popup(self, page) -> None:
+        """Simulate Chromium announcing a window.open target."""
+        self.pages.append(page)
+        self.handlers["page"](page)
 
 
 class FakeBrowser:
@@ -91,154 +99,237 @@ class FakePlaywright:
         self.stop_calls += 1
 
 
-class FakePlaywrightStarter:
-    def __init__(self, playwright) -> None:
-        self.playwright = playwright
-
-    def start(self):
-        return self.playwright
-
-
-class FakeBackend:
-    def __init__(self, page) -> None:
-        self.page = page
-
-
-class FakeRecorder:
-    instances = []
-
-    def __init__(self, backend, out_dir, *, app_url, **settle) -> None:
-        self.backend = backend
-        self.out_dir = Path(out_dir)
-        self.app_url = app_url
-        self.settle = settle
-        self.finished = False
-        type(self).instances.append(self)
-
-    def _wait_settled(self) -> bytes:
-        return b"png"
-
-    def finish(self) -> Path:
-        self.out_dir.mkdir(parents=True, exist_ok=True)
-        (self.out_dir / "meta.json").write_text("{}", encoding="utf-8")
-        self.finished = True
-        return self.out_dir
-
-
-class FakeInteractiveRecorder:
-    def __init__(self, *args, **kwargs) -> None:
-        del args, kwargs
-        self._pyq = []
-        self._pending_type = None
-        self._pending_scroll = None
-        self._settle = {}
-        self._system_of_record_reader = None
+class FakeInnerRecorder:
+    def __init__(self) -> None:
+        self.events: list[object] = []
         self.done = False
         self.page = None
         self.backend = None
         self.recorder = None
-
-    def _flush_type(self) -> None:
-        return None
-
-    def _flush_scroll(self) -> None:
-        return None
-
-    def _structural_state(self):
-        return {}
+        self.flushed = False
+        self.primed = False
 
 
-class OpenAdaptTeachAdapterTests(unittest.TestCase):
-    def setUp(self) -> None:
-        FakeRecorder.instances.clear()
+class FakeFlowRecorder:
+    def __init__(self, out_dir: Path) -> None:
+        self.out_dir = Path(out_dir)
 
-    def test_configuration_rejects_non_loopback_cdp_and_non_ui_actuation(self) -> None:
+    def finish(self) -> Path:
+        self.out_dir.mkdir(parents=True, exist_ok=True)
+        (self.out_dir / "meta.json").write_text("{}", encoding="utf-8")
+        return self.out_dir
+
+
+BASE_CONFIG = {
+    "teach_session_id": "teach-1",
+    "cdp_url": "http://127.0.0.1:9222",
+    "start_url": "http://target:8000/task",
+    "allowed_origins": ["http://target:8000"],
+    "source_dir": "source",
+    "engine_release": {"release_id": "openadapt-flow-1.31.0"},
+    "browser_runtime_release": {"release_id": "browser-runtime-1"},
+    "adapter_release": {"release_id": "grotto-openadapt-teach-1"},
+    "actuation_class": "ui_only",
+}
+
+
+def install_compat_fakes(adapter, inner: FakeInnerRecorder, source_dir: Path):
+    """Replace only the compatibility seam.
+
+    Every OpenAdapt private dependency is reached through these names, so
+    stubbing them is the whole surface: if a future change reaches around
+    ``openadapt_compat``, these tests stop covering it and the policy test
+    below fails.
+    """
+    adapter.require_compatible = lambda: None
+    adapter.build_inner_recorder = lambda **_kwargs: inner
+    adapter.render_init_script = lambda **_kwargs: "INIT_JS"
+    adapter.emit_event = lambda target, detail: target.events.append(detail)
+
+    def attach(target, *, page, source_dir, start_url):
+        target.page = page
+        target.recorder = FakeFlowRecorder(source_dir)
+        return target.recorder
+
+    def prime(target) -> None:
+        target.primed = True
+
+    def flush(target) -> None:
+        target.flushed = True
+
+    adapter.attach_inner_recorder = attach
+    adapter.prime_settled_state = prime
+    adapter.flush_pending = flush
+
+
+class ConfigurationTests(unittest.TestCase):
+    def test_rejects_non_loopback_cdp_and_non_ui_actuation(self) -> None:
         adapter = load_adapter()
-        base = {
-            "teach_session_id": "teach-1",
-            "cdp_url": "http://127.0.0.1:9222",
-            "start_url": "https://target.internal/task",
-            "source_dir": "source",
-            "engine_release": {"release_id": "openadapt-flow-1.31.0"},
-            "browser_runtime_release": {"release_id": "browser-runtime-1"},
-            "adapter_release": {"release_id": "grotto-openadapt-teach-1"},
-            "actuation_class": "ui_only",
-        }
-        self.assertEqual(adapter.TeachAttachConfig.from_mapping(base).actuation_class, "ui_only")
+        self.assertEqual(
+            adapter.TeachAttachConfig.from_mapping(BASE_CONFIG).actuation_class,
+            "ui_only",
+        )
 
-        remote = {**base, "cdp_url": "http://browser-runtime:9222"}
+        remote = {**BASE_CONFIG, "cdp_url": "http://browser-runtime:9222"}
         with self.assertRaisesRegex(ValueError, "loopback"):
             adapter.TeachAttachConfig.from_mapping(remote)
 
-        api = {**base, "actuation_class": "api"}
+        api = {**BASE_CONFIG, "actuation_class": "api"}
         with self.assertRaisesRegex(ValueError, "ui_only"):
             adapter.TeachAttachConfig.from_mapping(api)
 
-    def test_attachment_reuses_existing_page_and_instruments_current_and_future_documents(self) -> None:
+    def test_requires_server_supplied_allowed_origins(self) -> None:
+        adapter = load_adapter()
+        missing = {key: value for key, value in BASE_CONFIG.items() if key != "allowed_origins"}
+        with self.assertRaisesRegex(ValueError, "allowed_origins"):
+            adapter.TeachAttachConfig.from_mapping(missing)
+
+        empty = {**BASE_CONFIG, "allowed_origins": []}
+        with self.assertRaisesRegex(ValueError, "allowed_origins"):
+            adapter.TeachAttachConfig.from_mapping(empty)
+
+    def test_start_url_must_be_inside_the_authorized_origins(self) -> None:
+        adapter = load_adapter()
+        escaped = {**BASE_CONFIG, "start_url": "http://elsewhere.internal/task"}
+        with self.assertRaisesRegex(ValueError, "allowed_origins"):
+            adapter.TeachAttachConfig.from_mapping(escaped)
+
+    def test_origin_membership_ignores_path_and_rejects_opaque_urls(self) -> None:
+        adapter = load_adapter()
+        config = adapter.TeachAttachConfig.from_mapping(BASE_CONFIG)
+        self.assertTrue(config.permits("http://target:8000/deep/path?x=1"))
+        self.assertFalse(config.permits("http://target:9999/"))
+        self.assertFalse(config.permits("https://target:8000/"))
+        self.assertFalse(config.permits("about:blank"))
+
+
+class AttachmentTests(unittest.TestCase):
+    def _start(self, adapter, context, tmp, *, config_overrides=None):
+        browser = FakeBrowser([context])
+        playwright = FakePlaywright(browser)
+        fake_module = types.ModuleType("playwright.sync_api")
+        fake_module.sync_playwright = lambda: types.SimpleNamespace(
+            start=lambda: playwright
+        )
+        prior = sys.modules.get("playwright.sync_api")
+        sys.modules["playwright.sync_api"] = fake_module
+
+        inner = FakeInnerRecorder()
+        install_compat_fakes(adapter, inner, Path(tmp))
+        config = adapter.TeachAttachConfig.from_mapping(
+            {
+                **BASE_CONFIG,
+                "source_dir": tmp,
+                "ready_file": str(Path(tmp) / "ready"),
+                **(config_overrides or {}),
+            }
+        )
+        recorder = adapter.AttachedInteractiveRecorder(config)
+        try:
+            recorder.start()
+        finally:
+            if prior is None:
+                sys.modules.pop("playwright.sync_api", None)
+            else:
+                sys.modules["playwright.sync_api"] = prior
+        return recorder, inner, browser, playwright
+
+    def test_instrumentation_is_installed_on_the_context_not_a_single_page(self) -> None:
+        adapter = load_adapter()
+        page = FakePage(frames=[FakeFrame("main"), FakeFrame("iframe")])
+        context = FakeContext([page])
+        with tempfile.TemporaryDirectory() as tmp:
+            recorder, _inner, browser, playwright = self._start(adapter, context, tmp)
+
+            # Context scope is the whole point: page scope silently drops
+            # popups and every page created after recording begins.
+            self.assertEqual(context.bindings, [adapter.EVENT_BINDING_NAME])
+            self.assertEqual(context.init_scripts, ["INIT_JS"])
+            self.assertIn("page", context.handlers)
+            self.assertEqual(browser.close_calls, 0)
+            self.assertEqual(recorder.instrumented_pages, 1)
+            # Both already-attached frames, which the init script cannot reach.
+            self.assertEqual(recorder.instrumented_frames, 2)
+            for frame in page.frames:
+                self.assertEqual(frame.evaluated, ["INIT_JS"])
+            del playwright
+
+    def test_pages_created_after_recording_begins_are_instrumented(self) -> None:
         adapter = load_adapter()
         page = FakePage()
-        browser = FakeBrowser([FakeContext([page])])
-        playwright = FakePlaywright(browser)
+        context = FakeContext([page])
+        with tempfile.TemporaryDirectory() as tmp:
+            recorder, _inner, _browser, _pw = self._start(adapter, context, tmp)
+            self.assertEqual(recorder.late_pages, 0)
 
-        fake_interactive = types.ModuleType("openadapt_flow.interactive_recorder")
-        fake_interactive._INIT_JS = "const secrets=__SECRET_NAMES__; const ids=__IDENT_NAMES__; const keys=__SPECIAL_KEYS__;"
-        fake_interactive._SPECIAL_KEYS = ("Enter", "Tab")
-        fake_interactive.InteractiveRecorder = FakeInteractiveRecorder
-        fake_backend = types.ModuleType("openadapt_flow.backends.playwright_backend")
-        fake_backend.PlaywrightBackend = FakeBackend
-        fake_recorder = types.ModuleType("openadapt_flow.recorder")
-        fake_recorder.Recorder = FakeRecorder
-        fake_playwright = types.ModuleType("playwright.sync_api")
-        fake_playwright.sync_playwright = lambda: FakePlaywrightStarter(playwright)
+            popup = FakePage(
+                url="http://target:8000/popup.html",
+                frames=[FakeFrame("popup-main"), FakeFrame("popup-child")],
+            )
+            context.open_popup(popup)
 
-        modules = {
-            "openadapt_flow.interactive_recorder": fake_interactive,
-            "openadapt_flow.backends.playwright_backend": fake_backend,
-            "openadapt_flow.recorder": fake_recorder,
-            "playwright.sync_api": fake_playwright,
-        }
-        old = {name: sys.modules.get(name) for name in modules}
-        sys.modules.update(modules)
-        try:
-            with tempfile.TemporaryDirectory() as tmp:
-                config = adapter.TeachAttachConfig.from_mapping(
-                    {
-                        "teach_session_id": "teach-1",
-                        "cdp_url": "http://127.0.0.1:9222",
-                        "start_url": "https://target.internal/task",
-                        "source_dir": tmp,
-                        "ready_file": str(Path(tmp) / "ready"),
-                        "engine_release": {"release_id": "flow"},
-                        "browser_runtime_release": {"release_id": "browser"},
-                        "adapter_release": {"release_id": "adapter"},
-                        "actuation_class": "ui_only",
-                        "secret_fields": ["password"],
-                    }
-                )
-                recorder = adapter.AttachedInteractiveRecorder(config)
-                recorder.start()
-                result = recorder.finish()
-                ready_content = config.ready_file.read_text(encoding="utf-8")
+            self.assertEqual(recorder.late_pages, 1)
+            self.assertEqual(recorder.instrumented_pages, 2)
+            for frame in popup.frames:
+                self.assertEqual(frame.evaluated, ["INIT_JS"])
 
-            self.assertEqual(playwright.chromium.endpoints, ["http://127.0.0.1:9222"])
-            self.assertIs(recorder.page, page)
-            self.assertEqual(page.bindings, ["__oaflow_emit"])
-            self.assertEqual(len(page.init_scripts), 1)
-            self.assertEqual(page.evaluated_scripts, page.init_scripts)
-            self.assertEqual(page.goto_urls, ["https://target.internal/task"])
+    def test_popup_events_reach_the_recorder_through_the_context_binding(self) -> None:
+        adapter = load_adapter()
+        context = FakeContext([FakePage()])
+        with tempfile.TemporaryDirectory() as tmp:
+            _recorder, inner, _browser, _pw = self._start(adapter, context, tmp)
+            popup = FakePage(url="http://target:8000/popup.html")
+            context.open_popup(popup)
+            # A context-scoped binding is shared by every page, so a popup can
+            # emit into the same queue as the primary page.
+            context.binding_callback(
+                types.SimpleNamespace(page=popup), {"type": "click", "id": "popup-confirm"}
+            )
+            self.assertEqual(inner.events, [{"type": "click", "id": "popup-confirm"}])
+
+    def test_a_page_outside_the_authorized_origins_is_not_instrumented(self) -> None:
+        adapter = load_adapter()
+        context = FakeContext([FakePage()])
+        with tempfile.TemporaryDirectory() as tmp:
+            recorder, _inner, _browser, _pw = self._start(adapter, context, tmp)
+            stray = FakePage(url="http://evil.internal/steal")
+            context.open_popup(stray)
+            self.assertEqual(recorder.late_pages, 0)
+            self.assertEqual(stray.frames[0].evaluated, [])
+
+    def test_attachment_refuses_a_browser_outside_the_authorized_origins(self) -> None:
+        adapter = load_adapter()
+        context = FakeContext([FakePage(url="http://elsewhere.internal/")])
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(RuntimeError, "authorized Teach origins"):
+                self._start(adapter, context, tmp)
+
+    def test_a_detached_frame_does_not_abort_attachment(self) -> None:
+        adapter = load_adapter()
+        page = FakePage(frames=[FakeFrame("main"), FakeFrame("gone", raises=True)])
+        context = FakeContext([page])
+        with tempfile.TemporaryDirectory() as tmp:
+            recorder, _inner, _browser, _pw = self._start(adapter, context, tmp)
+            self.assertEqual(recorder.instrumented_frames, 1)
+
+    def test_readiness_and_disconnect_leave_the_browser_running(self) -> None:
+        adapter = load_adapter()
+        context = FakeContext([FakePage()])
+        with tempfile.TemporaryDirectory() as tmp:
+            recorder, inner, browser, playwright = self._start(adapter, context, tmp)
+            self.assertTrue(inner.primed)
+            self.assertEqual(
+                (Path(tmp) / "ready").read_text(encoding="utf-8"), "ready\n"
+            )
+            result = recorder.finish()
+            self.assertTrue(inner.flushed)
+            self.assertEqual(result, Path(tmp))
             self.assertEqual(browser.close_calls, 0)
             self.assertEqual(playwright.stop_calls, 1)
-            self.assertTrue(result.name == Path(config.source_dir).name)
-            self.assertEqual(ready_content, "ready\n")
-        finally:
-            for name, prior in old.items():
-                if prior is None:
-                    sys.modules.pop(name, None)
-                else:
-                    sys.modules[name] = prior
 
-    def test_compile_delegates_to_upstream_and_emits_bounded_evidence(self) -> None:
-        adapter = load_adapter()
+
+class CompileTests(unittest.TestCase):
+    def _compile(self, adapter, schema_version, decisions_body=None):
         calls = []
         compile_module = types.ModuleType("openadapt_flow.compiler.compile")
 
@@ -246,7 +337,7 @@ class OpenAdaptTeachAdapterTests(unittest.TestCase):
             calls.append((Path(source), Path(bundle), kwargs))
             Path(bundle).mkdir(parents=True)
             (Path(bundle) / "workflow.json").write_text(
-                json.dumps({"schema_version": 2}), encoding="utf-8"
+                json.dumps({"schema_version": schema_version}), encoding="utf-8"
             )
 
         compile_module.compile_recording = compile_recording
@@ -260,7 +351,8 @@ class OpenAdaptTeachAdapterTests(unittest.TestCase):
                 decisions = root / "decisions.json"
                 decisions.write_text(
                     json.dumps(
-                        {
+                        decisions_body
+                        or {
                             "workflow_name": "Export legacy report",
                             "param_overrides": {"step_001": "report_date"},
                             "secret_param_steps": [],
@@ -268,46 +360,35 @@ class OpenAdaptTeachAdapterTests(unittest.TestCase):
                     ),
                     encoding="utf-8",
                 )
-                bundle = root / "bundle"
-                evidence = adapter.compile_native_bundle(source, decisions, bundle)
-
-            self.assertEqual(len(calls), 1)
-            self.assertEqual(calls[0][2]["name"], "Export legacy report")
-            self.assertFalse(calls[0][2]["annotate"])
-            self.assertFalse(calls[0][2]["mine_effects"])
-            self.assertEqual(evidence["actuation_class"], "ui_only")
-            self.assertEqual(evidence["bundle_schema_version"], "2")
-            self.assertNotIn("workflow", evidence)
-            self.assertNotIn("events", evidence)
+                return calls, adapter.compile_native_bundle(
+                    source, decisions, root / "bundle"
+                )
         finally:
             if prior is None:
                 sys.modules.pop("openadapt_flow.compiler.compile", None)
             else:
                 sys.modules["openadapt_flow.compiler.compile"] = prior
 
-    def test_native_directory_archive_is_stable_and_rejects_symlinks(self) -> None:
+    def test_compile_delegates_to_upstream_and_emits_bounded_evidence(self) -> None:
         adapter = load_adapter()
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            source = root / "source"
-            (source / "frames").mkdir(parents=True)
-            (source / "meta.json").write_text('{"id":"x"}', encoding="utf-8")
-            (source / "events.jsonl").write_text("{}\n", encoding="utf-8")
-            (source / "frames" / "0000_before.png").write_bytes(b"png")
-            first = root / "first.zip"
-            second = root / "second.zip"
-            evidence_one = adapter.archive_native_directory(source, first)
-            evidence_two = adapter.archive_native_directory(source, second)
-            self.assertEqual(first.read_bytes(), second.read_bytes())
-            self.assertEqual(evidence_one, evidence_two)
-            self.assertEqual(evidence_one["archive_format"], "deterministic-zip-v1")
+        calls, evidence = self._compile(adapter, 2)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][2]["name"], "Export legacy report")
+        self.assertFalse(calls[0][2]["annotate"])
+        self.assertFalse(calls[0][2]["mine_effects"])
+        self.assertEqual(evidence["actuation_class"], "ui_only")
+        self.assertEqual(evidence["bundle_schema_version"], "2")
+        self.assertFalse(evidence["execution_authority"])
+        self.assertFalse(evidence["promotion_authority"])
+        self.assertNotIn("workflow", evidence)
+        self.assertNotIn("events", evidence)
 
-            try:
-                (source / "linked").symlink_to(source / "meta.json")
-            except OSError:
-                return
-            with self.assertRaisesRegex(ValueError, "symlink"):
-                adapter.archive_native_directory(source, root / "linked.zip")
+    def test_an_unrecognised_bundle_schema_is_rejected_not_waved_through(self) -> None:
+        adapter = load_adapter()
+        # The UI-only walk keys on field names. A schema nobody has read is a
+        # schema where the check may have silently stopped checking.
+        with self.assertRaisesRegex(ValueError, "unrecognised"):
+            self._compile(adapter, 99)
 
     def test_ui_only_bundle_check_rejects_api_binding(self) -> None:
         adapter = load_adapter()
@@ -318,14 +399,60 @@ class OpenAdaptTeachAdapterTests(unittest.TestCase):
                     "steps": [
                         {
                             "id": "step_001",
-                            "api_binding": {
-                                "method": "POST",
-                                "path": "/api/export",
-                            },
+                            "api_binding": {"method": "POST", "path": "/api/export"},
                         }
                     ],
                 }
             )
+
+
+class ArchiveTests(unittest.TestCase):
+    def _populate(self, source: Path) -> None:
+        (source / "frames").mkdir(parents=True)
+        (source / "meta.json").write_text('{"id":"x"}', encoding="utf-8")
+        (source / "events.jsonl").write_text("{}\n", encoding="utf-8")
+        (source / "frames" / "0000_before.png").write_bytes(b"png" * 1024)
+
+    def test_archive_is_byte_stable_and_rejects_symlinks(self) -> None:
+        adapter = load_adapter()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            self._populate(source)
+            first = root / "first.zip"
+            second = root / "second.zip"
+            evidence_one = adapter.archive_native_directory(source, first)
+            evidence_two = adapter.archive_native_directory(source, second)
+            self.assertEqual(first.read_bytes(), second.read_bytes())
+            self.assertEqual(evidence_one, evidence_two)
+            self.assertEqual(evidence_one["archive_format"], "deterministic-zip-v1")
+            self.assertEqual(evidence_one["size_bytes"], first.stat().st_size)
+
+            try:
+                (source / "linked").symlink_to(source / "meta.json")
+            except OSError:
+                return
+            with self.assertRaisesRegex(ValueError, "symlink"):
+                adapter.archive_native_directory(source, root / "linked.zip")
+
+    def test_archive_enforces_an_explicit_size_limit_while_writing(self) -> None:
+        adapter = load_adapter()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            self._populate(source)
+            with self.assertRaisesRegex(ValueError, "archive size limit"):
+                adapter.archive_native_directory(
+                    source, root / "capped.zip", max_bytes=16
+                )
+
+    def test_archive_never_holds_a_whole_artifact_in_memory(self) -> None:
+        adapter = load_adapter()
+        source_text = ADAPTER_PATH.read_text(encoding="utf-8")
+        # Screenshot-heavy recordings are far larger than a worker pod should
+        # buffer. Reading the archive back whole was the previous OOM path.
+        self.assertNotIn("output_path.read_bytes()", source_text)
+        self.assertIn("_STREAM_CHUNK_BYTES", source_text)
 
 
 if __name__ == "__main__":

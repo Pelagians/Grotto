@@ -55,8 +55,8 @@ See [`docs/chatgpt-desktop.md`](docs/chatgpt-desktop.md) for authentication, Sel
 
 ## OpenAdapt Teach worker
 
-The bounded Teach worker packages upstream `openadapt-flow` and a thin
-caller-owned-browser attachment adapter. It does not provide workflow
+Research spike. The bounded Teach worker packages upstream `openadapt-flow` and
+a thin caller-owned-browser attachment adapter. It does not provide workflow
 orchestration, policy, replay authority, promotion, or business-effect
 verification. See [`docs/openadapt-teach.md`](docs/openadapt-teach.md).
 

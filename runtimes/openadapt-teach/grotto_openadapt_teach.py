@@ -2,9 +2,24 @@
 """Thin OpenAdapt attachment worker for a Nereus-authorized Teach session.
 
 The adapter owns no automation semantics. It connects upstream OpenAdapt Flow
-to a caller-owned browser page, delegates recording and compilation to Flow,
+to a caller-owned browser context, delegates recording and compilation to Flow,
 and emits bounded provenance evidence. Browser composition and lifecycle stay
 with ``web-apps``; authority and artifact custody stay with Nereus.
+
+Two properties are load-bearing and are enforced here rather than documented:
+
+Passive recording
+    The adapter never navigates, clicks, types, reloads, or otherwise drives
+    the browser. Loopback CDP is exposure containment, not an authorization
+    boundary -- an attached worker holds full browser-session authority -- so
+    the restraint has to be visible in the code and checked by a policy test.
+
+Context-scoped instrumentation
+    Recording is installed on the browser *context*, not a single page, so
+    pages created after recording begins (popups, target=_blank, window.open)
+    and their frames are covered instead of silently dropped.
+
+Every private OpenAdapt dependency lives in ``openadapt_compat``.
 """
 
 from __future__ import annotations
@@ -15,12 +30,52 @@ import hashlib
 import json
 from pathlib import Path
 import stat
+import sys
 from typing import Any, Mapping
 from urllib.parse import urlparse
 import zipfile
 
+try:
+    from openadapt_compat import (
+        EVENT_BINDING_NAME,
+        CompatibilityError,
+        attach_inner_recorder,
+        build_inner_recorder,
+        emit_event,
+        flush_pending,
+        prime_settled_state,
+        probe,
+        render_init_script,
+        require_compatible,
+    )
+except ImportError:  # pragma: no cover - exercised only outside the image
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from openadapt_compat import (  # type: ignore[no-redef]
+        EVENT_BINDING_NAME,
+        CompatibilityError,
+        attach_inner_recorder,
+        build_inner_recorder,
+        emit_event,
+        flush_pending,
+        prime_settled_state,
+        probe,
+        render_init_script,
+        require_compatible,
+    )
+
 
 _LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
+
+# Bundle schema versions this adapter has actually been read against. An
+# unknown schema is not "probably fine": the UI-only walk below keys on field
+# names that a new schema may have renamed, so an unrecognised version means
+# the check silently stops checking.
+_SUPPORTED_BUNDLE_SCHEMA_VERSIONS = frozenset({2})
+
+# Streaming bounds. Screenshot-heavy recordings are large; nothing here may
+# depend on holding a whole artifact in memory.
+_STREAM_CHUNK_BYTES = 1024 * 1024
+_DEFAULT_MAX_ARCHIVE_BYTES = 8 * 1024 * 1024 * 1024
 
 
 def _required_mapping(value: Any, name: str) -> dict[str, Any]:
@@ -29,11 +84,19 @@ def _required_mapping(value: Any, name: str) -> dict[str, Any]:
     return dict(value)
 
 
+def _origin(url: str) -> str:
+    parsed = urlparse(url)
+    if not parsed.scheme or not parsed.netloc:
+        raise ValueError(f"expected an absolute origin, got {url!r}")
+    return f"{parsed.scheme}://{parsed.netloc}"
+
+
 @dataclass(frozen=True)
 class TeachAttachConfig:
     teach_session_id: str
     cdp_url: str
     start_url: str
+    allowed_origins: tuple[str, ...]
     source_dir: Path
     engine_release: dict[str, Any]
     browser_runtime_release: dict[str, Any]
@@ -70,6 +133,23 @@ class TeachAttachConfig:
         if not isinstance(source_dir, str) or not source_dir:
             raise ValueError("source_dir must be a non-empty string")
 
+        # The server decides which origins a Teach session may observe. The
+        # adapter cannot navigate, so this is an assertion about where the
+        # caller-owned browser already is, not a navigation instruction.
+        raw_origins = raw.get("allowed_origins")
+        if (
+            not isinstance(raw_origins, list)
+            or not raw_origins
+            or not all(isinstance(item, str) and item for item in raw_origins)
+        ):
+            raise ValueError("allowed_origins must be a non-empty list of origins")
+        try:
+            origins = tuple(sorted({_origin(item) for item in raw_origins}))
+        except ValueError as error:
+            raise ValueError(f"allowed_origins entry is not an origin: {error}") from error
+        if _origin(start_url) not in origins:
+            raise ValueError("start_url origin is not inside allowed_origins")
+
         def names(field: str) -> tuple[str, ...]:
             value = raw.get(field, [])
             if not isinstance(value, list) or not all(
@@ -93,6 +173,7 @@ class TeachAttachConfig:
             teach_session_id=session_id,
             cdp_url=cdp_url,
             start_url=start_url,
+            allowed_origins=origins,
             source_dir=Path(source_dir),
             engine_release=_required_mapping(raw.get("engine_release"), "engine_release"),
             browser_runtime_release=_required_mapping(
@@ -109,40 +190,97 @@ class TeachAttachConfig:
             ready_file=None if ready_file_raw is None else Path(ready_file_raw),
         )
 
+    def permits(self, url: str) -> bool:
+        try:
+            return _origin(url) in self.allowed_origins
+        except ValueError:
+            # about:blank and friends carry no origin and no observable data.
+            return False
+
 
 class AttachedInteractiveRecorder:
-    """Reuse Flow's recorder pump while replacing only browser attachment."""
+    """Attach Flow to a caller-owned browser context. Never drive it."""
 
     def __init__(self, config: TeachAttachConfig) -> None:
         self.config = config
-        from openadapt_flow.interactive_recorder import InteractiveRecorder
-
-        stop_when = (
-            None
-            if config.stop_file is None
-            else lambda: config.stop_file is not None and config.stop_file.is_file()
-        )
-        self._inner = InteractiveRecorder(
-            config.start_url,
-            config.source_dir,
-            secret_fields=config.secret_fields,
-            param_fields=config.param_fields,
-            identifier_fields=config.identifier_fields,
-            headless=False,
-            stop_when=stop_when,
-        )
+        self.instrumented_frames = 0
+        self.instrumented_pages = 0
+        self.late_pages = 0
+        self._inner = None
         self._pw = None
         self._browser = None
+        self._context = None
 
     @property
     def page(self):
-        return self._inner.page
+        return None if self._inner is None else self._inner.page
+
+    def _stop_when(self):
+        stop_file = self.config.stop_file
+        if stop_file is None:
+            return None
+        return lambda: stop_file.is_file()
+
+    def _instrument_page(self, page, *, late: bool) -> None:
+        """Install the recorder in every already-loaded frame of one page.
+
+        Future documents are covered by the context-level init script; this
+        covers documents that already exist at attach time, which the init
+        script by definition cannot reach.
+        """
+        self.instrumented_pages += 1
+        if late:
+            self.late_pages += 1
+        page.on("close", self._on_page_closed)
+        for frame in page.frames:
+            try:
+                frame.evaluate(self._init_js)
+                self.instrumented_frames += 1
+            except Exception:
+                # A frame can be mid-navigation or cross-origin-detached. The
+                # context init script still covers its next document, so a
+                # miss here is recoverable and must not abort attachment.
+                continue
+
+    def _on_page_closed(self, page=None) -> None:
+        if self._context is None or self._inner is None:
+            return
+        if not self._context.pages:
+            self._inner.done = True
+
+    def _on_new_page(self, page) -> None:
+        """A popup or window.open target appeared after recording began."""
+        if not self.config.permits(page.url):
+            # Do not close it: web-apps owns lifecycle and the human may have
+            # opened it deliberately. Record that it was not instrumented.
+            print(
+                json.dumps(
+                    {
+                        "event": "page_outside_allowed_origins",
+                        "instrumented": False,
+                    }
+                ),
+                flush=True,
+            )
+            return
+        self._instrument_page(page, late=True)
 
     def start(self) -> None:
-        from openadapt_flow.backends.playwright_backend import PlaywrightBackend
-        from openadapt_flow.interactive_recorder import _INIT_JS, _SPECIAL_KEYS
-        from openadapt_flow.recorder import Recorder
+        require_compatible()
         from playwright.sync_api import sync_playwright
+
+        self._inner = build_inner_recorder(
+            start_url=self.config.start_url,
+            source_dir=self.config.source_dir,
+            secret_fields=self.config.secret_fields,
+            param_fields=self.config.param_fields,
+            identifier_fields=self.config.identifier_fields,
+            stop_when=self._stop_when(),
+        )
+        self._init_js = render_init_script(
+            secret_fields=self.config.secret_fields,
+            identifier_fields=self.config.identifier_fields,
+        )
 
         self._pw = sync_playwright().start()
         try:
@@ -150,44 +288,39 @@ class AttachedInteractiveRecorder:
             if len(self._browser.contexts) != 1:
                 raise RuntimeError("Teach CDP browser must expose exactly one context")
             context = self._browser.contexts[0]
-            if len(context.pages) != 1:
-                raise RuntimeError("Teach CDP context must expose exactly one page")
-            page = context.pages[0]
-            self._inner.page = page
-            page.on("close", lambda _=None: setattr(self._inner, "done", True))
-            page.expose_binding(
-                "__oaflow_emit",
-                lambda source, detail: self._inner._pyq.append(detail),
+            self._context = context
+            if not context.pages:
+                raise RuntimeError("Teach CDP context exposes no page to observe")
+
+            # The adapter has no navigation authority, so the browser must
+            # already be somewhere the server authorized. Refuse rather than
+            # steer: steering is exactly the authority this worker must not
+            # hold.
+            for page in context.pages:
+                if not self.config.permits(page.url):
+                    raise RuntimeError(
+                        "caller-owned browser is outside the authorized Teach origins"
+                    )
+
+            # Context scope, not page scope: this is what makes popups and
+            # later-created pages recordable at all.
+            context.expose_binding(
+                EVENT_BINDING_NAME,
+                lambda source, detail: emit_event(self._inner, detail),
             )
-            init_js = (
-                _INIT_JS.replace(
-                    "__SECRET_NAMES__", json.dumps(sorted(self.config.secret_fields))
-                )
-                .replace(
-                    "__IDENT_NAMES__", json.dumps(sorted(self.config.identifier_fields))
-                )
-                .replace("__SPECIAL_KEYS__", json.dumps(list(_SPECIAL_KEYS)))
+            context.add_init_script(self._init_js)
+            context.on("page", self._on_new_page)
+            for page in context.pages:
+                self._instrument_page(page, late=False)
+
+            primary = context.pages[0]
+            attach_inner_recorder(
+                self._inner,
+                page=primary,
+                source_dir=self.config.source_dir,
+                start_url=self.config.start_url,
             )
-            # Future documents and the already-loaded document both need the
-            # recorder before the human interaction gate is opened.
-            page.add_init_script(init_js)
-            page.evaluate(init_js)
-            if page.url != self.config.start_url:
-                page.goto(self.config.start_url)
-                try:
-                    page.wait_for_load_state("load")
-                except Exception:
-                    pass
-            self._inner.backend = PlaywrightBackend(page)
-            self._inner.recorder = Recorder(
-                self._inner.backend,
-                self.config.source_dir,
-                app_url=self.config.start_url,
-                system_of_record_reader=self._inner._system_of_record_reader,
-                **self._inner._settle,
-            )
-            self._inner._last_frame = self._inner.recorder._wait_settled()
-            self._inner._last_structural = self._inner._structural_state()
+            prime_settled_state(self._inner)
             if self.config.ready_file is not None:
                 self.config.ready_file.parent.mkdir(parents=True, exist_ok=True)
                 self.config.ready_file.write_text("ready\n", encoding="utf-8")
@@ -197,22 +330,32 @@ class AttachedInteractiveRecorder:
 
     def run(self) -> Path:
         print(
-            f"Recording {self.config.start_url}\n"
-            "  The existing browser is instrumented; open the authorized "
-            "Selkies session to demonstrate the task."
+            json.dumps(
+                {
+                    "event": "recording_started",
+                    "teach_session_id": self.config.teach_session_id,
+                    # The start URL may carry identifiers or a session token;
+                    # its digest is enough to correlate with Nereus.
+                    "start_url_sha256": hashlib.sha256(
+                        self.config.start_url.encode("utf-8")
+                    ).hexdigest(),
+                    "instrumented_pages": self.instrumented_pages,
+                    "instrumented_frames": self.instrumented_frames,
+                }
+            ),
+            flush=True,
         )
         try:
             while not self._inner.done:
                 if not self._inner.pump():
                     break
         except KeyboardInterrupt:
-            print("\n[record] stopping")
+            print(json.dumps({"event": "recording_interrupted"}), flush=True)
         return self.finish()
 
     def finish(self) -> Path:
         try:
-            self._inner._flush_type()
-            self._inner._flush_scroll()
+            flush_pending(self._inner)
             if self._inner.recorder is None:
                 raise RuntimeError("Teach recorder was not started")
             return self._inner.recorder.finish()
@@ -273,10 +416,15 @@ def compile_native_bundle(
     )
     workflow_path = bundle_dir / "workflow.json"
     workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
-    _assert_ui_only(workflow)
     schema_version = workflow.get("schema_version")
     if not isinstance(schema_version, int):
         raise ValueError("compiled workflow has no integer schema_version")
+    if schema_version not in _SUPPORTED_BUNDLE_SCHEMA_VERSIONS:
+        raise ValueError(
+            f"compiled bundle schema version {schema_version} is unrecognised; "
+            "the UI-only structural check has not been read against it"
+        )
+    _assert_ui_only(workflow)
     return {
         "outcome": "compiled",
         "actuation_class": "ui_only",
@@ -285,17 +433,31 @@ def compile_native_bundle(
         "effect_verification_authority": False,
         "promotion_authority": False,
         "execution_authority": False,
+        # Worker evidence, never qualification. Nereus re-derives UI-only from
+        # the artifact it holds custody of before anything is admitted.
+        "ui_only_check": "structural_workflow_json_only",
     }
 
 
-def archive_native_directory(source_dir: Path, output_path: Path) -> dict[str, Any]:
-    """Create stable opaque bytes without interpreting OpenAdapt internals."""
+def archive_native_directory(
+    source_dir: Path,
+    output_path: Path,
+    *,
+    max_bytes: int = _DEFAULT_MAX_ARCHIVE_BYTES,
+) -> dict[str, Any]:
+    """Create stable opaque bytes without interpreting OpenAdapt internals.
+
+    Streamed in both directions: screenshot-heavy recordings routinely exceed
+    what a worker pod should hold in memory, and the size ceiling is checked
+    while writing rather than after.
+    """
     if not source_dir.is_dir():
         raise ValueError("native artifact source directory does not exist")
     files = sorted(path for path in source_dir.rglob("*") if path.is_file())
     if not files:
         raise ValueError("native artifact directory is empty")
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    written = 0
     with zipfile.ZipFile(output_path, "w", compression=zipfile.ZIP_STORED) as archive:
         for path in files:
             if path.is_symlink():
@@ -304,11 +466,29 @@ def archive_native_directory(source_dir: Path, output_path: Path) -> dict[str, A
             info = zipfile.ZipInfo(relative, date_time=(1980, 1, 1, 0, 0, 0))
             info.create_system = 3
             info.external_attr = (stat.S_IFREG | 0o600) << 16
-            archive.writestr(info, path.read_bytes())
-    content = output_path.read_bytes()
+            with path.open("rb") as source, archive.open(info, "w") as sink:
+                while True:
+                    chunk = source.read(_STREAM_CHUNK_BYTES)
+                    if not chunk:
+                        break
+                    written += len(chunk)
+                    if written > max_bytes:
+                        raise ValueError(
+                            "native artifact directory exceeds the archive size limit"
+                        )
+                    sink.write(chunk)
+    digest = hashlib.sha256()
+    size = 0
+    with output_path.open("rb") as handle:
+        while True:
+            chunk = handle.read(_STREAM_CHUNK_BYTES)
+            if not chunk:
+                break
+            digest.update(chunk)
+            size += len(chunk)
     return {
-        "sha256": hashlib.sha256(content).hexdigest(),
-        "size_bytes": len(content),
+        "sha256": digest.hexdigest(),
+        "size_bytes": size,
         "media_type": "application/zip",
         "archive_format": "deterministic-zip-v1",
     }
@@ -330,6 +510,12 @@ def main(argv: list[str] | None = None) -> int:
     archive_command = subparsers.add_parser("archive")
     archive_command.add_argument("--source", type=Path, required=True)
     archive_command.add_argument("--output", type=Path, required=True)
+    archive_command.add_argument(
+        "--max-bytes", type=int, default=_DEFAULT_MAX_ARCHIVE_BYTES
+    )
+    subparsers.add_parser(
+        "canary", help="report the installed OpenAdapt private-API compatibility"
+    )
 
     args = parser.parse_args(argv)
     if args.command == "record":
@@ -344,10 +530,18 @@ def main(argv: list[str] | None = None) -> int:
                 sort_keys=True,
             )
         )
+    elif args.command == "canary":
+        report = probe()
+        print(json.dumps(report.as_json(), sort_keys=True, indent=2))
+        if not report.ok:
+            raise CompatibilityError("OpenAdapt private-API canary failed")
     else:
         print(
             json.dumps(
-                archive_native_directory(args.source, args.output), sort_keys=True
+                archive_native_directory(
+                    args.source, args.output, max_bytes=args.max_bytes
+                ),
+                sort_keys=True,
             )
         )
     return 0

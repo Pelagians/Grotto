@@ -197,6 +197,21 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
           provenance: ${{ github.event_name != 'pull_request' }}
           sbom: ${{ github.event_name != 'pull_request' }}
+          load: ${{ github.event_name == 'pull_request' }}
+
+      # The Containerfile already fails the build if the pinned OpenAdapt
+      # release no longer exposes the private surface the adapter composes
+      # around. This runs the same canary against the finished image so the
+      # report is visible in the log rather than only in a build failure.
+      - name: Smoke test worker runtime
+        if: matrix.kind == 'worker' && github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="$(printf '%s' '${{ steps.meta.outputs.tags }}' | head -n1)"
+          docker run --rm --network none "${tag}" canary
+          docker run --rm --network none "${tag}" --help >/dev/null
+          test "$(docker run --rm --network none --entrypoint id "${tag}" -u)" = 10001
 
       - name: Smoke test desktop runtime
         if: matrix.kind == 'desktop' && github.event_name == 'pull_request'

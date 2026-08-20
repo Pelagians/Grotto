@@ -1,9 +1,7 @@
 # syntax=docker/dockerfile:1.7
-FROM python:3.12.11-slim-bookworm
-
-ARG PLAYWRIGHT_VERSION=1.60.0
-ARG OPENADAPT_FLOW_WHEEL_URL="https://files.pythonhosted.org/packages/a7/20/dd8ccd56afb0c3c369f13adb85695acf4f0495a0a61553f576ec0977ab19/openadapt_flow-1.31.0-py3-none-any.whl"
-ARG OPENADAPT_FLOW_WHEEL_SHA256="81133db1528ad1bb1f26e3fcb6aea61b0651db6d905cf2e4943e8383c1f3d29c"
+# Base pinned by digest, not tag: Nereus freezes an exact OpenAdaptEngineRelease
+# at admission time, and a floating tag makes that freeze one layer deep.
+FROM python:3.12.11-slim-bookworm@sha256:519591d6871b7bc437060736b9f7456b8731f1499a57e22e6c285135ae657bf7
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -17,6 +15,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     OPENADAPT_CLOUD_URL= \
     HOME=/tmp/openadapt-home
 
+COPY runtimes/openadapt-teach/requirements.lock.txt /tmp/requirements.lock.txt
+
 RUN set -eux; \
     apt-get update; \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
@@ -24,11 +24,12 @@ RUN set -eux; \
       libglib2.0-0 \
       libxcb1; \
     rm -rf /var/lib/apt/lists/*; \
-    python -c "import hashlib, pathlib, urllib.request; p=pathlib.Path('/tmp/openadapt_flow-1.31.0-py3-none-any.whl'); urllib.request.urlretrieve('${OPENADAPT_FLOW_WHEEL_URL}', p); actual=hashlib.sha256(p.read_bytes()).hexdigest(); assert actual == '${OPENADAPT_FLOW_WHEEL_SHA256}', (actual, '${OPENADAPT_FLOW_WHEEL_SHA256}')"; \
-    python -m pip install --no-cache-dir \
-      /tmp/openadapt_flow-1.31.0-py3-none-any.whl \
-      "playwright==${PLAYWRIGHT_VERSION}"; \
-    rm /tmp/openadapt_flow-1.31.0-py3-none-any.whl; \
+    # --require-hashes forces every distribution to be pinned; --no-deps means
+    # pip resolves nothing, so an incomplete lock fails the build instead of
+    # silently pulling a floating transitive dependency.
+    python -m pip install --no-cache-dir --require-hashes --no-deps \
+      -r /tmp/requirements.lock.txt; \
+    rm /tmp/requirements.lock.txt; \
     useradd --create-home --uid 10001 --shell /usr/sbin/nologin teach-worker; \
     install -d -o teach-worker -g teach-worker \
       /work/source /work/decisions /work/bundle /tmp/openadapt-home
@@ -36,6 +37,18 @@ RUN set -eux; \
 COPY --chmod=0755 \
   runtimes/openadapt-teach/grotto_openadapt_teach.py \
   /usr/local/bin/grotto-openadapt-teach
+# The single module allowed to touch OpenAdapt private symbols. Kept importable
+# beside the entrypoint so the compatibility canary runs in the shipped image.
+COPY --chmod=0644 \
+  runtimes/openadapt-teach/openadapt_compat.py \
+  /usr/local/bin/openadapt_compat.py
+
+ENV PYTHONPATH=/usr/local/bin
+
+# Fail the build if the pinned Flow release no longer exposes the private
+# surface this adapter composes around. Without this, an upstream rename
+# degrades to an empty event stream at record time rather than a build error.
+RUN python /usr/local/bin/grotto-openadapt-teach canary
 
 USER 10001:10001
 WORKDIR /work
