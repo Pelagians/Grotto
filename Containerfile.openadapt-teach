@@ -18,6 +18,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     HOME=/tmp/openadapt-home
 
 RUN set -eux; \
+    apt-get update; \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      libgl1 \
+      libglib2.0-0 \
+      libxcb1; \
+    rm -rf /var/lib/apt/lists/*; \
     python -c "import hashlib, pathlib, urllib.request; p=pathlib.Path('/tmp/openadapt_flow-1.31.0-py3-none-any.whl'); urllib.request.urlretrieve('${OPENADAPT_FLOW_WHEEL_URL}', p); actual=hashlib.sha256(p.read_bytes()).hexdigest(); assert actual == '${OPENADAPT_FLOW_WHEEL_SHA256}', (actual, '${OPENADAPT_FLOW_WHEEL_SHA256}')"; \
     python -m pip install --no-cache-dir \
       /tmp/openadapt_flow-1.31.0-py3-none-any.whl \
