@@ -43,7 +43,12 @@ Three things carry it:
    adapter asserts every existing page is already inside it and refuses
    otherwise; it cannot navigate somewhere authorized, only decline. Pages that
    appear later outside the allowlist are left alone and logged as
-   uninstrumented.
+   uninstrumented. Every binding callback also validates its current source
+   frame URL, or page URL when there is no frame, before accepting the event.
+   This covers later top-level and frame navigation, existing and newly created
+   cross-origin iframes, and `about:blank` popups that later transition to an
+   allowed or disallowed origin. Rejections contain only a bounded count and
+   source kind; the URL and event detail are never logged.
 3. **The browser is disposable.** Real containment comes from the ephemeral
    `web-apps` Teach browser profile, not from this adapter. See
    `web-apps/docs/openadapt-teach-spike.md`.
@@ -113,7 +118,8 @@ Instrumentation is installed on the `BrowserContext`, not on one `Page`:
 - `context.add_init_script` covers future documents in every page, including
   child frames as they attach;
 - `context.expose_binding` gives every page in the context, including popups,
-  a route into the same recorder queue;
+  a guarded route into the same recorder queue; its callback checks the source
+  document's current origin on every event;
 - `context.on("page")` instruments pages created after recording begins;
 - at attach, every already-loaded frame of every existing page is injected
   directly, because an init script by definition cannot reach a document that

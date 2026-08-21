@@ -206,6 +206,7 @@ class AttachedInteractiveRecorder:
         self.instrumented_frames = 0
         self.instrumented_pages = 0
         self.late_pages = 0
+        self.rejected_events = 0
         self._inner = None
         self._pw = None
         self._browser = None
@@ -265,6 +266,35 @@ class AttachedInteractiveRecorder:
             return
         self._instrument_page(page, late=True)
 
+    def _on_event(self, source, detail) -> None:
+        """Accept an event only if its current source document is authorized.
+
+        A page may navigate after attachment, and an allowed page may contain
+        a cross-origin frame. The binding source is therefore authoritative at
+        event intake. Prefer its frame: falling back to the allowed top-level
+        page would launder an event emitted by a disallowed child document.
+        """
+        frame = getattr(source, "frame", None)
+        page = getattr(source, "page", None)
+        source_object = frame if frame is not None else page
+        source_kind = "frame" if frame is not None else "page"
+        source_url = getattr(source_object, "url", None)
+        if not isinstance(source_url, str) or not self.config.permits(source_url):
+            self.rejected_events += 1
+            print(
+                json.dumps(
+                    {
+                        "event": "event_outside_allowed_origins",
+                        "accepted": False,
+                        "source_kind": source_kind,
+                        "rejected_events": self.rejected_events,
+                    }
+                ),
+                flush=True,
+            )
+            return
+        emit_event(self._inner, detail)
+
     def start(self) -> None:
         require_compatible()
         from playwright.sync_api import sync_playwright
@@ -306,7 +336,7 @@ class AttachedInteractiveRecorder:
             # later-created pages recordable at all.
             context.expose_binding(
                 EVENT_BINDING_NAME,
-                lambda source, detail: emit_event(self._inner, detail),
+                self._on_event,
             )
             context.add_init_script(self._init_js)
             context.on("page", self._on_new_page)

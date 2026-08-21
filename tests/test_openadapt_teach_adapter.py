@@ -27,8 +27,15 @@ def load_adapter():
 
 
 class FakeFrame:
-    def __init__(self, name: str, *, raises: bool = False) -> None:
+    def __init__(
+        self,
+        name: str,
+        *,
+        url: str = "http://target:8000/frame",
+        raises: bool = False,
+    ) -> None:
         self.name = name
+        self.url = url
         self.raises = raises
         self.evaluated: list[str] = []
 
@@ -283,9 +290,103 @@ class AttachmentTests(unittest.TestCase):
             # A context-scoped binding is shared by every page, so a popup can
             # emit into the same queue as the primary page.
             context.binding_callback(
-                types.SimpleNamespace(page=popup), {"type": "click", "id": "popup-confirm"}
+                types.SimpleNamespace(page=popup),
+                {"type": "click", "id": "popup-confirm"},
             )
             self.assertEqual(inner.events, [{"type": "click", "id": "popup-confirm"}])
+
+    def test_later_top_level_navigation_is_checked_at_event_intake(self) -> None:
+        adapter = load_adapter()
+        page = FakePage()
+        context = FakeContext([page])
+        with tempfile.TemporaryDirectory() as tmp:
+            recorder, inner, _browser, _pw = self._start(adapter, context, tmp)
+            source = types.SimpleNamespace(page=page)
+
+            page.url = "http://target:8000/later"
+            context.binding_callback(source, {"id": "allowed-navigation"})
+            page.url = "https://outside.example/secret"
+            context.binding_callback(source, {"id": "rejected-navigation"})
+
+            self.assertEqual(inner.events, [{"id": "allowed-navigation"}])
+            self.assertEqual(recorder.rejected_events, 1)
+
+    def test_existing_cross_origin_iframe_cannot_emit_through_allowed_page(self) -> None:
+        adapter = load_adapter()
+        allowed = FakeFrame("allowed")
+        foreign = FakeFrame("foreign", url="https://outside.example/frame")
+        page = FakePage(frames=[allowed, foreign])
+        context = FakeContext([page])
+        with tempfile.TemporaryDirectory() as tmp:
+            recorder, inner, _browser, _pw = self._start(adapter, context, tmp)
+
+            context.binding_callback(
+                types.SimpleNamespace(page=page, frame=allowed), {"id": "allowed-frame"}
+            )
+            context.binding_callback(
+                types.SimpleNamespace(page=page, frame=foreign), {"id": "foreign-frame"}
+            )
+
+            self.assertEqual(inner.events, [{"id": "allowed-frame"}])
+            self.assertEqual(recorder.rejected_events, 1)
+
+    def test_new_iframe_navigation_is_checked_for_every_event(self) -> None:
+        adapter = load_adapter()
+        page = FakePage()
+        context = FakeContext([page])
+        with tempfile.TemporaryDirectory() as tmp:
+            recorder, inner, _browser, _pw = self._start(adapter, context, tmp)
+            frame = FakeFrame("new", url="http://target:8000/created")
+            source = types.SimpleNamespace(page=page, frame=frame)
+
+            context.binding_callback(source, {"id": "allowed-created-frame"})
+            frame.url = "https://outside.example/navigated"
+            context.binding_callback(source, {"id": "rejected-created-frame"})
+
+            self.assertEqual(inner.events, [{"id": "allowed-created-frame"}])
+            self.assertEqual(recorder.rejected_events, 1)
+
+    def test_about_blank_popup_transitions_are_checked_per_event(self) -> None:
+        adapter = load_adapter()
+        context = FakeContext([FakePage()])
+        with tempfile.TemporaryDirectory() as tmp:
+            recorder, inner, _browser, _pw = self._start(adapter, context, tmp)
+            popup = FakePage(url="about:blank")
+            context.open_popup(popup)
+            source = types.SimpleNamespace(page=popup)
+
+            context.binding_callback(source, {"id": "opaque-popup"})
+            popup.url = "http://target:8000/popup"
+            context.binding_callback(source, {"id": "allowed-popup"})
+            popup.url = "https://outside.example/popup"
+            context.binding_callback(source, {"id": "rejected-popup"})
+
+            self.assertEqual(inner.events, [{"id": "allowed-popup"}])
+            self.assertEqual(recorder.rejected_events, 2)
+
+    def test_rejection_metadata_does_not_echo_url_or_event_detail(self) -> None:
+        adapter = load_adapter()
+        page = FakePage()
+        context = FakeContext([page])
+        with tempfile.TemporaryDirectory() as tmp:
+            recorder, inner, _browser, _pw = self._start(adapter, context, tmp)
+            source = types.SimpleNamespace(
+                page=FakePage(url="https://outside.example/token=secret")
+            )
+            detail = {"value": "credential-secret"}
+
+            from contextlib import redirect_stdout
+            from io import StringIO
+
+            output = StringIO()
+            with redirect_stdout(output):
+                context.binding_callback(source, detail)
+
+            logged = output.getvalue()
+            self.assertNotIn("outside.example", logged)
+            self.assertNotIn("credential-secret", logged)
+            self.assertEqual(inner.events, [])
+            self.assertEqual(recorder.rejected_events, 1)
 
     def test_a_page_outside_the_authorized_origins_is_not_instrumented(self) -> None:
         adapter = load_adapter()
