@@ -76,6 +76,10 @@ _SUPPORTED_BUNDLE_SCHEMA_VERSIONS = frozenset({2})
 # depend on holding a whole artifact in memory.
 _STREAM_CHUNK_BYTES = 1024 * 1024
 _DEFAULT_MAX_ARCHIVE_BYTES = 8 * 1024 * 1024 * 1024
+_INSTRUMENTATION_READY_FLAG = "__grottoOpenAdaptTeachReady"
+_INSTRUMENTATION_READY_CHECK = (
+    f"Boolean(globalThis.{_INSTRUMENTATION_READY_FLAG})"
+)
 
 
 def _required_mapping(value: Any, name: str) -> dict[str, Any]:
@@ -235,6 +239,11 @@ class AttachedInteractiveRecorder:
         page.on("close", self._on_page_closed)
         for frame in page.frames:
             try:
+                # The context init script may already have covered a newly
+                # loaded document. Avoid installing Flow's listeners twice,
+                # while still directly covering documents that predate attach.
+                if frame.evaluate(_INSTRUMENTATION_READY_CHECK):
+                    continue
                 frame.evaluate(self._init_js)
                 self.instrumented_frames += 1
             except Exception:
@@ -251,9 +260,24 @@ class AttachedInteractiveRecorder:
 
     def _on_new_page(self, page) -> None:
         """A popup or window.open target appeared after recording began."""
-        if not self.config.permits(page.url):
+        instrumented = False
+
+        def instrument_after_allowed_load(*_args) -> None:
+            nonlocal instrumented
+            if not instrumented and self.config.permits(page.url):
+                instrumented = True
+                self._instrument_page(page, late=True)
+
+        # Chromium commonly announces a popup while it is still about:blank.
+        # Keep watching that caller-owned page until its first authorized
+        # document loads; rejecting the opaque transition must not permanently
+        # prevent observation of the allowed destination.
+        page.on("load", instrument_after_allowed_load)
+        instrument_after_allowed_load()
+        if not instrumented:
             # Do not close it: web-apps owns lifecycle and the human may have
-            # opened it deliberately. Record that it was not instrumented.
+            # opened it deliberately. Record its current state without logging
+            # the URL, then let the load callback re-evaluate later transitions.
             print(
                 json.dumps(
                     {
@@ -263,8 +287,6 @@ class AttachedInteractiveRecorder:
                 ),
                 flush=True,
             )
-            return
-        self._instrument_page(page, late=True)
 
     def _on_event(self, source, detail) -> None:
         """Accept an event only if its current source document is authorized.
@@ -312,9 +334,13 @@ class AttachedInteractiveRecorder:
             identifier_fields=self.config.identifier_fields,
             stop_when=self._stop_when(),
         )
-        self._init_js = render_init_script(
+        flow_init_js = render_init_script(
             secret_fields=self.config.secret_fields,
             identifier_fields=self.config.identifier_fields,
+        )
+        self._init_js = (
+            f"{flow_init_js}\n"
+            f"globalThis.{_INSTRUMENTATION_READY_FLAG} = true;"
         )
 
         self._pw = sync_playwright().start()

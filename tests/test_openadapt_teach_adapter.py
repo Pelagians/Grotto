@@ -38,11 +38,17 @@ class FakeFrame:
         self.url = url
         self.raises = raises
         self.evaluated: list[str] = []
+        self.ready = False
 
-    def evaluate(self, script) -> None:
+    def evaluate(self, script):
         if self.raises:
             raise RuntimeError("frame detached")
         self.evaluated.append(script)
+        if script.startswith("Boolean(globalThis.__grottoOpenAdaptTeachReady"):
+            return self.ready
+        if "globalThis.__grottoOpenAdaptTeachReady = true" in script:
+            self.ready = True
+        return None
 
 
 class FakePage:
@@ -53,6 +59,11 @@ class FakePage:
 
     def on(self, event, callback) -> None:
         self.handlers[event] = callback
+
+    def navigate(self, url: str) -> None:
+        self.url = url
+        self.frames[0].url = url
+        self.handlers["load"]()
 
 
 class FakeContext:
@@ -251,14 +262,18 @@ class AttachmentTests(unittest.TestCase):
             # Context scope is the whole point: page scope silently drops
             # popups and every page created after recording begins.
             self.assertEqual(context.bindings, [adapter.EVENT_BINDING_NAME])
-            self.assertEqual(context.init_scripts, ["INIT_JS"])
+            self.assertEqual(len(context.init_scripts), 1)
+            self.assertIn("INIT_JS", context.init_scripts[0])
+            self.assertIn("__grottoOpenAdaptTeachReady", context.init_scripts[0])
             self.assertIn("page", context.handlers)
             self.assertEqual(browser.close_calls, 0)
             self.assertEqual(recorder.instrumented_pages, 1)
             # Both already-attached frames, which the init script cannot reach.
             self.assertEqual(recorder.instrumented_frames, 2)
             for frame in page.frames:
-                self.assertEqual(frame.evaluated, ["INIT_JS"])
+                self.assertEqual(len(frame.evaluated), 2)
+                self.assertIn("__grottoOpenAdaptTeachReady", frame.evaluated[0])
+                self.assertIn("INIT_JS", frame.evaluated[1])
             del playwright
 
     def test_pages_created_after_recording_begins_are_instrumented(self) -> None:
@@ -278,7 +293,29 @@ class AttachmentTests(unittest.TestCase):
             self.assertEqual(recorder.late_pages, 1)
             self.assertEqual(recorder.instrumented_pages, 2)
             for frame in popup.frames:
-                self.assertEqual(frame.evaluated, ["INIT_JS"])
+                self.assertEqual(len(frame.evaluated), 2)
+                self.assertIn("__grottoOpenAdaptTeachReady", frame.evaluated[0])
+                self.assertIn("INIT_JS", frame.evaluated[1])
+
+    def test_about_blank_popup_is_instrumented_after_allowed_load(self) -> None:
+        adapter = load_adapter()
+        context = FakeContext([FakePage()])
+        with tempfile.TemporaryDirectory() as tmp:
+            recorder, _inner, _browser, _pw = self._start(adapter, context, tmp)
+            popup = FakePage(
+                url="about:blank",
+                frames=[FakeFrame("popup-main", url="about:blank")],
+            )
+
+            context.open_popup(popup)
+            self.assertEqual(recorder.late_pages, 0)
+            popup.navigate("https://outside.example/popup")
+            self.assertEqual(recorder.late_pages, 0)
+            popup.navigate("http://target:8000/popup.html")
+
+            self.assertEqual(recorder.late_pages, 1)
+            self.assertEqual(recorder.instrumented_pages, 2)
+            self.assertTrue(popup.frames[0].ready)
 
     def test_popup_events_reach_the_recorder_through_the_context_binding(self) -> None:
         adapter = load_adapter()
