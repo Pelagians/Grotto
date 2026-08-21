@@ -80,6 +80,34 @@ _INSTRUMENTATION_READY_FLAG = "__grottoOpenAdaptTeachReady"
 _INSTRUMENTATION_READY_CHECK = (
     f"Boolean(globalThis.{_INSTRUMENTATION_READY_FLAG})"
 )
+_FLOW_WINDOW_GUARD = "if (window.__oaflowInstalled) return;"
+_FLOW_WINDOW_MARK = "window.__oaflowInstalled = true;"
+
+
+def _scope_flow_install_guard_to_document(script: str) -> str:
+    """Re-arm Flow when a popup replaces its initial about:blank document.
+
+    Chromium can preserve custom Window state across that transition even
+    though the old document (and its event listeners) is gone.  Flow's window
+    guard then reports "installed" in the new document and silently skips the
+    listeners.  A document-scoped guard preserves the intended idempotence
+    within one document and re-arms after navigation.
+
+    These exact-count checks make an upstream template change fail closed at
+    startup instead of quietly disabling popup recording again.
+    """
+    if (
+        script.count(_FLOW_WINDOW_GUARD) != 1
+        or script.count(_FLOW_WINDOW_MARK) != 1
+    ):
+        raise CompatibilityError("Flow instrumentation install guard changed")
+    return script.replace(
+        _FLOW_WINDOW_GUARD,
+        "if (document.__oaflowInstalled) return;",
+    ).replace(
+        _FLOW_WINDOW_MARK,
+        "document.__oaflowInstalled = true;",
+    )
 
 
 def _required_mapping(value: Any, name: str) -> dict[str, Any]:
@@ -337,9 +365,11 @@ class AttachedInteractiveRecorder:
             identifier_fields=self.config.identifier_fields,
             stop_when=self._stop_when(),
         )
-        flow_init_js = render_init_script(
-            secret_fields=self.config.secret_fields,
-            identifier_fields=self.config.identifier_fields,
+        flow_init_js = _scope_flow_install_guard_to_document(
+            render_init_script(
+                secret_fields=self.config.secret_fields,
+                identifier_fields=self.config.identifier_fields,
+            )
         )
         self._init_js = (
             f"{flow_init_js}\n"

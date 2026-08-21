@@ -161,7 +161,10 @@ def install_compat_fakes(adapter, inner: FakeInnerRecorder, source_dir: Path):
     """
     adapter.require_compatible = lambda: None
     adapter.build_inner_recorder = lambda **_kwargs: inner
-    adapter.render_init_script = lambda **_kwargs: "INIT_JS"
+    adapter.render_init_script = lambda **_kwargs: (
+        "if (window.__oaflowInstalled) return; "
+        "window.__oaflowInstalled = true; INIT_JS"
+    )
     adapter.emit_event = lambda target, detail: target.events.append(detail)
 
     def attach(target, *, page, source_dir, start_url):
@@ -265,6 +268,8 @@ class AttachmentTests(unittest.TestCase):
             self.assertEqual(len(context.init_scripts), 1)
             self.assertIn("INIT_JS", context.init_scripts[0])
             self.assertIn("__grottoOpenAdaptTeachReady", context.init_scripts[0])
+            self.assertIn("document.__oaflowInstalled", context.init_scripts[0])
+            self.assertNotIn("window.__oaflowInstalled", context.init_scripts[0])
             self.assertIn("page", context.handlers)
             self.assertEqual(browser.close_calls, 0)
             self.assertEqual(recorder.instrumented_pages, 1)
