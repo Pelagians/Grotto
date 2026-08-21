@@ -288,7 +288,7 @@ class AttachedInteractiveRecorder:
                 flush=True,
             )
 
-    def _on_event(self, source, detail) -> None:
+    def _on_event(self, source, detail) -> bool:
         """Accept an event only if its current source document is authorized.
 
         A page may navigate after attachment, and an allowed page may contain
@@ -319,8 +319,9 @@ class AttachedInteractiveRecorder:
                 ),
                 flush=True,
             )
-            return
+            return False
         emit_event(self._inner, detail)
+        return True
 
     def start(self) -> None:
         require_compatible()

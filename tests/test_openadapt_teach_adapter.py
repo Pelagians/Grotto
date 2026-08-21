@@ -327,10 +327,11 @@ class AttachmentTests(unittest.TestCase):
             # A context-scoped binding is shared by every page, so a popup can
             # emit into the same queue as the primary page. Playwright supplies
             # this source metadata as a mapping.
-            context.binding_callback(
+            accepted = context.binding_callback(
                 {"page": popup, "frame": popup.frames[0]},
                 {"type": "click", "id": "popup-confirm"},
             )
+            self.assertTrue(accepted)
             self.assertEqual(inner.events, [{"type": "click", "id": "popup-confirm"}])
 
     def test_later_top_level_navigation_is_checked_at_event_intake(self) -> None:
@@ -342,9 +343,13 @@ class AttachmentTests(unittest.TestCase):
             source = types.SimpleNamespace(page=page)
 
             page.url = "http://target:8000/later"
-            context.binding_callback(source, {"id": "allowed-navigation"})
+            self.assertTrue(
+                context.binding_callback(source, {"id": "allowed-navigation"})
+            )
             page.url = "https://outside.example/secret"
-            context.binding_callback(source, {"id": "rejected-navigation"})
+            self.assertFalse(
+                context.binding_callback(source, {"id": "rejected-navigation"})
+            )
 
             self.assertEqual(inner.events, [{"id": "allowed-navigation"}])
             self.assertEqual(recorder.rejected_events, 1)
