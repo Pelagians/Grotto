@@ -274,8 +274,13 @@ class AttachedInteractiveRecorder:
         event intake. Prefer its frame: falling back to the allowed top-level
         page would launder an event emitted by a disallowed child document.
         """
-        frame = getattr(source, "frame", None)
-        page = getattr(source, "page", None)
+        def source_value(name: str):
+            if isinstance(source, Mapping):
+                return source.get(name)
+            return getattr(source, name, None)
+
+        frame = source_value("frame")
+        page = source_value("page")
         source_object = frame if frame is not None else page
         source_kind = "frame" if frame is not None else "page"
         source_url = getattr(source_object, "url", None)

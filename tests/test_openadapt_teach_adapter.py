@@ -288,9 +288,10 @@ class AttachmentTests(unittest.TestCase):
             popup = FakePage(url="http://target:8000/popup.html")
             context.open_popup(popup)
             # A context-scoped binding is shared by every page, so a popup can
-            # emit into the same queue as the primary page.
+            # emit into the same queue as the primary page. Playwright supplies
+            # this source metadata as a mapping.
             context.binding_callback(
-                types.SimpleNamespace(page=popup),
+                {"page": popup, "frame": popup.frames[0]},
                 {"type": "click", "id": "popup-confirm"},
             )
             self.assertEqual(inner.events, [{"type": "click", "id": "popup-confirm"}])
