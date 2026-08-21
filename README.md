@@ -10,6 +10,7 @@ It packages upstream applications with reproducible builds, practical dependenci
 | --- | --- |
 | `ghcr.io/pelagians/grotto-openclaw:latest` | OpenClaw gateway with a broad baseline toolset and persistent user-installed tools |
 | `ghcr.io/pelagians/grotto-chatgpt-desktop:latest` | Selkies-streamed ChatGPT and Codex desktop workbench |
+| `ghcr.io/pelagians/grotto-openadapt-teach:latest` | UI-only OpenAdapt Teach worker that attaches to a caller-owned browser |
 
 See [`docs/image-matrix.md`](docs/image-matrix.md) for the runtime boundaries of both images.
 
@@ -51,6 +52,13 @@ podman build \
 ```
 
 See [`docs/chatgpt-desktop.md`](docs/chatgpt-desktop.md) for authentication, Selkies, storage, GPU, and security details.
+
+## OpenAdapt Teach worker
+
+Research spike. The bounded Teach worker packages upstream `openadapt-flow` and
+a thin caller-owned-browser attachment adapter. It does not provide workflow
+orchestration, policy, replay authority, promotion, or business-effect
+verification. See [`docs/openadapt-teach.md`](docs/openadapt-teach.md).
 
 ## Release process
 

@@ -92,6 +92,12 @@ jobs:
             file: ./Containerfile.chatgpt-desktop
             wrapper_ref: 7d4049b68b17bc663b8a934326fefcaca99e8ceb
             codex_cli_version: 0.144.5
+          - name: grotto-openadapt-teach
+            kind: worker
+            image: ghcr.io/pelagians/grotto-openadapt-teach
+            title: Grotto OpenAdapt Teach worker
+            description: UI-only OpenAdapt recording and compilation worker for caller-owned browser runtimes
+            file: ./Containerfile.openadapt-teach
 
     steps:
       - name: Check out repository
@@ -176,6 +182,36 @@ jobs:
           cache-to: type=gha,mode=min,scope=${{ matrix.name }}
           provenance: ${{ github.event_name != 'pull_request' }}
           sbom: ${{ github.event_name != 'pull_request' }}
+
+      - name: Build and publish worker image
+        if: matrix.kind == 'worker'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.file }}
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+          provenance: ${{ github.event_name != 'pull_request' }}
+          sbom: ${{ github.event_name != 'pull_request' }}
+          load: ${{ github.event_name == 'pull_request' }}
+
+      # The Containerfile already fails the build if the pinned OpenAdapt
+      # release no longer exposes the private surface the adapter composes
+      # around. This runs the same canary against the finished image so the
+      # report is visible in the log rather than only in a build failure.
+      - name: Smoke test worker runtime
+        if: matrix.kind == 'worker' && github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="$(printf '%s' '${{ steps.meta.outputs.tags }}' | head -n1)"
+          docker run --rm --network none "${tag}" canary
+          docker run --rm --network none "${tag}" --help >/dev/null
+          test "$(docker run --rm --network none --entrypoint id "${tag}" -u)" = 10001
 
       - name: Smoke test desktop runtime
         if: matrix.kind == 'desktop' && github.event_name == 'pull_request'

@@ -1,11 +1,22 @@
 # Grotto Image Matrix
 
-Grotto currently publishes two OCI images.
+Grotto currently publishes three OCI images.
 
 | Image | Type | Purpose | Persistent paths | Ports |
 | --- | --- | --- | --- | --- |
 | `ghcr.io/pelagians/grotto-openclaw:latest` | Agent application | General OpenClaw gateway with curated baseline tools and a persistent user toolchain | `/config`, `/workspace`, `/tools`, `/cache` | `18789` |
 | `ghcr.io/pelagians/grotto-chatgpt-desktop:latest` | Interactive workbench | Selkies-streamed ChatGPT Desktop and Codex workspace | `/config`, `/workspace`, `/tools`, `/cache` | `3001` |
+| `ghcr.io/pelagians/grotto-openadapt-teach:latest` | Ephemeral worker | Attach upstream OpenAdapt Flow to a `web-apps` browser for governed Teach recording and compilation | None; `/work` is ephemeral staging | None |
+
+## Grotto OpenAdapt Teach
+
+**Research spike.** The attachment seam is being proven or rejected; it is not
+yet a production runtime contract.
+
+The image provides the pinned OpenAdapt Flow browser engine and a thin
+context-scoped loopback-CDP attachment adapter. It intentionally provides no browser, hosted
+control plane, MCP server, connector credential, replay authority, or durable
+artifact store. See [`openadapt-teach.md`](openadapt-teach.md).
 
 ## Grotto OpenClaw
 

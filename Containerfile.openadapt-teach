@@ -1,0 +1,57 @@
+# syntax=docker/dockerfile:1.7
+# Base pinned by digest, not tag: Nereus freezes an exact OpenAdaptEngineRelease
+# at admission time, and a floating tag makes that freeze one layer deep.
+FROM python:3.12.11-slim-bookworm@sha256:519591d6871b7bc437060736b9f7456b8731f1499a57e22e6c285135ae657bf7
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
+    OPENADAPT_FLOW_NO_AUTO_INSTALL=1 \
+    OPENADAPT_FLOW_VLM_URL= \
+    OPENADAPT_FLOW_VLM_TOKEN= \
+    OPENADAPT_FLOW_API_KEY= \
+    OPENADAPT_API_KEY= \
+    OPENADAPT_CLOUD_URL= \
+    HOME=/tmp/openadapt-home
+
+COPY runtimes/openadapt-teach/requirements.lock.txt /tmp/requirements.lock.txt
+
+RUN set -eux; \
+    apt-get update; \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      libgl1 \
+      libglib2.0-0 \
+      libxcb1; \
+    rm -rf /var/lib/apt/lists/*; \
+    # --require-hashes forces every distribution to be pinned; --no-deps means
+    # pip resolves nothing, so an incomplete lock fails the build instead of
+    # silently pulling a floating transitive dependency.
+    python -m pip install --no-cache-dir --require-hashes --no-deps \
+      -r /tmp/requirements.lock.txt; \
+    rm /tmp/requirements.lock.txt; \
+    useradd --create-home --uid 10001 --shell /usr/sbin/nologin teach-worker; \
+    install -d -o teach-worker -g teach-worker \
+      /work/source /work/decisions /work/bundle /tmp/openadapt-home
+
+COPY --chmod=0755 \
+  runtimes/openadapt-teach/grotto_openadapt_teach.py \
+  /usr/local/bin/grotto-openadapt-teach
+# The single module allowed to touch OpenAdapt private symbols. Kept importable
+# beside the entrypoint so the compatibility canary runs in the shipped image.
+COPY --chmod=0644 \
+  runtimes/openadapt-teach/openadapt_compat.py \
+  /usr/local/bin/openadapt_compat.py
+
+ENV PYTHONPATH=/usr/local/bin
+
+# Fail the build if the pinned Flow release no longer exposes the private
+# surface this adapter composes around. Without this, an upstream rename
+# degrades to an empty event stream at record time rather than a build error.
+RUN python /usr/local/bin/grotto-openadapt-teach canary
+
+USER 10001:10001
+WORKDIR /work
+
+ENTRYPOINT ["python", "/usr/local/bin/grotto-openadapt-teach"]
+CMD ["--help"]
