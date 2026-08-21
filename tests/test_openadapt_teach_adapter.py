@@ -44,7 +44,7 @@ class FakeFrame:
         if self.raises:
             raise RuntimeError("frame detached")
         self.evaluated.append(script)
-        if script.startswith("Boolean(globalThis.__grottoOpenAdaptTeachReady"):
+        if script == "Boolean(document.__oaflowInstalled)":
             return self.ready
         if "globalThis.__grottoOpenAdaptTeachReady = true" in script:
             self.ready = True
@@ -277,7 +277,9 @@ class AttachmentTests(unittest.TestCase):
             self.assertEqual(recorder.instrumented_frames, 2)
             for frame in page.frames:
                 self.assertEqual(len(frame.evaluated), 2)
-                self.assertIn("__grottoOpenAdaptTeachReady", frame.evaluated[0])
+                self.assertEqual(
+                    frame.evaluated[0], "Boolean(document.__oaflowInstalled)"
+                )
                 self.assertIn("INIT_JS", frame.evaluated[1])
             del playwright
 
@@ -299,7 +301,9 @@ class AttachmentTests(unittest.TestCase):
             self.assertEqual(recorder.instrumented_pages, 2)
             for frame in popup.frames:
                 self.assertEqual(len(frame.evaluated), 2)
-                self.assertIn("__grottoOpenAdaptTeachReady", frame.evaluated[0])
+                self.assertEqual(
+                    frame.evaluated[0], "Boolean(document.__oaflowInstalled)"
+                )
                 self.assertIn("INIT_JS", frame.evaluated[1])
 
     def test_about_blank_popup_is_instrumented_after_allowed_load(self) -> None:

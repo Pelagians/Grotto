@@ -77,9 +77,7 @@ _SUPPORTED_BUNDLE_SCHEMA_VERSIONS = frozenset({2})
 _STREAM_CHUNK_BYTES = 1024 * 1024
 _DEFAULT_MAX_ARCHIVE_BYTES = 8 * 1024 * 1024 * 1024
 _INSTRUMENTATION_READY_FLAG = "__grottoOpenAdaptTeachReady"
-_INSTRUMENTATION_READY_CHECK = (
-    f"Boolean(globalThis.{_INSTRUMENTATION_READY_FLAG})"
-)
+_INSTRUMENTATION_READY_CHECK = "Boolean(document.__oaflowInstalled)"
 _FLOW_WINDOW_GUARD = "if (window.__oaflowInstalled) return;"
 _FLOW_WINDOW_MARK = "window.__oaflowInstalled = true;"
 
