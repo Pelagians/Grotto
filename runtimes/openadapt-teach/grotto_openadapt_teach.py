@@ -211,6 +211,7 @@ class AttachedInteractiveRecorder:
         self.instrumented_pages = 0
         self.late_pages = 0
         self.rejected_events = 0
+        self.accepted_events = 0
         self._inner = None
         self._pw = None
         self._browser = None
@@ -320,6 +321,7 @@ class AttachedInteractiveRecorder:
                 flush=True,
             )
             return False
+        self.accepted_events += 1
         emit_event(self._inner, detail)
         return True
 
@@ -422,6 +424,24 @@ class AttachedInteractiveRecorder:
                 raise RuntimeError("Teach recorder was not started")
             return self._inner.recorder.finish()
         finally:
+            # Bounded counters only -- no URLs, no event detail. Without them a
+            # missing event is indistinguishable from an event that was never
+            # emitted, was rejected at intake, or was emitted into a page the
+            # recorder never instrumented, and diagnosing that difference has
+            # meant guessing from the far side of a container gate.
+            print(
+                json.dumps(
+                    {
+                        "event": "recording_finished",
+                        "instrumented_pages": self.instrumented_pages,
+                        "instrumented_frames": self.instrumented_frames,
+                        "late_pages": self.late_pages,
+                        "accepted_events": self.accepted_events,
+                        "rejected_events": self.rejected_events,
+                    }
+                ),
+                flush=True,
+            )
             # Never call Browser.close(): web-apps owns the browser lifecycle.
             self._disconnect()
 

@@ -599,5 +599,69 @@ class ArchiveTests(unittest.TestCase):
         self.assertIn("_STREAM_CHUNK_BYTES", source_text)
 
 
+class RecordingSummaryTests(unittest.TestCase):
+    def test_finish_reports_bounded_counters_and_no_urls(self) -> None:
+        """A missing event must be diagnosable without guessing.
+
+        Accepted and rejected counts distinguish "never emitted" from
+        "rejected at intake" from "emitted into a page nothing instrumented",
+        which is otherwise invisible from the far side of a container gate.
+        """
+        adapter = load_adapter()
+        source = ADAPTER_PATH.read_text(encoding="utf-8")
+        summary = source.split('"event": "recording_finished"', 1)[1]
+        summary = summary.split("]", 1)[0]
+        for counter in (
+            "instrumented_pages",
+            "instrumented_frames",
+            "late_pages",
+            "accepted_events",
+            "rejected_events",
+        ):
+            self.assertIn(counter, summary)
+        # Bounded: counters and nothing that could carry page content.
+        for forbidden in ("url", "detail", "start_url", "token"):
+            self.assertNotIn(forbidden, summary)
+        del adapter
+
+    def test_accepted_events_are_counted_at_intake(self) -> None:
+        adapter = load_adapter()
+        page = FakePage()
+        context = FakeContext([page])
+        with tempfile.TemporaryDirectory() as tmp:
+            recorder, inner, _browser, _pw = AttachmentTests()._start(
+                adapter, context, tmp
+            )
+
+            def emit(source):
+                """One binding call, reported as the deltas it caused."""
+                before = (
+                    recorder.accepted_events,
+                    recorder.rejected_events,
+                    len(inner.events),
+                )
+                context.binding_callback(source, {"type": "click"})
+                return tuple(
+                    now - was
+                    for now, was in zip(
+                        (
+                            recorder.accepted_events,
+                            recorder.rejected_events,
+                            len(inner.events),
+                        ),
+                        before,
+                    )
+                )
+
+            allowed = types.SimpleNamespace(frame=page.frames[0], page=page)
+            self.assertEqual(emit(allowed), (1, 0, 1))
+
+            # A disallowed source frame is counted and never reaches the queue,
+            # even though its top-level page would have been allowed.
+            stray = FakeFrame("evil", url="http://evil.internal/x")
+            disallowed = types.SimpleNamespace(frame=stray, page=page)
+            self.assertEqual(emit(disallowed), (0, 1, 0))
+
+
 if __name__ == "__main__":
     unittest.main()
