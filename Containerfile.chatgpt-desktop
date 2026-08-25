@@ -31,7 +31,7 @@ LABEL io.pelagians.grotto.chatgpt-package-version="$CHATGPT_PACKAGE_VERSION" \
 # /usr/lib/chatgpt/resources, so Grotto no longer installs either separately.
 ENV TITLE="ChatGPT Desktop" \
     START_DOCKER=false \
-    PIXELFLUX_WAYLAND=true \
+    PIXELFLUX_WAYLAND=false \
     AUTO_GPU=true \
     RESTART_APP=true \
     FILE_MANAGER_PATH=/workspace \
@@ -41,6 +41,8 @@ ENV TITLE="ChatGPT Desktop" \
     GROTTO_CHATGPT_PACKAGE_VERSION="$CHATGPT_PACKAGE_VERSION" \
     GROTTO_SELKIES_BASE_IMAGE="$SELKIES_BASE_IMAGE" \
     GROTTO_CHATGPT_WM_CLASS=chatgpt-desktop \
+    ELECTRON_OZONE_PLATFORM_HINT=x11 \
+    ELECTRON_USE_SYSTEM_TITLE_BAR=1 \
     CODEX_HOME=/config/.codex \
     CODEX_CLI_PATH=/usr/lib/chatgpt/resources/codex \
     CODEX_MANAGED_NODE_RUNTIME_DIR=/usr/lib/chatgpt/resources/cua_node \
@@ -166,11 +168,13 @@ RUN set -eux; \
         /defaults/autostart_wayland \
         /usr/local/bin/grotto-doctor \
         /usr/local/bin/grotto-chatgpt-auth \
+        /usr/local/bin/grotto-chatgpt-desktop \
         /usr/local/libexec/grotto-configure-openbox \
         /usr/local/libexec/grotto-chatgpt-desktop-smoke \
         /custom-cont-init.d/10-grotto-chatgpt-permissions; \
     bash -n /defaults/autostart; \
     bash -n /defaults/autostart_wayland; \
+    bash -n /usr/local/bin/grotto-chatgpt-desktop; \
     python3 -m py_compile /usr/local/bin/grotto-chatgpt-auth; \
     python3 /usr/local/bin/grotto-chatgpt-auth --self-test; \
     bash -n /custom-cont-init.d/10-grotto-chatgpt-permissions; \
@@ -194,6 +198,7 @@ RUN set -eux; \
     rm -rf /usr/local/bin/__pycache__ /usr/local/libexec/__pycache__; \
     shellcheck \
         /defaults/autostart \
+        /usr/local/bin/grotto-chatgpt-desktop \
         /custom-cont-init.d/10-grotto-chatgpt-permissions \
         /usr/local/libexec/grotto-chatgpt-desktop-smoke; \
     for command_name in \

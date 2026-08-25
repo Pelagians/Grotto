@@ -32,17 +32,32 @@ install -d -o abc -g abc -m 0755 \
     /cache/uv \
     /cache/xdg
 
-# The Selkies base only seeds a window-manager autostart file when persistent
-# state does not already contain one. Refresh both supported sessions so an
-# image upgrade or an X11/Wayland mode switch cannot retain the base terminal
-# launcher instead of Grotto's ChatGPT launcher. The base locks the active copy
-# read-only later when RESTART_APP is enabled.
+# The Selkies base only seeds window-manager files when persistent state does
+# not already contain them. Refresh Grotto's launchers and window policy on
+# every start so an existing /config volume cannot keep the base terminal
+# launcher, LinuxServer's catch-all maximization, or a superseded policy after
+# an image update. The base locks the active autostart copy read-only later
+# when RESTART_APP is enabled.
 install -o abc -g abc -m 0755 \
     /defaults/autostart \
     /config/.config/openbox/autostart
 install -o abc -g abc -m 0755 \
     /defaults/autostart_wayland \
     /config/.config/labwc/autostart
+install -o abc -g abc -m 0644 \
+    /defaults/labwc.xml \
+    /config/.config/labwc/rc.xml
+
+# Openbox reads the persistent copy, so the build-time policy in /etc/xdg is
+# only a seed. Reapply it here: the configurator is idempotent and edits just
+# its own marked block, so unrelated user changes to rc.xml survive.
+if [[ ! -f /config/.config/openbox/rc.xml ]]; then
+    install -o abc -g abc -m 0644 \
+        /etc/xdg/openbox/rc.xml \
+        /config/.config/openbox/rc.xml
+fi
+/usr/local/libexec/grotto-configure-openbox /config/.config/openbox/rc.xml
+chown abc:abc /config/.config/openbox/rc.xml
 
 # Repair only the persistent roots and Grotto-managed tool/cache directories.
 # Project contents keep their existing ownership so host-side checkouts are not

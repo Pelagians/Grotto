@@ -151,7 +151,6 @@ podman run --rm \
   --env TZ=America/Vancouver \
   --env CUSTOM_USER=abc \
   --env PASSWORD=change-me \
-  --env PIXELFLUX_WAYLAND=true \
   --env AUTO_GPU=true \
   --volume "$PWD/chatgpt-config:/config:Z" \
   --volume "$PWD/workspace:/workspace:Z" \
@@ -169,18 +168,29 @@ reverse proxy terminates TLS.
 
 ## Window behavior
 
+The primary lane is X11/Openbox, matching the Claude Desktop image. Selkies runs
+the Openbox session (`PIXELFLUX_WAYLAND=false`) and the launcher asks Chromium
+for the X11 backend. A Labwc policy stays packaged as a secondary Wayland
+compatibility path.
+
 ChatGPT is presented as the desktop surface rather than as an ordinary floating
-window. In both Selkies session modes, the visible ChatGPT browser window is
-borderless, maximized to the stream, and kept on the bottom layer.
-This is deliberately not the window manager's special fullscreen state:
-borderless maximization fills the same canvas without giving ChatGPT fullscreen
-stacking behavior over transient windows.
+window: the visible window is undecorated, held true-fullscreen, and kept on the
+bottom layer.
+
+Fullscreen rather than borderless maximization is deliberate, and it is the one
+place where the native package forced a change. The application resets its own
+window bounds a few seconds after mapping and ignores `--start-maximized` and
+`--window-size`, so a maximized rule is applied at map time and then undone on
+every start. It records `"window_placement":{}`, so it does not remember a
+maximize either. A fullscreen window is held at the monitor geometry by the
+window manager instead.
 
 Native file choosers, Electron dialogs, and utility windows remain decorated
 and windowed. They are unmaximized, raised, and focused above ChatGPT when they
-open. ChatGPT ignores client-generated focus requests in Labwc; direct user
-clicks still focus it normally. The equivalent Openbox rule declines initial
-focus and keeps ChatGPT below dialog windows.
+open, and ordinary secondary windows default to the foreground. ChatGPT ignores
+client-generated focus requests in Labwc; direct user clicks still focus it
+normally. The equivalent Openbox rule declines initial focus and keeps ChatGPT
+below dialog windows.
 
 The window rules key off a WM class Grotto chooses rather than a vendor
 default: the launcher starts the application with `--class=chatgpt-desktop`,
@@ -191,23 +201,36 @@ observed identity of the main window is
 class and type alone. The Labwc rule also does not match on window title,
 because the title follows the open conversation.
 
+Openbox merges every matching rule in document order, so the catch-all rule for
+ordinary windows is written before the ChatGPT rule that overrides it.
+
 The vendor package is not patched, so the application keeps its own window
 chrome and its full `File` menu. Earlier images removed Electron's window
 controls and the `New Window` entry by patching the community wrapper. That is
-no longer possible, and the window rules above are what keeps the stream a
-single-application surface.
+no longer possible; fullscreen takes the client control strip out of the stream,
+and the window rules above are what keeps it a single-application surface. The
+launcher also disables Chromium's `CustomTitlebar` feature and asks Electron for
+a system titlebar, which Openbox then removes from this surface.
 
-The image supplies policies for both the default Wayland/Labwc path and the
-X11/Openbox fallback. It also refreshes the persistent autostart files on every
-container initialization so switching session modes or upgrading from an older
-Selkies base cannot leave the base terminal launcher in `/config`.
+Openbox reads its configuration from `/config`, so the build-time policy in
+`/etc/xdg` is only a seed. Container initialization refreshes the launchers, the
+Labwc configuration, and the Openbox policy into the persistent volume on every
+start, so an existing `/config` cannot keep the base terminal launcher,
+LinuxServer's catch-all maximization, or a superseded policy after an image
+update. The configurator edits only its own marked block, so unrelated changes
+to `rc.xml` survive.
 
-For a CPU/X11 fallback, omit `/dev/dri` and use:
+For a software-rendering fallback, omit `/dev/dri` and use:
 
 ```bash
---env PIXELFLUX_WAYLAND=false \
---env AUTO_GPU=false \
---env CODEX_OZONE_PLATFORM=x11
+--env AUTO_GPU=false
+```
+
+To run the secondary Wayland path instead, set both:
+
+```bash
+--env PIXELFLUX_WAYLAND=true \
+--env CODEX_OZONE_PLATFORM=wayland
 ```
 
 ## First-run authentication

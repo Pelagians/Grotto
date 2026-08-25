@@ -37,15 +37,22 @@
   </mouse>
 
   <windowRules>
-    <!-- Dialogs keep normal window decorations unless a more specific rule says otherwise. -->
-    <windowRule identifier="*" serverDecoration="yes" />
+    <!--
+      Labwc is the secondary compatibility path; the primary lane is
+      X11/Openbox. Secondary normal windows open windowed, raised, and focused.
+    -->
+    <windowRule identifier="*" type="normal" serverDecoration="yes">
+      <ignoreFocusRequest>no</ignoreFocusRequest>
+      <action name="UnMaximize" />
+      <action name="Raise" />
+      <action name="Focus" />
+    </windowRule>
 
     <!--
-      The visible ChatGPT browser window is the desktop surface. A borderless
-      maximized bottom-layer window fills the stream without acquiring the
-      special stacking behavior of a true fullscreen window. User clicks can
-      still focus it, but client activation requests cannot pull focus back
-      from a chooser or alert.
+      ChatGPT is the persistent desktop surface. True fullscreen keeps it at
+      the output size: the application resets its own window bounds shortly
+      after mapping, so a Maximize action is undone on every start. The bottom
+      layer keeps file-selection and alert windows visible above it.
 
       The identifier is the app_id Grotto gives the vendor package on the
       launcher command line, not a vendor default. Matching on that alone is
@@ -54,7 +61,7 @@
     -->
     <windowRule identifier="chatgpt-desktop" type="normal" serverDecoration="no">
       <ignoreFocusRequest>yes</ignoreFocusRequest>
-      <action name="Maximize" />
+      <action name="ToggleFullscreen" />
       <action name="Lower" />
       <action name="ToggleAlwaysOnBottom" />
     </windowRule>

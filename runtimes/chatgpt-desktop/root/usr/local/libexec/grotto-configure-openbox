@@ -108,6 +108,31 @@ def configure_openbox(config_path: Path) -> None:
             child.text = value
 
     applications.append(ET.Comment(f" {START_MARKER} "))
+
+    # Openbox merges every matching rule in document order, so the general
+    # rules come first and the ChatGPT rule below overrides them.
+    #
+    # Secondary normal windows are foreground work surfaces by default.
+    add_rule(
+        {"class": "*", "type": "normal"},
+        (
+            ("decor", "yes"),
+            ("focus", "yes"),
+            ("layer", "above"),
+            ("fullscreen", "no"),
+            ("maximized", "no"),
+        ),
+    )
+
+    # ChatGPT is the desktop surface: true-fullscreen, undecorated, and below
+    # every transient window.
+    #
+    # Fullscreen rather than borderless maximization is deliberate. The
+    # application resets its own window bounds a few seconds after mapping and
+    # ignores --start-maximized and --window-size, which undoes a maximized
+    # rule on every start. A fullscreen window is held at the monitor geometry
+    # by the window manager instead.
+    #
     # Match on class and window type only. The vendor package sets no
     # WM_WINDOW_ROLE, so requiring the role the previous Electron build
     # advertised would silently stop matching the main window.
@@ -120,12 +145,11 @@ def configure_openbox(config_path: Path) -> None:
             ("decor", "no"),
             ("focus", "no"),
             ("layer", "below"),
-            # Borderless maximization is visually fullscreen without the
-            # fullscreen stacking layer that can obscure transient dialogs.
-            ("fullscreen", "no"),
-            ("maximized", "yes"),
+            ("fullscreen", "yes"),
+            ("maximized", "no"),
         ),
     )
+
     for window_type in ("dialog", "utility"):
         add_rule(
             {"class": "*", "type": window_type},
@@ -137,6 +161,7 @@ def configure_openbox(config_path: Path) -> None:
                 ("maximized", "no"),
             ),
         )
+
     applications.append(ET.Comment(f" {END_MARKER} "))
 
     ET.indent(tree, space="  ")

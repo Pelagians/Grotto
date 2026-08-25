@@ -36,9 +36,17 @@ for command_name in "${required[@]}"; do
 done
 
 test -x /usr/local/libexec/grotto-configure-openbox
+test -x /usr/local/bin/grotto-chatgpt-desktop
 test -x /defaults/autostart
 test -x /defaults/autostart_wayland
 test -f /defaults/labwc.xml
+
+# X11/Openbox is the primary lane. The Openbox policy holds the main window
+# fullscreen on the bottom layer, so it has to be present in the config Openbox
+# actually reads.
+test "$(printenv PIXELFLUX_WAYLAND)" = false
+grep -q 'fullscreen>yes<' /etc/xdg/openbox/rc.xml
+grep -q 'class="chatgpt-desktop"' /etc/xdg/openbox/rc.xml
 
 # The vendor package supplies the application, the Codex CLI, and the Node
 # runtime as one unit. Check the entry points Grotto actually launches rather
