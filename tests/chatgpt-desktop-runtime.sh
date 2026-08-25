@@ -8,6 +8,9 @@ fi
 
 required=(
     bash
+    bwrap
+    chatgpt
+    codex
     curl
     find
     gh
@@ -23,6 +26,7 @@ required=(
     shellcheck
     sqlite3
     unzip
+    wlrctl
     zip
 )
 for command_name in "${required[@]}"; do
@@ -33,16 +37,42 @@ for command_name in "${required[@]}"; do
 done
 
 test -x /usr/local/libexec/grotto-configure-openbox
+test -x /usr/local/bin/grotto-chatgpt-desktop
+test -x /usr/local/libexec/grotto-chatgpt-fullscreen
 test -x /defaults/autostart
 test -x /defaults/autostart_wayland
 test -f /defaults/labwc.xml
 
-bundled_bwrap="$(find /opt/codex-cli/lib/node_modules/@openai/codex \
-    -path '*/codex-resources/bwrap' -type f -perm /111 -print -quit)"
-test -n "$bundled_bwrap"
-test -x "$bundled_bwrap"
+# Wayland/Labwc is the primary lane and holds the main window fullscreen on the
+# bottom layer. The Openbox policy is the secondary X11 path; both have to be
+# packaged, because the session mode is a run-time choice.
+test "$(printenv PIXELFLUX_WAYLAND)" = true
+grep -q 'identifier="chatgpt-desktop"' /defaults/labwc.xml
+grep -q 'ToggleFullscreen' /defaults/labwc.xml
+grep -q 'fullscreen>yes<' /etc/xdg/openbox/rc.xml
+grep -q 'class="chatgpt-desktop"' /etc/xdg/openbox/rc.xml
 
-/bin/true
+# The vendor package supplies the application, the Codex CLI, and the Node
+# runtime as one unit. Check the entry points Grotto actually launches rather
+# than only that the commands resolve on PATH.
+test -x /usr/lib/chatgpt/ChatGPT
+test -x /usr/lib/chatgpt/resources/codex
+test -x /usr/lib/chatgpt/resources/cua_node/bin/node
+test "$(command -v node)" = /usr/lib/chatgpt/resources/cua_node/bin/node
+
+# The pinned build must not have left an auto-update source behind.
+test ! -e /etc/apt/sources.list.d/chatgpt.sources
+
+# The session launcher creates these as the desktop user before starting the
+# app. A root-owned copy left by the build or by older persistent state makes
+# that fail, which stops the desktop from coming up at all.
+for path in /config/.cache /config/.config /config/.local/state; do
+    if ! install -d -m 0755 "$path"; then
+        echo "session launcher cannot prepare: $path" >&2
+        ls -ld "$path" >&2 || true
+        exit 1
+    fi
+done
 
 for path in /config /workspace /tools /cache; do
     if [[ ! -d "$path" || ! -w "$path" ]]; then
@@ -56,31 +86,20 @@ security_manifest=/usr/share/grotto/chatgpt-desktop-security.json
 test -r "$security_manifest"
 test "$(stat -c '%a' "$security_manifest")" = 444
 jq -e '
-  .schema_version == 1 and
-  (.wrapper_revision | test("^[0-9a-f]{40}$")) and
+  .schema_version == 2 and
+  .source == "installed-vendor-package" and
+  .package.name == "chatgpt" and
   .node_repl.verified == true and
   .node_repl.auto_approved == false and
-  .node_repl.verification_source == "installed-electron-bundle" and
+  .node_repl.verification_source == "installed-vendor-package" and
   .browser_use.verified == true
 ' "$security_manifest" >/dev/null
 
-patch_report=/opt/chatgpt/.codex-linux/patch-report.json
-test -r "$patch_report"
-jq -e '
-  .enabledFeatures == ["grotto-single-window-chrome"] and
-  (
-    [
-      .patches[] |
-      select(
-        (
-          .name == "feature:grotto-single-window-chrome:frameless-linux-window-controls" or
-          .name == "feature:grotto-single-window-chrome:linux-single-window-menu"
-        ) and
-        (.status == "applied" or .status == "already-applied")
-      )
-    ] | length == 2
-  )
-' "$patch_report" >/dev/null
+# The recorded policy must describe the package that is actually installed.
+installed_version="$(dpkg-query --show --showformat='${Version}' chatgpt)"
+# shellcheck disable=SC2016
+jq -e --arg version "$installed_version" '.package.version == $version' \
+    "$security_manifest" >/dev/null
 
 report="$(mktemp)"
 trap 'rm -f "$report"' EXIT
@@ -100,6 +119,7 @@ jq --slurpfile security "$security_manifest" -e '
   .node_repl_auto_approved == $policy.node_repl.auto_approved and
   .node_repl_verified == $policy.node_repl.verified and
   .node_repl_policy_source == $policy.node_repl.verification_source and
+  .browser_use_present == $policy.browser_use.present and
   .browser_use_trusted_client_hash_patch ==
     $policy.browser_use.trusted_client_hash_patch and
   .browser_use_policy_verified == $policy.browser_use.verified and
@@ -125,6 +145,7 @@ test "$doctor_rc" -eq 0
 
 jq -c '{
   doctor_ok: .ok,
+  chatgpt_package: .runtime.chatgpt_package_version,
   active_probe: .active_probe,
   sandbox_probe: .sandbox_probe.status,
   selected_backend: .sandbox.selected_backend,

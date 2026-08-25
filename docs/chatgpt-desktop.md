@@ -1,8 +1,8 @@
 # Grotto ChatGPT Desktop
 
 `grotto-chatgpt-desktop` is a single-application interactive runtime that
-streams the unofficial Linux build of ChatGPT Desktop through LinuxServer's
-Selkies base image.
+streams OpenAI's official ChatGPT Desktop package for Linux through
+LinuxServer's Selkies base image.
 
 It is not a Grotto worker-contract image. It does not expose `grotto-workerd`
 or accept orchestrator tasks. It is intended as an interactive Codex workbench
@@ -11,18 +11,44 @@ tools.
 
 ## Image construction
 
-The application is built entirely at image build time:
+The image installs OpenAI's `chatgpt` Debian package on top of the Selkies base:
 
-1. Clone a pinned revision of
-   [`ilysenko/codex-desktop-linux`](https://github.com/ilysenko/codex-desktop-linux).
-2. Download the official upstream ChatGPT macOS DMG.
-3. Extract and patch the Electron application for Linux.
-4. Run the wrapper's candidate and acceptance checks.
-5. Rebuild native modules.
-6. Install `@openai/codex` with its Linux optional dependency.
-7. Copy only the completed application and CLI into the Selkies runtime stage.
+1. Fetch one pinned pool artifact for the build architecture from OpenAI's
+   package repository, by exact version rather than the `latest` alias.
+2. Verify it against the SHA256 the repository index publishes for that
+   artifact. A mismatch fails the build.
+3. Install it with `apt-get`, which resolves the Electron dependency set the
+   package declares.
+4. Record what the installed bundle exposes in a read-only security manifest.
 
-Container startup does not download the DMG, run npm, or compile native code.
+Nothing is compiled, repacked, or patched, and container startup downloads
+nothing.
+
+The package supplies the Codex CLI (`/usr/lib/chatgpt/resources/codex`, exposed
+on `PATH` as `codex`) and a Node runtime
+(`/usr/lib/chatgpt/resources/cua_node`), so the image installs neither
+separately.
+
+### Staying on the pinned version
+
+The vendor `postinst` normally adds OpenAI's apt source so the application
+updates with the rest of the system. That would let a container drift off the
+version the image was built and verified against, so the build seeds
+`/etc/default/chatgpt` with `repo_add_once="false"` first and then asserts that
+no `/etc/apt/sources.list.d/chatgpt.sources` was written. Moving to a new
+application version is a reviewable change to the pinned build argument, not
+something a running container does on its own.
+
+### History
+
+Earlier builds compiled the application from
+[`ilysenko/codex-desktop-linux`](https://github.com/ilysenko/codex-desktop-linux),
+a community wrapper that repacked the macOS DMG into a Linux Electron
+application, because no native Linux build existed. Grotto patched that wrapper
+to remove automatic `node_repl` JavaScript approval and to re-trust the
+repacked Browser Use clients. Neither patch has an equivalent here: the vendor
+bundle ships no automatic approval, and it signs its own Browser Use clients.
+The build still fails if a future vendor bundle introduces automatic approval.
 
 ## CI behavior
 
@@ -47,19 +73,21 @@ ghcr.io/pelagians/grotto-chatgpt-desktop:latest
 ```
 
 The desktop matrix entry reclaims unused GitHub-hosted runner toolchains before
-building because the DMG and expanded Electron application require substantial
-temporary storage. That cleanup is conditional and does not run for the smaller
-agent images.
+building because the package and the installed Electron application require
+substantial temporary storage. That cleanup is conditional and does not run for
+the smaller agent images.
 
 Pull-request builds load the completed desktop image and run
 `grotto-chatgpt-desktop-smoke` as the effective `abc` desktop user. The smoke
-test runs `/bin/true`, validates that the stable `grotto-doctor --json` schema is
-non-invasive by default, and checks the persistent roots. GitHub's Docker runner
+test checks the launch entry points and the persistent roots, confirms the
+security manifest describes the package that is actually installed, and
+validates that the stable `grotto-doctor --json` schema is non-invasive by
+default. GitHub's Docker runner
 does not validate Fedora SELinux or rootless Podman behavior; use the separate
 Fedora procedure below for that boundary.
 
-The wrapper is open source, while the upstream ChatGPT Desktop payload retains
-its own license and distribution terms.
+The ChatGPT Desktop package retains OpenAI's own license and distribution
+terms. It is in preview for Linux, and Grotto tracks it by explicit version.
 
 ## Local build
 
@@ -73,27 +101,35 @@ podman build \
   .
 ```
 
-Override the pinned wrapper revision or Codex CLI version:
+Override the pinned application version:
 
 ```bash
 podman build \
   --file Containerfile.chatgpt-desktop \
-  --build-arg CODEX_DESKTOP_LINUX_REF=7d4049b68b17bc663b8a934326fefcaca99e8ceb \
-  --build-arg CODEX_CLI_VERSION=0.144.5 \
+  --build-arg CHATGPT_PACKAGE_VERSION=26.820.60940 \
   --tag localhost/grotto-chatgpt-desktop:dev \
   .
 ```
 
 Component updates are intentional and reviewable:
 
-1. Check the current Codex release with `npm view @openai/codex version` and
-   update both the Containerfile default and CI matrix value.
+1. Read the current version and per-architecture digests from OpenAI's package
+   index, then update the Containerfile defaults and the CI matrix value
+   together:
+
+   ```bash
+   base=https://persistent.oaistatic.com/codex-app-prod/linux/deb
+   for arch in amd64 arm64; do
+     curl -fsS "$base/dists/stable/main/binary-$arch/Packages" |
+       grep -E '^(Version|SHA256):'
+   done
+   ```
+
+   The version matches across architectures; the digests differ.
 2. Resolve the Selkies index digest with
    `docker buildx imagetools inspect ghcr.io/linuxserver/baseimage-selkies:debiantrixie`.
-3. When changing 7-Zip, update the architecture-specific checksums from the
-   publisher and verify every supported archive.
-4. Build the image, run `grotto-doctor --json`, and review the recorded wrapper,
-   Codex, base-image, desktop, Electron, and DMG metadata.
+3. Build the image, run `grotto-doctor --json`, and review the recorded package,
+   Codex, base-image, desktop, and Electron metadata.
 
 Published builds attach SBOM and provenance attestations. Pull-request image
 loads disable attestations because the local Docker image exporter does not
@@ -124,41 +160,88 @@ podman run --rm \
   ghcr.io/pelagians/grotto-chatgpt-desktop:latest
 ```
 
+Keep `--shm-size=2g`. Chromium allocates renderer shared memory in `/dev/shm`,
+and the launcher falls back to `--disable-dev-shm-usage` when the container
+offers it less than 256 MiB.
+
 Open `https://localhost:3001`. Selkies uses a self-signed certificate unless a
 reverse proxy terminates TLS.
 
 ## Window behavior
 
+The primary lane is Wayland/Labwc. Selkies runs the Labwc session
+(`PIXELFLUX_WAYLAND=true`) and the launcher asks Chromium for the Wayland
+backend. The two have to agree: with Selkies on Wayland but Chromium on X11 the
+application runs under XWayland and the Labwc rules never match it. An Openbox
+policy stays packaged as the secondary X11 path.
+
 ChatGPT is presented as the desktop surface rather than as an ordinary floating
-window. In both Selkies session modes, the visible `codex-desktop` browser
-window is borderless, maximized to the stream, and kept on the bottom layer.
-This is deliberately not the window manager's special fullscreen state:
-borderless maximization fills the same canvas without giving ChatGPT fullscreen
-stacking behavior over transient windows.
+window: the visible window is undecorated, held true-fullscreen, and kept on the
+bottom layer.
+
+Fullscreen rather than borderless maximization is deliberate, and it is the one
+place where the native package forced a change. The application resets its own
+window bounds a few seconds after mapping and ignores `--start-maximized` and
+`--window-size`, so a maximized rule is applied at map time and then undone on
+every start. It records `"window_placement":{}`, so it does not remember a
+maximize either. Fullscreen is held by the window manager instead.
+
+On the Wayland lane the map-time rule alone is not enough: the application
+unsets fullscreen when it resets its bounds. Measured on a 1600x900 output, the
+rule alone leaves a 1024x760 window in the corner with the application's own
+minimize and close controls drawn in it. The session therefore starts
+`grotto-chatgpt-fullscreen`, which waits for the window, re-requests fullscreen
+through the compositor once the application has settled, and exits. It sets the
+state rather than toggling it, runs once per session start, and is a no-op under
+X11, where Openbox holds a fullscreen window at the monitor geometry on its own.
 
 Native file choosers, Electron dialogs, and utility windows remain decorated
 and windowed. They are unmaximized, raised, and focused above ChatGPT when they
-open. ChatGPT ignores client-generated focus requests in Labwc; direct user
-clicks still focus it normally. The equivalent Openbox rule declines initial
-focus and keeps ChatGPT below dialog windows.
+open, and ordinary secondary windows default to the foreground. ChatGPT ignores
+client-generated focus requests in Labwc; direct user clicks still focus it
+normally. The equivalent Openbox rule declines initial focus and keeps ChatGPT
+below dialog windows.
 
-The client itself is built with Grotto's `grotto-single-window-chrome` Linux
-feature. It removes Electron's minimize, maximize, and close overlay from the
-primary surface while retaining the application menus. The same required
-build-time patch omits only File -> New Window on Linux. If either pinned
-main-bundle source shape drifts, the image build fails rather than silently
-restoring multi-window controls.
+The window rules key off a WM class Grotto chooses rather than a vendor
+default: the launcher starts the application with `--class=chatgpt-desktop`,
+and `GROTTO_CHATGPT_WM_CLASS` sets both sides so they cannot drift apart. The
+observed identity of the main window is
+`WM_CLASS = "chatgpt (...)", "chatgpt-desktop"` with
+`_NET_WM_WINDOW_TYPE_NORMAL` and no `WM_WINDOW_ROLE`, so the rules match on
+class and type alone. The Labwc rule also does not match on window title,
+because the title follows the open conversation.
 
-The image supplies policies for both the default Wayland/Labwc path and the
-X11/Openbox fallback. It also refreshes the persistent autostart files on every
-container initialization so switching session modes or upgrading from an older
-Selkies base cannot leave the base terminal launcher in `/config`.
+Both window managers apply every matching rule in document order, so the
+catch-all rule for ordinary windows is written before the ChatGPT rule that
+overrides it.
 
-For a CPU/X11 fallback, omit `/dev/dri` and use:
+The vendor package is not patched, so the application keeps its own window
+chrome and its full `File` menu. Earlier images removed Electron's window
+controls and the `New Window` entry by patching the community wrapper. That is
+no longer possible; fullscreen takes the client control strip out of the stream,
+and the window rules above are what keeps it a single-application surface. The
+launcher also disables Chromium's `CustomTitlebar` and `WaylandWindowDecorations`
+features and asks Electron for a system titlebar, which the compositor then
+removes from this surface.
+
+Both window managers read their configuration from `/config`, so the build-time
+Openbox policy in `/etc/xdg` is only a seed. Container initialization refreshes
+the launchers, the Labwc configuration, and the Openbox policy into the
+persistent volume on every start, so an existing `/config` cannot keep the base
+terminal launcher, LinuxServer's catch-all maximization, or a superseded policy
+after an image update. The Openbox configurator edits only its own marked block,
+so unrelated changes to `rc.xml` survive.
+
+For a software-rendering fallback, omit `/dev/dri` and use:
+
+```bash
+--env AUTO_GPU=false
+```
+
+To run the secondary X11 path instead, set both:
 
 ```bash
 --env PIXELFLUX_WAYLAND=false \
---env AUTO_GPU=false \
 --env CODEX_OZONE_PLATFORM=x11
 ```
 
@@ -203,7 +286,7 @@ podman exec \
   --env HOME=/config \
   --env CODEX_HOME=/config/.codex \
   -it grotto-chatgpt-desktop \
-  /opt/codex-cli/bin/codex login --device-auth
+  codex login --device-auth
 ```
 
 Verify the session from the same account:
@@ -214,7 +297,7 @@ podman exec \
   --env HOME=/config \
   --env CODEX_HOME=/config/.codex \
   grotto-chatgpt-desktop \
-  /opt/codex-cli/bin/codex login status
+  codex login status
 ```
 
 ### Rootless Podman DNS
@@ -323,14 +406,13 @@ The explicit option prints a warning, runs the matrix once, timestamps the
 result, and updates the persistent probe cache. On the known rootless Fedora
 configuration it intentionally reproduces the nested Bubblewrap SELinux AVCs.
 
-The Grotto image applies a build-owned patch that removes the upstream
-`browser-use-node-repl-approval` descriptor from the exact pinned
-`codex-desktop-linux` wrapper commit before `install.sh` runs. This prevents
-`applyBrowserUseNodeReplApprovalPatch()` from injecting an automatic approval
-for arbitrary `node_repl` JavaScript. The node_repl integration remains
-exposed for Browser Use, but its JavaScript tool is not automatically approved.
-`grotto-doctor` reports `node_repl_exposed`, `node_repl_auto_approved`, and
-`node_repl_policy_source` so this containment is visible without active probes.
+The image build scans the installed vendor bundle and fails if it automatically
+approves arbitrary `node_repl` JavaScript. The current pinned package exposes
+the node_repl integration for Browser Use without automatically approving its
+JavaScript tool. `grotto-doctor` reports `node_repl_exposed`,
+`node_repl_auto_approved`, and `node_repl_policy_source` so this is visible
+without active probes. See
+[ChatGPT Desktop Browser Use policy](chatgpt-desktop-security-policy.md).
 
 This is a containment change, not a sandbox compatibility fix. Bubblewrap-backed
 command execution may remain blocked under rootless Podman with SELinux on

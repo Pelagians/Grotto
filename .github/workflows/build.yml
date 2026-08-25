@@ -43,7 +43,6 @@ jobs:
 
       - name: Run focused Python tests
         run: |
-          python3 tests/test_codex_desktop_linux_patch.py
           python3 tests/test_grotto_doctor.py
           python3 tests/test_window_manager_config.py
           python3 tests/test_verify_installed_chatgpt_policy.py
@@ -90,8 +89,7 @@ jobs:
             title: Grotto ChatGPT Desktop
             description: Selkies-streamed ChatGPT and Codex desktop workbench
             file: ./Containerfile.chatgpt-desktop
-            wrapper_ref: 7d4049b68b17bc663b8a934326fefcaca99e8ceb
-            codex_cli_version: 0.144.5
+            chatgpt_package_version: 26.820.60940
           - name: grotto-openadapt-teach
             kind: worker
             image: ghcr.io/pelagians/grotto-openadapt-teach
@@ -174,10 +172,8 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            CODEX_DESKTOP_LINUX_REF=${{ matrix.wrapper_ref }}
-            CODEX_CLI_VERSION=${{ matrix.codex_cli_version }}
+            CHATGPT_PACKAGE_VERSION=${{ matrix.chatgpt_package_version }}
             GROTTO_BUILD_REVISION=${{ github.sha }}
-            MAX_BUILD_THREADS=4
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=min,scope=${{ matrix.name }}
           provenance: ${{ github.event_name != 'pull_request' }}

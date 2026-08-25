@@ -1,0 +1,68 @@
+#!/bin/bash
+set -Eeuo pipefail
+
+# Grotto's primary ChatGPT lane is Wayland/Labwc. The vendor package installs a
+# two-line launcher that execs Chromium directly, so the container-specific
+# launch decisions are made here.
+#
+# The window manager, not the application, owns the desktop surface: Labwc holds
+# this window true-fullscreen on the bottom layer. Fullscreen rather than
+# borderless maximization is deliberate. The application resets its own window
+# bounds shortly after mapping and ignores --start-maximized and --window-size,
+# so a maximized rule is undone a few seconds into every start. Under Wayland a
+# fullscreen size is not a request the client can decline: the compositor
+# configures the surface and the client has to draw at that size.
+
+CHATGPT_WM_CLASS="${GROTTO_CHATGPT_WM_CLASS:-chatgpt-desktop}"
+
+# Ask Chromium for a system frame rather than a client-drawn titlebar. The
+# compositor then removes that frame from this surface while dialogs keep theirs.
+export ELECTRON_OZONE_PLATFORM_HINT="${ELECTRON_OZONE_PLATFORM_HINT:-wayland}"
+export ELECTRON_USE_SYSTEM_TITLE_BAR="${ELECTRON_USE_SYSTEM_TITLE_BAR:-1}"
+
+# The class is Grotto's choice, not a vendor default; the Labwc and Openbox
+# rules match the value passed here. Chromium uses it for both the X11 WM_CLASS
+# and the Wayland app_id.
+chatgpt_args=("--class=${CHATGPT_WM_CLASS}")
+
+# Wayland is the primary lane. CODEX_OZONE_PLATFORM keeps the override the
+# previous launcher documented, for hosts that need the X11/Openbox path.
+case "${CODEX_OZONE_PLATFORM:-wayland}" in
+    x11|wayland)
+        chatgpt_args+=("--ozone-platform=${CODEX_OZONE_PLATFORM:-wayland}")
+        ;;
+    *)
+        echo "[grotto] Unknown CODEX_OZONE_PLATFORM=${CODEX_OZONE_PLATFORM}; using wayland" >&2
+        chatgpt_args+=(--ozone-platform=wayland)
+        ;;
+esac
+
+chatgpt_args+=("--disable-features=CustomTitlebar,WaylandWindowDecorations")
+
+# Chromium's namespace sandbox needs unprivileged user namespaces, and the
+# package ships no setuid chrome-sandbox helper to fall back to. Keep the
+# sandbox whenever the host allows it and say so loudly when it is dropped,
+# because --no-sandbox removes the renderer boundary for every page the app
+# loads.
+max_user_namespaces="$(cat /proc/sys/user/max_user_namespaces 2>/dev/null || echo 0)"
+if [[ ! "$max_user_namespaces" =~ ^[0-9]+$ ]] || (( max_user_namespaces == 0 )); then
+    echo "[grotto] unprivileged user namespaces are unavailable; starting ChatGPT with --no-sandbox" >&2
+    chatgpt_args+=(--no-sandbox)
+fi
+
+# Chromium allocates renderer shared memory in /dev/shm. Containers commonly
+# cap it at 64 MiB, which crashes tabs instead of degrading.
+shm_bytes=0
+if [[ -d /dev/shm ]]; then
+    shm_bytes="$(python3 -c 'import os; s = os.statvfs("/dev/shm"); print(s.f_frsize * s.f_blocks)' 2>/dev/null || echo 0)"
+fi
+if [[ ! "$shm_bytes" =~ ^[0-9]+$ ]] || (( shm_bytes < 256 * 1024 * 1024 )); then
+    chatgpt_args+=(--disable-dev-shm-usage)
+fi
+
+# No GPU flag is set on purpose. The application treats GPU access as required
+# and exits when it is refused, so --disable-gpu takes the desktop down rather
+# than degrading it. Selkies sets the rendering path up before this runs;
+# grotto-doctor reports a missing /dev/dri.
+
+exec /usr/bin/chatgpt "${chatgpt_args[@]}" "$@"

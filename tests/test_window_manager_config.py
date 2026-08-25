@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import importlib.machinery
 import importlib.util
-import json
 import os
 from pathlib import Path
 import tempfile
@@ -27,14 +26,20 @@ LABWC_CONFIG = Path(
         REPOSITORY / "runtimes/chatgpt-desktop/root/defaults/labwc.xml",
     )
 )
-FEATURES_CONFIG = REPOSITORY / (
-    "runtimes/chatgpt-desktop/codex-desktop-linux-features/features.json"
+LAUNCHER = REPOSITORY / (
+    "runtimes/chatgpt-desktop/root/usr/local/bin/grotto-chatgpt-desktop"
 )
-LOCAL_FEATURE = FEATURES_CONFIG.parent / (
-    "local/grotto-single-window-chrome"
+INIT_SCRIPT = REPOSITORY / (
+    "runtimes/chatgpt-desktop/root/custom-cont-init.d/10-grotto-chatgpt-permissions"
+)
+AUTOSTART = REPOSITORY / "runtimes/chatgpt-desktop/root/defaults/autostart"
+FULLSCREEN_HELPER = REPOSITORY / (
+    "runtimes/chatgpt-desktop/root/usr/local/libexec/grotto-chatgpt-fullscreen"
 )
 CONTAINERFILE = REPOSITORY / "Containerfile.chatgpt-desktop"
-DOCKERIGNORE = REPOSITORY / ".dockerignore"
+# The vendor package sets no Grotto-specific WM_CLASS, so the launcher passes
+# --class and the window rules match that value.
+WM_CLASS = "chatgpt-desktop"
 
 
 def local_name(tag: object) -> str:
@@ -77,20 +82,46 @@ def assert_openbox_policy(config: Path) -> None:
         for rule in rules
     ), "Selkies catch-all maximization must be removed"
 
-    main = [
-        rule
-        for rule in rules
-        if rule.attrib.get("class") == "codex-desktop"
-        and rule.attrib.get("role") == "browser-window"
-        and rule.attrib.get("type") == "normal"
-    ]
-    assert len(main) == 1
-    assert child_settings(main[0]) == {
+    main_index = None
+    for index, rule in enumerate(rules):
+        if (
+            rule.attrib.get("class") == WM_CLASS
+            and rule.attrib.get("type") == "normal"
+        ):
+            assert main_index is None, "one main-surface rule only"
+            main_index = index
+    assert main_index is not None
+    main = rules[main_index]
+    # The application advertises no WM_WINDOW_ROLE, so a role match would never
+    # select this window.
+    assert "role" not in main.attrib
+    # True fullscreen, not borderless maximization: the application resets its
+    # own window bounds a few seconds after mapping, which undoes a maximized
+    # rule on every start.
+    assert child_settings(main) == {
         "decor": "no",
         "focus": "no",
         "layer": "below",
+        "fullscreen": "yes",
+        "maximized": "no",
+    }
+
+    # Openbox merges matching rules in document order, so the catch-all for
+    # ordinary windows has to come before the rule that overrides it.
+    general = [
+        index
+        for index, rule in enumerate(rules)
+        if rule.attrib.get("class") == "*"
+        and rule.attrib.get("type") == "normal"
+    ]
+    assert len(general) == 1
+    assert general[0] < main_index
+    assert child_settings(rules[general[0]]) == {
+        "decor": "yes",
+        "focus": "yes",
+        "layer": "above",
         "fullscreen": "no",
-        "maximized": "yes",
+        "maximized": "no",
     }
 
     for window_type in ("dialog", "utility"):
@@ -121,15 +152,30 @@ def assert_labwc_policy(config: Path) -> None:
     main = [
         rule
         for rule in rules
-        if rule.attrib.get("identifier") == "codex-desktop"
-        and rule.attrib.get("title") == "ChatGPT"
+        if rule.attrib.get("identifier") == WM_CLASS
         and rule.attrib.get("type") == "normal"
     ]
     assert len(main) == 1
     assert "matchOnce" not in main[0].attrib
+    # The window title follows the open conversation, so the rule must not
+    # narrow itself to one title.
+    assert "title" not in main[0].attrib
     assert main[0].attrib.get("serverDecoration") == "no"
     assert child_settings(main[0]).get("ignoreFocusRequest") == "yes"
-    assert actions(main[0]) == ["Maximize", "Lower", "ToggleAlwaysOnBottom"]
+    assert actions(main[0]) == [
+        "ToggleFullscreen",
+        "Lower",
+        "ToggleAlwaysOnBottom",
+    ]
+
+    general = [
+        rule
+        for rule in rules
+        if rule.attrib.get("identifier") == "*"
+        and rule.attrib.get("type") == "normal"
+    ]
+    assert len(general) == 1
+    assert general[0].attrib.get("serverDecoration") == "yes"
 
     for window_type in ("dialog", "utility"):
         popup = [rule for rule in rules if rule.attrib.get("type") == window_type]
@@ -144,44 +190,78 @@ def assert_labwc_policy(config: Path) -> None:
         ]
 
 
-def assert_client_window_chrome_policy() -> None:
-    feature_config = json.loads(FEATURES_CONFIG.read_text(encoding="utf-8"))
-    assert feature_config == {"enabled": ["grotto-single-window-chrome"]}
+def assert_launcher_matches_window_rules() -> None:
+    """The launcher and the window rules must agree on one WM class.
 
-    assert (LOCAL_FEATURE / "README.md").is_file()
-    manifest = json.loads(
-        (LOCAL_FEATURE / "feature.json").read_text(encoding="utf-8")
-    )
-    assert manifest["id"] == "grotto-single-window-chrome"
-    assert manifest["defaultEnabled"] is False
-    assert manifest["entrypoints"] == {"patchDescriptors": "./patch.js"}
-
-    patch_source = (LOCAL_FEATURE / "patch.js").read_text(encoding="utf-8")
-    assert "applyFramelessTitlebarMainPatch" in patch_source
-    assert "process.platform!==`linux`&&" in patch_source
-    assert patch_source.count('ciPolicy: "required-upstream"') == 2
+    Nothing at runtime reconciles them: if the launcher passes a class the
+    rules do not match, the desktop silently comes up decorated and unmanaged.
+    """
+    launcher = LAUNCHER.read_text(encoding="utf-8")
+    assert (
+        'CHATGPT_WM_CLASS="${GROTTO_CHATGPT_WM_CLASS:-' + WM_CLASS + '}"'
+    ) in launcher
+    assert '"--class=${CHATGPT_WM_CLASS}"' in launcher
 
     containerfile = CONTAINERFILE.read_text(encoding="utf-8")
-    feature_copy = containerfile.index(
-        "runtimes/chatgpt-desktop/codex-desktop-linux-features/"
-    )
-    install = containerfile.index("./install.sh --fresh")
-    report_check = containerfile.index(
-        'report.get("enabledFeatures") == ["grotto-single-window-chrome"]'
-    )
-    assert feature_copy < install < report_check
+    assert f"GROTTO_CHATGPT_WM_CLASS={WM_CLASS}" in containerfile
+
+    configurator = CONFIGURATOR.read_text(encoding="utf-8")
     assert (
-        "linux-features/local/grotto-single-window-chrome/README.md"
-        in containerfile[feature_copy:install]
+        f'os.environ.get("GROTTO_CHATGPT_WM_CLASS", "{WM_CLASS}")' in configurator
     )
 
-    dockerignore = DOCKERIGNORE.read_text(encoding="utf-8").splitlines()
-    readme_exception = (
-        "!runtimes/chatgpt-desktop/"
-        "codex-desktop-linux-features/**/README.md"
+
+def assert_primary_lane_is_wayland() -> None:
+    """Wayland/Labwc is the primary lane, end to end.
+
+    Selkies picks the session, the launcher picks the Chromium backend, and the
+    Labwc policy is what actually holds the window. The two have to agree: with
+    Selkies on Wayland but Chromium on X11 the app runs under XWayland and the
+    Labwc rules never match it.
+    """
+    containerfile = CONTAINERFILE.read_text(encoding="utf-8")
+    assert "PIXELFLUX_WAYLAND=true" in containerfile
+    assert "ELECTRON_OZONE_PLATFORM_HINT=wayland" in containerfile
+
+    launcher = LAUNCHER.read_text(encoding="utf-8")
+    assert '"${CODEX_OZONE_PLATFORM:-wayland}"' in launcher
+
+
+def assert_wayland_fullscreen_is_repaired() -> None:
+    """The Labwc rule alone does not hold this application fullscreen.
+
+    It fullscreens the surface at map time and the application unsets it a few
+    seconds later when it resets its own bounds, so the session has to
+    re-request fullscreen once the application has settled.
+    """
+    helper = FULLSCREEN_HELPER.read_text(encoding="utf-8")
+    # Must set the state, never toggle it: a retry against an already
+    # fullscreen window would otherwise put it back in a corner.
+    assert 'wlrctl toplevel fullscreen "app_id:${CHATGPT_WM_CLASS}"' in helper
+    assert 'state:fullscreen' in helper
+    # X11 needs no repair, and the helper must not run forever.
+    assert 'if [[ -z "${WAYLAND_DISPLAY:-}" ]]; then' in helper
+    assert "APPEAR_TIMEOUT_SECONDS" in helper
+
+    autostart = AUTOSTART.read_text(encoding="utf-8")
+    assert "/usr/local/libexec/grotto-chatgpt-fullscreen &" in autostart
+
+    containerfile = CONTAINERFILE.read_text(encoding="utf-8")
+    assert "wlrctl" in containerfile
+
+
+def assert_policy_is_reapplied_to_persistent_state() -> None:
+    """Openbox reads the persistent copy, not the build-time one.
+
+    A /config volume from an older image otherwise keeps a superseded policy,
+    or LinuxServer's catch-all maximization, after an image update.
+    """
+    init_script = INIT_SCRIPT.read_text(encoding="utf-8")
+    assert (
+        "/usr/local/libexec/grotto-configure-openbox /config/.config/openbox/rc.xml"
+        in init_script
     )
-    assert readme_exception in dockerignore
-    assert dockerignore.index(readme_exception) > dockerignore.index("**/README.md")
+    assert "/config/.config/labwc/rc.xml" in init_script
 
 
 def load_configurator():
@@ -217,7 +297,10 @@ def main(*, installed_image: bool = False) -> None:
         assert_openbox_policy(Path(actual_openbox))
     assert_labwc_policy(LABWC_CONFIG)
     if not installed_image:
-        assert_client_window_chrome_policy()
+        assert_launcher_matches_window_rules()
+        assert_primary_lane_is_wayland()
+        assert_wayland_fullscreen_is_repaired()
+        assert_policy_is_reapplied_to_persistent_state()
     print("window-manager policy tests passed")
 
 

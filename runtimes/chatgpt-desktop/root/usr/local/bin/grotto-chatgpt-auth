@@ -18,7 +18,8 @@ gi.require_version("GdkPixbuf", "2.0")
 
 from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk  # noqa: E402
 
-CODEX = "/opt/codex-cli/bin/codex"
+# The Codex CLI ships inside the vendor ChatGPT package.
+CODEX = os.environ.get("CODEX_CLI_PATH", "/usr/lib/chatgpt/resources/codex")
 ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 URL_RE = re.compile(r"https://[^\s\x1b]+/codex/device\b")
 CODE_RE = re.compile(r"\b[A-Z0-9]{4}(?:-[A-Z0-9]{4})+\b")
@@ -393,8 +394,7 @@ class AuthWindow(Gtk.Window):
         env.setdefault("HOME", "/config")
         env.setdefault("CODEX_HOME", "/config/.codex")
         env["PATH"] = (
-            "/opt/codex-cli/bin:"
-            "/opt/chatgpt/resources/node-runtime/bin:"
+            "/usr/lib/chatgpt/resources/cua_node/bin:"
             "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
         )
 

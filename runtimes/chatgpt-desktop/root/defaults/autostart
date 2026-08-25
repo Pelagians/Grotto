@@ -3,7 +3,9 @@ set -Eeuo pipefail
 
 export HOME="${HOME:-/config}"
 export CODEX_HOME="${CODEX_HOME:-/config/.codex}"
-export PATH="/tools/bin:/tools/npm/bin:/tools/pnpm:/tools/cargo/bin:/tools/mise/shims:/opt/codex-cli/bin:/opt/chatgpt/resources/node-runtime/bin:/lsiopy/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+export PATH="/tools/bin:/tools/npm/bin:/tools/pnpm:/tools/cargo/bin:/tools/mise/shims:/usr/lib/chatgpt/resources/cua_node/bin:/lsiopy/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+CODEX_CLI="${CODEX_CLI_PATH:-/usr/lib/chatgpt/resources/codex}"
 
 install -d -m 0755 \
     /config/.cache \
@@ -16,7 +18,7 @@ case "${GROTTO_CHATGPT_AUTH_MODE:-device}" in
     off)
         ;;
     device|auto)
-        if ! /opt/codex-cli/bin/codex login status >/dev/null 2>&1; then
+        if ! "$CODEX_CLI" login status >/dev/null 2>&1; then
             # Selkies launches this process as abc. The dialog starts Codex with
             # stdin disconnected, so ordinary keyboard input cannot dismiss it.
             if /usr/local/bin/grotto-chatgpt-auth; then
@@ -42,5 +44,10 @@ case "${GROTTO_CHATGPT_AUTH_MODE:-device}" in
         ;;
 esac
 
+# Repair the startup fullscreen race on the Wayland lane. The helper waits for
+# the window, re-requests fullscreen once the application has finished resetting
+# its own bounds, and exits; it is a no-op under X11.
+/usr/local/libexec/grotto-chatgpt-fullscreen &
+
 cd /workspace
-exec /opt/chatgpt/start.sh
+exec /usr/local/bin/grotto-chatgpt-desktop
