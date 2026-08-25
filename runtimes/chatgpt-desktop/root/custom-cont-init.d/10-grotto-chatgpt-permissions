@@ -4,11 +4,18 @@ set -Eeuo pipefail
 
 # LinuxServer adjusts the abc account to PUID/PGID before custom init scripts run.
 # Keep Codex credentials owned by the same account that launches the desktop app.
+#
+# The XDG roots below live under /config as well. Persistent state carried over
+# from an older image can hold root-owned copies of them, which the session
+# launcher cannot chmod, so repair them here while this script still runs as root.
 install -d -o abc -g abc -m 0700 /config/.codex
 install -d -o abc -g abc -m 0755 \
+    /config/.cache \
     /config/.config \
     /config/.config/labwc \
     /config/.config/openbox \
+    /config/.local \
+    /config/.local/state \
     /workspace \
     /tools \
     /tools/bin \

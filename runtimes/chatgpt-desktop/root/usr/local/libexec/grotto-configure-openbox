@@ -12,6 +12,10 @@ import xml.etree.ElementTree as ET
 
 START_MARKER = "Grotto ChatGPT Desktop window policy: start"
 END_MARKER = "Grotto ChatGPT Desktop window policy: end"
+# The vendor package does not set a Grotto-specific WM_CLASS, so the launcher
+# passes --class and this rule matches the value it chose. Both sides read the
+# same environment variable to keep them from drifting apart.
+CHATGPT_WM_CLASS = os.environ.get("GROTTO_CHATGPT_WM_CLASS", "chatgpt-desktop")
 MATCH_ATTRIBUTES = {
     "name",
     "class",
@@ -104,10 +108,12 @@ def configure_openbox(config_path: Path) -> None:
             child.text = value
 
     applications.append(ET.Comment(f" {START_MARKER} "))
+    # Match on class and window type only. The vendor package sets no
+    # WM_WINDOW_ROLE, so requiring the role the previous Electron build
+    # advertised would silently stop matching the main window.
     add_rule(
         {
-            "class": "codex-desktop",
-            "role": "browser-window",
+            "class": CHATGPT_WM_CLASS,
             "type": "normal",
         },
         (

@@ -3,7 +3,10 @@ set -Eeuo pipefail
 
 export HOME="${HOME:-/config}"
 export CODEX_HOME="${CODEX_HOME:-/config/.codex}"
-export PATH="/tools/bin:/tools/npm/bin:/tools/pnpm:/tools/cargo/bin:/tools/mise/shims:/opt/codex-cli/bin:/opt/chatgpt/resources/node-runtime/bin:/lsiopy/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+export PATH="/tools/bin:/tools/npm/bin:/tools/pnpm:/tools/cargo/bin:/tools/mise/shims:/usr/lib/chatgpt/resources/cua_node/bin:/lsiopy/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+CODEX_CLI="${CODEX_CLI_PATH:-/usr/lib/chatgpt/resources/codex}"
+CHATGPT_WM_CLASS="${GROTTO_CHATGPT_WM_CLASS:-chatgpt-desktop}"
 
 install -d -m 0755 \
     /config/.cache \
@@ -16,7 +19,7 @@ case "${GROTTO_CHATGPT_AUTH_MODE:-device}" in
     off)
         ;;
     device|auto)
-        if ! /opt/codex-cli/bin/codex login status >/dev/null 2>&1; then
+        if ! "$CODEX_CLI" login status >/dev/null 2>&1; then
             # Selkies launches this process as abc. The dialog starts Codex with
             # stdin disconnected, so ordinary keyboard input cannot dismiss it.
             if /usr/local/bin/grotto-chatgpt-auth; then
@@ -42,5 +45,57 @@ case "${GROTTO_CHATGPT_AUTH_MODE:-device}" in
         ;;
 esac
 
+# The vendor package installs a two-line launcher that execs Electron directly,
+# so the container-specific launch decisions the previous wrapper made are made
+# here instead. Each one is conditional: the flag is added only when the
+# container cannot support the safer default.
+electron_args=("--class=${CHATGPT_WM_CLASS}")
+
+# Chromium's namespace sandbox needs unprivileged user namespaces, and the
+# package ships no setuid chrome-sandbox helper to fall back to. Keep the
+# sandbox whenever the host allows it and say so loudly when it is dropped,
+# because --no-sandbox removes the renderer boundary for every page the app
+# loads.
+max_user_namespaces="$(cat /proc/sys/user/max_user_namespaces 2>/dev/null || echo 0)"
+if [[ ! "$max_user_namespaces" =~ ^[0-9]+$ ]] || (( max_user_namespaces == 0 )); then
+    echo "[grotto] unprivileged user namespaces are unavailable; starting ChatGPT with --no-sandbox" >&2
+    electron_args+=(--no-sandbox)
+fi
+
+# No GPU flag is set here on purpose. The application treats GPU access as
+# required and exits when it is refused, so --disable-gpu takes the desktop down
+# rather than degrading it. Selkies sets the rendering path up before this
+# script runs; grotto-doctor reports a missing /dev/dri.
+
+# Chromium allocates renderer shared memory in /dev/shm. Containers commonly
+# cap it at 64 MiB, which crashes tabs instead of degrading.
+shm_bytes=0
+if [[ -d /dev/shm ]]; then
+    shm_bytes="$(python3 -c 'import os; s = os.statvfs("/dev/shm"); print(s.f_frsize * s.f_blocks)' 2>/dev/null || echo 0)"
+fi
+if [[ ! "$shm_bytes" =~ ^[0-9]+$ ]] || (( shm_bytes < 256 * 1024 * 1024 )); then
+    electron_args+=(--disable-dev-shm-usage)
+fi
+
+# Selkies serves either a labwc (Wayland) or an Openbox (X11) session. Chromium
+# picks XWayland by default under labwc, which loses fractional scaling and
+# clipboard fidelity, so name the backend the session actually provides.
+# CODEX_OZONE_PLATFORM keeps the override the previous launcher documented.
+case "${CODEX_OZONE_PLATFORM:-auto}" in
+    x11|wayland)
+        electron_args+=("--ozone-platform=${CODEX_OZONE_PLATFORM}")
+        ;;
+    auto)
+        if [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
+            electron_args+=(--ozone-platform=wayland)
+        elif [[ -n "${DISPLAY:-}" ]]; then
+            electron_args+=(--ozone-platform=x11)
+        fi
+        ;;
+    *)
+        echo "[grotto] Unknown CODEX_OZONE_PLATFORM=${CODEX_OZONE_PLATFORM}; letting Chromium choose" >&2
+        ;;
+esac
+
 cd /workspace
-exec /opt/chatgpt/start.sh
+exec /usr/bin/chatgpt "${electron_args[@]}"

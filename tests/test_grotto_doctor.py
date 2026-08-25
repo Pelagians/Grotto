@@ -63,16 +63,49 @@ def probe_record() -> dict[str, object]:
     }
 
 
+PACKAGE_VERSION = "26.820.60940"
+
+
+def vendor_manifest(
+    *, exposed: bool = True, browser_use_present: bool = True
+) -> dict[str, object]:
+    return {
+        "schema_version": doctor.CHATGPT_SECURITY_MANIFEST_SCHEMA_VERSION,
+        "source": "installed-vendor-package",
+        "package": {
+            "name": "chatgpt",
+            "version": PACKAGE_VERSION,
+            "architecture": "amd64",
+        },
+        "node_repl": {
+            "exposed": exposed,
+            "auto_approved": False,
+            "verified": True,
+            "verification_source": "installed-vendor-package",
+        },
+        "browser_use": {
+            "present": browser_use_present,
+            "trusted_client_hash_patch": False,
+            "verified": True,
+        },
+    }
+
+
 def security_policy_record() -> dict[str, object]:
     return {
         "node_repl_exposed": True,
         "node_repl_auto_approved": False,
         "node_repl_verified": True,
-        "node_repl_policy_source": "installed-electron-bundle",
-        "browser_use_trusted_client_hash_patch": True,
+        "node_repl_policy_source": "installed-vendor-package",
+        "browser_use_present": True,
+        "browser_use_trusted_client_hash_patch": False,
         "browser_use_policy_verified": True,
         "manifest_path": "/usr/share/grotto/chatgpt-desktop-security.json",
-        "manifest_wrapper_revision": "7d4049b68b17bc663b8a934326fefcaca99e8ceb",
+        "manifest_package": {
+            "name": "chatgpt",
+            "version": PACKAGE_VERSION,
+            "architecture": "amd64",
+        },
         "manifest_error": None,
     }
 
@@ -149,9 +182,10 @@ class DoctorTest(unittest.TestCase):
         self.assertTrue(report["node_repl_verified"])
         self.assertEqual(
             report["node_repl_policy_source"],
-            "installed-electron-bundle",
+            "installed-vendor-package",
         )
-        self.assertTrue(report["browser_use_trusted_client_hash_patch"])
+        self.assertTrue(report["browser_use_present"])
+        self.assertFalse(report["browser_use_trusted_client_hash_patch"])
         self.assertTrue(report["browser_use_policy_verified"])
         self.assertEqual(report["sandbox_probe"]["status"], "not_run")
         self.assertEqual(report["sandbox_probe"]["reason"], doctor.PROBE_NOT_RUN_REASON)
@@ -218,7 +252,8 @@ class DoctorTest(unittest.TestCase):
             human,
         )
         self.assertIn(
-            "browser_use: trusted_client_hash_patch=True verified=True",
+            "browser_use: present=True trusted_client_hash_patch=False "
+            "verified=True",
             human,
         )
 
@@ -270,6 +305,7 @@ class DoctorTest(unittest.TestCase):
         self.assertIsNone(result["node_repl_exposed"])
         self.assertIsNone(result["node_repl_auto_approved"])
         self.assertFalse(result["node_repl_verified"])
+        self.assertIsNone(result["browser_use_present"])
         self.assertIsNone(result["browser_use_trusted_client_hash_patch"])
         self.assertFalse(result["browser_use_policy_verified"])
         self.assertIn("missing", result["manifest_error"])
@@ -288,36 +324,42 @@ class DoctorTest(unittest.TestCase):
         self.assertIn("unsupported", unsupported["manifest_error"])
 
     def test_valid_manifest_is_collected_without_assuming_exposure(self) -> None:
-        manifest = {
-            "schema_version": 1,
-            "wrapper_revision": "7d4049b68b17bc663b8a934326fefcaca99e8ceb",
-            "node_repl": {
-                "exposed": False,
-                "auto_approved": False,
-                "verified": True,
-                "verification_source": "installed-electron-bundle",
-            },
-            "browser_use": {
-                "trusted_client_hash_patch": False,
-                "verified": True,
-            },
-        }
+        manifest = vendor_manifest(exposed=False, browser_use_present=False)
         with tempfile.TemporaryDirectory() as directory:
             path = pathlib.Path(directory) / "security.json"
             path.write_text(json.dumps(manifest), encoding="utf-8")
             result = doctor.read_chatgpt_desktop_security_policy(
                 path,
-                expected_wrapper_revision=manifest["wrapper_revision"],
+                expected_package_version=PACKAGE_VERSION,
             )
 
         self.assertFalse(result["node_repl_exposed"])
         self.assertFalse(result["node_repl_auto_approved"])
         self.assertTrue(result["node_repl_verified"])
+        self.assertFalse(result["browser_use_present"])
         self.assertFalse(result["browser_use_trusted_client_hash_patch"])
         self.assertTrue(result["browser_use_policy_verified"])
+        self.assertEqual(result["manifest_package"], manifest["package"])
 
-    def test_wrapper_mismatch_is_unverified(self) -> None:
-        manifest = {
+    def test_package_version_mismatch_is_unverified(self) -> None:
+        manifest = vendor_manifest()
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / "security.json"
+            path.write_text(json.dumps(manifest), encoding="utf-8")
+            result = doctor.read_chatgpt_desktop_security_policy(
+                path,
+                expected_package_version="26.821.1",
+            )
+
+        self.assertFalse(result["node_repl_verified"])
+        self.assertFalse(result["browser_use_policy_verified"])
+        self.assertIn("does not match", result["manifest_error"])
+
+    def test_wrapper_era_manifest_is_no_longer_accepted(self) -> None:
+        # A container started from an old image keeps its schema 1 manifest.
+        # Reporting that as verified would describe patches that no longer
+        # exist, so it must read as unverified instead.
+        legacy = {
             "schema_version": 1,
             "wrapper_revision": "7d4049b68b17bc663b8a934326fefcaca99e8ceb",
             "node_repl": {
@@ -333,15 +375,11 @@ class DoctorTest(unittest.TestCase):
         }
         with tempfile.TemporaryDirectory() as directory:
             path = pathlib.Path(directory) / "security.json"
-            path.write_text(json.dumps(manifest), encoding="utf-8")
-            result = doctor.read_chatgpt_desktop_security_policy(
-                path,
-                expected_wrapper_revision="wrong",
-            )
+            path.write_text(json.dumps(legacy), encoding="utf-8")
+            result = doctor.read_chatgpt_desktop_security_policy(path)
 
         self.assertFalse(result["node_repl_verified"])
-        self.assertFalse(result["browser_use_policy_verified"])
-        self.assertIn("does not match", result["manifest_error"])
+        self.assertIn("schema is unsupported", result["manifest_error"])
 
     def test_unverified_manifest_adds_remediation(self) -> None:
         with ExitStack() as stack:

@@ -42,8 +42,8 @@ See [`openclaw.md`](openclaw.md).
 
 The image provides:
 
-- ChatGPT Desktop through the Linux compatibility wrapper
-- Codex CLI
+- OpenAI's native ChatGPT Desktop package for Linux, pinned by version
+- the Codex CLI that package ships
 - Selkies HTTPS streaming
 - persistent authenticated application state
 - a mounted project workspace

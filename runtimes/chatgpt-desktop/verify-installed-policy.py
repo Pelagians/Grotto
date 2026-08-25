@@ -1,68 +1,57 @@
 #!/usr/bin/python3
-"""Verify Browser Use and Node REPL policy in an installed Electron application."""
+"""Record Node REPL and Browser Use policy for the installed ChatGPT package.
+
+Grotto used to build ChatGPT Desktop from a community wrapper that repacked the
+macOS DMG, and this script verified that Grotto's own patches to that wrapper
+had survived the rebuild. The image now installs OpenAI's native Linux package
+and applies no patches to it, so the question changed: instead of proving a
+local edit is still in place, this reports what the vendor bundle actually
+exposes, and refuses to produce a manifest when the bundle carries a policy
+Grotto will not ship.
+
+The one hard failure is unattended JavaScript execution: a bundle that approves
+`node_repl` JavaScript without asking the user fails the build rather than
+being recorded as a finding.
+"""
 
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import pathlib
 import re
 import stat
+import subprocess
 import sys
 import tempfile
-from dataclasses import dataclass
-from typing import Iterable
 
-SCHEMA_VERSION = 1
-VERIFICATION_SOURCE = "installed-electron-bundle"
+SCHEMA_VERSION = 2
+VERIFICATION_SOURCE = "installed-vendor-package"
+PACKAGE_NAME = "chatgpt"
 JAVASCRIPT_SUFFIXES = {".js", ".cjs", ".mjs"}
-BROWSER_CLIENT_SUFFIXES = {
-    "browser": pathlib.PurePath(
-        "resources/plugins/openai-bundled/plugins/browser/scripts/browser-client.mjs"
-    ).parts,
-    "chrome": pathlib.PurePath(
-        "resources/plugins/openai-bundled/plugins/chrome/scripts/browser-client.mjs"
-    ).parts,
-}
+ASAR_NAME = "app.asar"
+# Read the archive in windows rather than whole: app.asar is a few hundred
+# megabytes. Overlap consecutive windows so a match cannot be split across the
+# boundary and missed.
+SCAN_WINDOW_BYTES = 8 * 1024 * 1024
+SCAN_OVERLAP_BYTES = 64 * 1024
 
-# Property names may be quoted and production bundles may be minified. Keep this
+# Property names may be quoted and production bundles are minified. Keep this
 # structural instead of relying on one source whitespace layout.
 AUTO_APPROVAL_RE = re.compile(
-    r"[\"'`]?tools[\"'`]?\s*:\s*\{[^{}]{0,512}"
-    r"[\"'`]?js[\"'`]?\s*:\s*\{[^{}]{0,512}"
-    r"[\"'`]?approval_mode[\"'`]?\s*:\s*[\"'`]approve[\"'`]",
+    rb"[\"'`]?tools[\"'`]?\s*:\s*\{[^{}]{0,512}"
+    rb"[\"'`]?js[\"'`]?\s*:\s*\{[^{}]{0,512}"
+    rb"[\"'`]?approval_mode[\"'`]?\s*:\s*[\"'`]approve[\"'`]",
     re.DOTALL,
 )
-TRUST_HELPER_DEFINITION_RE = re.compile(
-    r"function\s+codexLinuxTrustedBrowserClientSha256s\s*\("
-)
-TRUST_HELPER_APPLICATION_RE = re.compile(
-    r"(?:"
-    r"[A-Za-z_$][\w$]*\s*=\s*codexLinuxTrustedBrowserClientSha256s\s*\("
-    r"|\.transform\(\s*codexLinuxTrustedBrowserClientSha256s\s*\)"
-    r")"
-)
-TRUSTED_HASH_LITERAL_RE = re.compile(
-    r"(?:const|let|var)?\s*__codexLinuxBundledBrowserClientSha256s\s*=\s*"
-    r"(\[(?:\s*[\"'][0-9a-f]{64}[\"']\s*,?){2}\])"
-)
 NODE_REPL_MARKERS = (
-    "nodeReplPath",
-    "mcp_servers.${",
-    "startup_timeout_sec:120",
+    b"nodeReplPath",
+    b"node_repl",
 )
 BROWSER_USE_MARKERS = (
-    "trustedBrowserClientSha256s",
-    "plugins/openai-bundled/plugins/browser/scripts/browser-client.mjs",
-    "plugins`, `openai-bundled`, `plugins`, __codexPluginName",
-)
-AMBIGUOUS_MARKERS = (
-    "node_repl",
-    "node-repl",
-    "trustedBrowserClientSha256s",
-    "browser-client.mjs",
+    b"browser-client.mjs",
+    b"browser_use",
 )
 
 
@@ -70,252 +59,127 @@ class VerificationError(RuntimeError):
     """The installed application could not be classified safely."""
 
 
-@dataclass(frozen=True)
-class Inspection:
-    node_repl_exposed: bool
-    node_repl_auto_approved: bool
-    browser_use_trusted_client_hash_patch: bool
-    files_scanned: int
+def scannable_files(root: pathlib.Path) -> list[pathlib.Path]:
+    """Every file that can carry application JavaScript.
 
-    def manifest(self, wrapper_revision: str) -> dict[str, object]:
-        return {
-            "schema_version": SCHEMA_VERSION,
-            "wrapper_revision": wrapper_revision,
-            "node_repl": {
-                "exposed": self.node_repl_exposed,
-                "auto_approved": self.node_repl_auto_approved,
-                "verified": True,
-                "verification_source": VERIFICATION_SOURCE,
-            },
-            "browser_use": {
-                "trusted_client_hash_patch": (
-                    self.browser_use_trusted_client_hash_patch
-                ),
-                "verified": True,
-            },
-        }
-
-
-def javascript_files(root: pathlib.Path) -> list[pathlib.Path]:
+    Loose scripts and the packed asar archive are both plain text as far as
+    these markers are concerned, so the archive is scanned as bytes instead of
+    being unpacked.
+    """
     if not root.is_dir():
         raise VerificationError(f"installed application root is missing: {root}")
     files = sorted(
         candidate
         for candidate in root.rglob("*")
-        if candidate.is_file() and candidate.suffix.lower() in JAVASCRIPT_SUFFIXES
+        if candidate.is_file()
+        and (
+            candidate.suffix.lower() in JAVASCRIPT_SUFFIXES
+            or candidate.name == ASAR_NAME
+        )
     )
-    if not files:
-        raise VerificationError(f"no JavaScript bundles found below {root}")
+    if not any(candidate.name == ASAR_NAME for candidate in files):
+        raise VerificationError(f"no {ASAR_NAME} archive found below {root}")
     return files
 
 
-def read_sources(files: Iterable[pathlib.Path]) -> list[tuple[pathlib.Path, str]]:
-    result: list[tuple[pathlib.Path, str]] = []
+def scan(files: list[pathlib.Path]) -> tuple[list[str], set[bytes], set[bytes]]:
+    """Return auto-approval hits plus the markers each family matched."""
+    auto_approved: list[str] = []
+    node_repl: set[bytes] = set()
+    browser_use: set[bytes] = set()
+
     for path in files:
         try:
-            result.append((path, path.read_text(encoding="utf-8")))
-        except (OSError, UnicodeError) as exc:
-            raise VerificationError(f"cannot inspect JavaScript bundle {path}: {exc}") from exc
-    return result
+            with path.open("rb") as handle:
+                carry = b""
+                while True:
+                    block = handle.read(SCAN_WINDOW_BYTES)
+                    if not block:
+                        break
+                    window = carry + block
+                    if AUTO_APPROVAL_RE.search(window):
+                        auto_approved.append(str(path))
+                    node_repl.update(
+                        marker for marker in NODE_REPL_MARKERS if marker in window
+                    )
+                    browser_use.update(
+                        marker for marker in BROWSER_USE_MARKERS if marker in window
+                    )
+                    carry = window[-SCAN_OVERLAP_BYTES:]
+        except OSError as exc:
+            raise VerificationError(f"cannot inspect {path}: {exc}") from exc
+
+    return sorted(set(auto_approved)), node_repl, browser_use
 
 
-def has_path_suffix(path: pathlib.Path, suffix: tuple[str, ...]) -> bool:
-    return len(path.parts) >= len(suffix) and path.parts[-len(suffix) :] == suffix
-
-
-def installed_browser_client_hashes(
-    sources: Iterable[tuple[pathlib.Path, str]],
-) -> dict[str, str]:
-    matches: dict[str, list[pathlib.Path]] = {
-        plugin: [] for plugin in BROWSER_CLIENT_SUFFIXES
-    }
-    for path, _source in sources:
-        for plugin, suffix in BROWSER_CLIENT_SUFFIXES.items():
-            if has_path_suffix(path, suffix):
-                matches[plugin].append(path)
-
-    present = {plugin: paths for plugin, paths in matches.items() if paths}
-    if not present:
-        return {}
-    if any(len(matches[plugin]) != 1 for plugin in BROWSER_CLIENT_SUFFIXES):
-        detail = ", ".join(
-            f"{plugin}={len(paths)}" for plugin, paths in sorted(matches.items())
+def installed_package(expected_version: str) -> dict[str, str]:
+    """Read the package identity dpkg recorded, not what the build asked for."""
+    try:
+        completed = subprocess.run(
+            [
+                "dpkg-query",
+                "--show",
+                "--showformat=${Package}\\n${Version}\\n${Architecture}\\n${Status}",
+                PACKAGE_NAME,
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=60,
         )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise VerificationError(f"cannot query the installed package: {exc}") from exc
+    if completed.returncode != 0:
         raise VerificationError(
-            f"Browser Use client artifact structure is incomplete or ambiguous: {detail}"
+            f"package {PACKAGE_NAME} is not installed: "
+            f"{completed.stderr.strip() or completed.returncode}"
+        )
+
+    fields = completed.stdout.split("\n")
+    if len(fields) != 4:
+        raise VerificationError("dpkg returned an unreadable package record")
+    name, version, architecture, status = (field.strip() for field in fields)
+    if status != "install ok installed":
+        raise VerificationError(f"package {name} is not fully installed: {status}")
+    if version != expected_version:
+        raise VerificationError(
+            f"installed {name} version {version} does not match the pinned "
+            f"build version {expected_version}"
+        )
+    return {"name": name, "version": version, "architecture": architecture}
+
+
+def build_manifest(root: pathlib.Path, expected_version: str) -> dict[str, object]:
+    package = installed_package(expected_version)
+    files = scannable_files(root)
+    auto_approved, node_repl, browser_use = scan(files)
+
+    if auto_approved:
+        raise VerificationError(
+            "Node REPL JavaScript automatic approval is present in installed "
+            "bundle(s): " + ", ".join(auto_approved)
         )
 
     return {
-        plugin: hashlib.sha256(paths[0].read_bytes()).hexdigest()
-        for plugin, paths in matches.items()
+        "schema_version": SCHEMA_VERSION,
+        "source": VERIFICATION_SOURCE,
+        "package": package,
+        "node_repl": {
+            "exposed": bool(node_repl),
+            "auto_approved": False,
+            "verified": True,
+            "verification_source": VERIFICATION_SOURCE,
+        },
+        "browser_use": {
+            "present": bool(browser_use),
+            # The vendor ships and signs its own Browser Use clients, so there
+            # is no repacked client for Grotto to re-trust. The field stays so
+            # grotto-doctor keeps reporting a stable shape across the change.
+            "trusted_client_hash_patch": False,
+            "verified": True,
+        },
+        "files_scanned": len(files),
     }
-
-
-def embedded_trusted_hashes(combined: str) -> set[str] | None:
-    matches = TRUSTED_HASH_LITERAL_RE.findall(combined)
-    if not matches:
-        return None
-    if len(matches) != 1:
-        raise VerificationError(
-            "Browser Use trusted-client hash literal is duplicated or ambiguous"
-        )
-    try:
-        values = json.loads(matches[0].replace("'", '"'))
-    except json.JSONDecodeError as exc:
-        raise VerificationError(
-            "Browser Use trusted-client hash literal is malformed"
-        ) from exc
-    if (
-        not isinstance(values, list)
-        or len(values) != 2
-        or any(not re.fullmatch(r"[0-9a-f]{64}", value) for value in values)
-    ):
-        raise VerificationError(
-            "Browser Use trusted-client hash literal is incomplete or contradictory"
-        )
-    return set(values)
-
-
-def finalize_embedded_trusted_hashes(root: pathlib.Path) -> bool:
-    """Bind the patched schema helper to the final Linux client artifacts."""
-    files = javascript_files(root)
-    sources = read_sources(files)
-    client_hashes = installed_browser_client_hashes(sources)
-    locations = [
-        (path, source, match)
-        for path, source in sources
-        for match in TRUSTED_HASH_LITERAL_RE.finditer(source)
-    ]
-
-    if not client_hashes:
-        if locations:
-            raise VerificationError(
-                "trusted-client hash literal exists without installed Browser Use clients"
-            )
-        return False
-    if len(locations) != 1:
-        raise VerificationError(
-            "Browser Use clients exist without one classifiable trusted-client hash literal"
-        )
-
-    path, source, match = locations[0]
-    final_values = list(client_hashes.values())
-    replacement = json.dumps(final_values, separators=(",", ":"))
-    if match.group(1) == replacement:
-        return False
-
-    updated = source[: match.start(1)] + replacement + source[match.end(1) :]
-    temporary: pathlib.Path | None = None
-    try:
-        descriptor, temporary_name = tempfile.mkstemp(
-            prefix=f".{path.name}.", dir=path.parent, text=True
-        )
-        temporary = pathlib.Path(temporary_name)
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            handle.write(updated)
-            handle.flush()
-            os.fsync(handle.fileno())
-        temporary.chmod(stat.S_IMODE(path.stat().st_mode))
-        os.replace(temporary, path)
-    except (OSError, UnicodeError) as exc:
-        raise VerificationError(
-            f"cannot finalize Browser Use trusted-client hashes in {path}: {exc}"
-        ) from exc
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
-    return True
-
-
-def inspect_installed_application(root: pathlib.Path) -> Inspection:
-    files = javascript_files(root)
-    sources = read_sources(files)
-
-    unsafe_paths = [
-        str(path) for path, source in sources if AUTO_APPROVAL_RE.search(source)
-    ]
-    node_repl_auto_approved = bool(unsafe_paths)
-    if node_repl_auto_approved:
-        raise VerificationError(
-            "Node REPL JavaScript automatic approval remains in installed bundle(s): "
-            + ", ".join(unsafe_paths)
-        )
-
-    combined = "\n".join(source for _path, source in sources)
-    helper_definition = bool(TRUST_HELPER_DEFINITION_RE.search(combined))
-    helper_application = bool(TRUST_HELPER_APPLICATION_RE.search(combined))
-    node_repl_markers = {marker for marker in NODE_REPL_MARKERS if marker in combined}
-    browser_use_markers = {marker for marker in BROWSER_USE_MARKERS if marker in combined}
-    ambiguous_markers = {marker for marker in AMBIGUOUS_MARKERS if marker in combined}
-    client_hashes = installed_browser_client_hashes(sources)
-    embedded_hashes = embedded_trusted_hashes(combined)
-
-    node_repl_exposed = bool(node_repl_markers)
-    dynamic_hash_helper = all(
-        marker in combined
-        for marker in (
-            "createHash",
-            "sha256",
-            "readFileSync",
-            "browser-client.mjs",
-            "codexLinuxTrustedBrowserClientSha256s",
-        )
-    )
-    exact_literal_hashes = (
-        bool(client_hashes)
-        and embedded_hashes is not None
-        and embedded_hashes == set(client_hashes.values())
-    )
-    if embedded_hashes is not None and client_hashes:
-        if embedded_hashes != set(client_hashes.values()):
-            raise VerificationError(
-                "embedded Browser Use trusted-client hashes do not match the installed clients"
-            )
-    trusted_hash_behavior = (
-        helper_definition
-        and helper_application
-        and (dynamic_hash_helper or exact_literal_hashes)
-    )
-    browser_use_present = bool(
-        browser_use_markers
-        or client_hashes
-        or helper_definition
-        or helper_application
-        or embedded_hashes
-    )
-
-    if helper_definition != helper_application:
-        raise VerificationError("Browser Use trusted-client helper is only partially installed")
-    if browser_use_present:
-        if not client_hashes:
-            raise VerificationError(
-                "Browser Use markers exist but both installed client artifacts are not present"
-            )
-        if not trusted_hash_behavior:
-            evidence = sorted(browser_use_markers) + sorted(client_hashes)
-            raise VerificationError(
-                "Browser Use is present without a verified trusted-client hash adjustment"
-                + (f" (evidence: {', '.join(evidence)})" if evidence else "")
-            )
-        if not node_repl_exposed:
-            raise VerificationError(
-                "Browser Use runtime exists but Node REPL integration cannot be classified"
-            )
-    elif node_repl_exposed or ambiguous_markers:
-        markers = sorted(ambiguous_markers | node_repl_markers)
-        raise VerificationError(
-            "installed bundle contains ambiguous Browser Use/Node REPL markers: "
-            + ", ".join(markers)
-        )
-
-    return Inspection(
-        node_repl_exposed=node_repl_exposed,
-        node_repl_auto_approved=node_repl_auto_approved,
-        browser_use_trusted_client_hash_patch=(
-            browser_use_present and trusted_hash_behavior
-        ),
-        files_scanned=len(files),
-    )
 
 
 def write_manifest(path: pathlib.Path, manifest: dict[str, object]) -> None:
@@ -339,7 +203,7 @@ def write_manifest(path: pathlib.Path, manifest: dict[str, object]) -> None:
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=pathlib.Path, required=True)
-    parser.add_argument("--wrapper-revision", required=True)
+    parser.add_argument("--package-version", required=True)
     parser.add_argument("--manifest", type=pathlib.Path, required=True)
     return parser.parse_args(argv)
 
@@ -347,11 +211,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     arguments = parse_args(sys.argv[1:] if argv is None else argv)
     try:
-        # The wrapper patches Browser Use clients after its schema patch runs.
-        # Rebind the schema literal to those final bytes, then verify the result.
-        finalize_embedded_trusted_hashes(arguments.root)
-        inspection = inspect_installed_application(arguments.root)
-        manifest = inspection.manifest(arguments.wrapper_revision)
+        manifest = build_manifest(arguments.root, arguments.package_version)
         write_manifest(arguments.manifest, manifest)
     except VerificationError as exc:
         print(f"installed ChatGPT policy verification failed: {exc}", file=sys.stderr)

@@ -4,6 +4,15 @@ Status: unresolved as of 2026-07-16. This document records live evidence from
 the Grotto ChatGPT Desktop container. It does not select a fallback or weaken
 the active permission profile.
 
+The evidence below was captured before the image switched to OpenAI's native
+Linux package, so its paths describe the previous layout: the Codex CLI was
+installed under '/opt/codex-cli' and vendored its own Bubblewrap helper. The
+native package ships no helper, and the image installs Debian's 'bubblewrap'
+instead. The SELinux findings are about the host and Bubblewrap itself, so they
+are unaffected by that move; re-run the commands with the current helper path
+from 'grotto-doctor --json' ('.sandbox.selected_bwrap') before citing them as
+current.
+
 ## Security boundary
 
 The outer runtime remains a rootless Podman container running as 'abc', with

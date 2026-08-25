@@ -1,181 +1,34 @@
 # syntax=docker/dockerfile:1.7
 
-ARG CODEX_DESKTOP_LINUX_REF=7d4049b68b17bc663b8a934326fefcaca99e8ceb
-ARG CODEX_CLI_VERSION=0.144.5
+# OpenAI's official ChatGPT Desktop package for Linux. Grotto pins one exact
+# pool artifact per architecture instead of tracking the vendor "latest" alias
+# so an image rebuild always installs the same application bytes.
+ARG CHATGPT_PACKAGE_VERSION=26.820.60940
+ARG CHATGPT_PACKAGE_SHA256_AMD64=31d956a8c6c515f8d87e0b7acd9ec919f7e685ba59331b4b97aa45f853afdfd7
+ARG CHATGPT_PACKAGE_SHA256_ARM64=8f4dacbff5f054a4f69c2a021f1396c57976972829a61041febac1b423f27c86
+ARG CHATGPT_PACKAGE_BASE_URL=https://persistent.oaistatic.com/codex-app-prod/linux/deb
 ARG SELKIES_BASE_IMAGE=ghcr.io/linuxserver/baseimage-selkies:debiantrixie@sha256:ac7fd6d182238b4a99e66554c5e75be48a714e2a0c9da81bd18e171ff9ba3dd5
 ARG GROTTO_BUILD_REVISION=unknown
 
-FROM docker.io/library/debian:trixie-slim AS builder
-
-ARG CODEX_DESKTOP_LINUX_REF
-ARG CODEX_CLI_VERSION
-ARG MAX_BUILD_THREADS=4
-
-ENV DEBIAN_FRONTEND=noninteractive \
-    PATH=/root/.cargo/bin:/root/.local/bin:/usr/local/bin:/usr/bin:/bin \
-    CARGO_HOME=/root/.cargo \
-    RUSTUP_HOME=/root/.rustup
-
-RUN set -eux; \
-    apt-get update -o Acquire::Retries=5; \
-    apt-get install --no-install-recommends -y \
-        bash \
-        build-essential \
-        ca-certificates \
-        curl \
-        file \
-        git \
-        pkg-config \
-        python3 \
-        tar \
-        unzip \
-        util-linux \
-        xz-utils; \
-    rm -rf /var/lib/apt/lists/*
-
-# Current ChatGPT DMGs use APFS. Debian's legacy p7zip cannot reliably extract
-# them, so install a modern standalone 7zz before invoking the wrapper.
-RUN set -eux; \
-    case "$(dpkg --print-architecture)" in \
-        amd64) \
-            sevenzip_arch=x64; \
-            sevenzip_sha256=c74dc4a48492cde43f5fec10d53fb2a66f520e4a62a69d630c44cb22c477edc6 ;; \
-        arm64) \
-            sevenzip_arch=arm64; \
-            sevenzip_sha256=aa8f3d0a19af9674d3af0ec788b4e261501071e626cd75ad149f1c2c176cc87d ;; \
-        armhf) \
-            sevenzip_arch=arm; \
-            sevenzip_sha256=54755c32564c5966ab6ddeca376472e1d146b3b76648184f6a7797a7fab3af52 ;; \
-        *) echo "Unsupported build architecture: $(dpkg --print-architecture)" >&2; exit 1 ;; \
-    esac; \
-    archive=/tmp/7zip.tar.xz; \
-    curl -fsSL "https://www.7-zip.org/a/7z2600-linux-${sevenzip_arch}.tar.xz" -o "$archive"; \
-    printf '%s  %s\n' "$sevenzip_sha256" "$archive" | sha256sum -c -; \
-    tar -xJf "$archive" -C /usr/local/bin 7zz; \
-    rm -f "$archive"; \
-    chmod 0755 /usr/local/bin/7zz; \
-    7zz | head -n 2
-
-RUN set -eux; \
-    curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs \
-        | sh -s -- -y --profile minimal; \
-    cargo --version; \
-    rustc --version
-
-WORKDIR /src
-
-RUN set -eux; \
-    git init .; \
-    git remote add origin https://github.com/ilysenko/codex-desktop-linux.git; \
-    git fetch --depth=1 origin "${CODEX_DESKTOP_LINUX_REF}"; \
-    git checkout --detach FETCH_HEAD; \
-    git rev-parse HEAD
-
-COPY runtimes/chatgpt-desktop/codex-desktop-linux-features/ \
-    /src/linux-features/
-COPY patches/codex-desktop-linux/disable-auto-approved-node-repl.patch \
-    /tmp/disable-auto-approved-node-repl.patch
-COPY runtimes/chatgpt-desktop/verify-installed-policy.py \
-    /usr/local/libexec/grotto-verify-installed-chatgpt-policy
-
-# Keep the primary surface single-window while retaining the useful
-# application menus: remove Electron's Linux window-control overlay and omit
-# only File -> New Window. The local feature uses required patch descriptors,
-# so upstream main-bundle drift fails the image build.
-RUN set -eux; \
-    python3 -m json.tool linux-features/features.json >/dev/null; \
-    grep -q '"grotto-single-window-chrome"' linux-features/features.json; \
-    test -f \
-        linux-features/local/grotto-single-window-chrome/README.md; \
-    test -f \
-        linux-features/local/grotto-single-window-chrome/feature.json; \
-    test -f \
-        linux-features/local/grotto-single-window-chrome/patch.js
-
-# Keep the wrapper pinned while retaining its Browser Use trusted-client hash
-# adjustment and removing only automatic node_repl JavaScript approval. Both
-# the preflight and apply are strict: upstream source drift fails the build.
-RUN set -eux; \
-    test "$(git rev-parse HEAD)" = "${CODEX_DESKTOP_LINUX_REF}"; \
-    git apply --check --whitespace=error-all \
-        /tmp/disable-auto-approved-node-repl.patch; \
-    git apply --whitespace=error-all \
-        /tmp/disable-auto-approved-node-repl.patch; \
-    git diff --check; \
-    grep -q 'browser-use-node-repl-approval' \
-        scripts/patches/core/all-linux/main-process/browser-integrations/patch.js; \
-    grep -q 'applyBrowserUseNodeReplApprovalAssets' \
-        scripts/patches/core/all-linux/main-process/browser-integrations/patch.js; \
-    grep -q 'codexLinuxTrustedBrowserClientSha256s' \
-        scripts/patches/impl/main-process/browser.js; \
-    ! grep -q 'approval_mode' scripts/patches/impl/main-process/browser.js; \
-    rm -f /tmp/disable-auto-approved-node-repl.patch
-
-# The upstream installer downloads the official ChatGPT DMG, checks the
-# generated Linux candidate, rebuilds native modules, and stages the complete
-# Electron application. Nothing is downloaded or compiled at container start.
-RUN set -eux; \
-    MAX_BUILD_THREADS="${MAX_BUILD_THREADS}" \
-    CODEX_INSTALL_DIR=/opt/chatgpt \
-        ./install.sh --fresh; \
-    test -x /opt/chatgpt/start.sh; \
-    test -x /opt/chatgpt/resources/node-runtime/bin/node; \
-    /opt/chatgpt/resources/node-runtime/bin/node --test \
-        linux-features/local/grotto-single-window-chrome/test.js; \
-    python3 -c 'import json; report=json.load(open("/opt/chatgpt/.codex-linux/patch-report.json", encoding="utf-8")); assert report.get("enabledFeatures") == ["grotto-single-window-chrome"], report.get("enabledFeatures"); statuses={entry["name"]:entry["status"] for entry in report.get("patches", [])}; required=("feature:grotto-single-window-chrome:frameless-linux-window-controls", "feature:grotto-single-window-chrome:linux-single-window-menu"); assert all(statuses.get(name) in {"applied", "already-applied"} for name in required), statuses'; \
-    install -d -m 0755 /opt/grotto-build; \
-    python3 /usr/local/libexec/grotto-verify-installed-chatgpt-policy \
-        --root /opt/chatgpt \
-        --wrapper-revision "${CODEX_DESKTOP_LINUX_REF}" \
-        --manifest /opt/grotto-build/chatgpt-desktop-security.json; \
-    test -s /opt/grotto-build/chatgpt-desktop-security.json; \
-    test "$(stat -c '%a' /opt/grotto-build/chatgpt-desktop-security.json)" = 444; \
-    rm -rf \
-        /root/.cache/codex-desktop \
-        /src/Codex.dmg \
-        /src/Codex.dmg.metadata \
-        /src/dist-next \
-        /tmp/*
-
-# Install the Codex CLI and its platform-specific optional dependency into the
-# image. Electron resolves the npm launcher to codex.js before spawning it, so
-# make that script independent of the child process PATH by pinning its shebang
-# to the managed Node runtime shipped in the same image.
-RUN set -eux; \
-    export PATH="/opt/chatgpt/resources/node-runtime/bin:/opt/codex-cli/bin:${PATH}"; \
-    command -v node; \
-    command -v npm; \
-    node --version; \
-    npm --version; \
-    npm install \
-        --global \
-        --prefix /opt/codex-cli \
-        --include=optional \
-        "@openai/codex@${CODEX_CLI_VERSION}"; \
-    codex_js=/opt/codex-cli/lib/node_modules/@openai/codex/bin/codex.js; \
-    test -f "$codex_js"; \
-    sed -i '1c #!/opt/chatgpt/resources/node-runtime/bin/node' "$codex_js"; \
-    chmod 0755 "$codex_js"; \
-    test "$(head -n 1 "$codex_js")" = '#!/opt/chatgpt/resources/node-runtime/bin/node'; \
-    test -x /opt/codex-cli/bin/codex; \
-    env -i HOME=/tmp PATH=/usr/bin:/bin /opt/codex-cli/bin/codex --version; \
-    npm cache clean --force; \
-    rm -rf /root/.npm
-
 FROM ${SELKIES_BASE_IMAGE}
 
-ARG CODEX_DESKTOP_LINUX_REF
-ARG CODEX_CLI_VERSION
+ARG CHATGPT_PACKAGE_VERSION
+ARG CHATGPT_PACKAGE_SHA256_AMD64
+ARG CHATGPT_PACKAGE_SHA256_ARM64
+ARG CHATGPT_PACKAGE_BASE_URL
 ARG SELKIES_BASE_IMAGE
 ARG GROTTO_BUILD_REVISION
 
-LABEL io.pelagians.grotto.wrapper-revision="$CODEX_DESKTOP_LINUX_REF" \
-      io.pelagians.grotto.codex-cli-version="$CODEX_CLI_VERSION" \
+LABEL io.pelagians.grotto.chatgpt-package-version="$CHATGPT_PACKAGE_VERSION" \
+      io.pelagians.grotto.chatgpt-package-source="$CHATGPT_PACKAGE_BASE_URL" \
       io.pelagians.grotto.selkies-base-image="$SELKIES_BASE_IMAGE" \
       org.opencontainers.image.revision="$GROTTO_BUILD_REVISION"
 
 # LinuxServer installs the Selkies backend in /lsiopy. Keep that venv on PATH;
 # its s6 service invokes the bare `selkies` command during container startup.
+#
+# The vendor package ships its own Codex CLI and Node runtime under
+# /usr/lib/chatgpt/resources, so Grotto no longer installs either separately.
 ENV TITLE="ChatGPT Desktop" \
     START_DOCKER=false \
     PIXELFLUX_WAYLAND=true \
@@ -185,12 +38,12 @@ ENV TITLE="ChatGPT Desktop" \
     GROTTO_RUNTIME=chatgpt-desktop \
     GROTTO_CHATGPT_AUTH_MODE=device \
     GROTTO_BUILD_REVISION="$GROTTO_BUILD_REVISION" \
-    GROTTO_CODEX_DESKTOP_LINUX_REF="$CODEX_DESKTOP_LINUX_REF" \
-    GROTTO_CODEX_CLI_VERSION="$CODEX_CLI_VERSION" \
+    GROTTO_CHATGPT_PACKAGE_VERSION="$CHATGPT_PACKAGE_VERSION" \
     GROTTO_SELKIES_BASE_IMAGE="$SELKIES_BASE_IMAGE" \
+    GROTTO_CHATGPT_WM_CLASS=chatgpt-desktop \
     CODEX_HOME=/config/.codex \
-    CODEX_CLI_PATH=/opt/codex-cli/bin/codex \
-    CODEX_MANAGED_NODE_RUNTIME_DIR=/opt/chatgpt/resources/node-runtime \
+    CODEX_CLI_PATH=/usr/lib/chatgpt/resources/codex \
+    CODEX_MANAGED_NODE_RUNTIME_DIR=/usr/lib/chatgpt/resources/cua_node \
     XDG_CONFIG_HOME=/config/.config \
     XDG_CACHE_HOME=/config/.cache \
     XDG_STATE_HOME=/config/.local/state \
@@ -205,13 +58,25 @@ ENV TITLE="ChatGPT Desktop" \
     PNPM_HOME=/tools/pnpm \
     PYTHONUSERBASE=/tools/python \
     UV_CACHE_DIR=/cache/uv \
-    PATH=/tools/bin:/tools/npm/bin:/tools/pnpm:/tools/cargo/bin:/tools/mise/shims:/opt/codex-cli/bin:/opt/chatgpt/resources/node-runtime/bin:/lsiopy/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    PATH=/tools/bin:/tools/npm/bin:/tools/pnpm:/tools/cargo/bin:/tools/mise/shims:/usr/lib/chatgpt/resources/cua_node/bin:/lsiopy/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
+COPY runtimes/chatgpt-desktop/verify-installed-policy.py \
+    /usr/local/libexec/grotto-verify-installed-chatgpt-policy
+
+# Grotto's own tooling plus the workspace commands the runtime smoke test
+# asserts. The ChatGPT package declares its complete Electron dependency set,
+# so those libraries are resolved by apt when the package is installed below
+# instead of being restated here.
+#
+# bubblewrap replaces the helper the npm Codex CLI used to vendor: the native
+# package ships no bwrap, and grotto-doctor reports the sandbox backend Codex
+# will actually use.
 RUN set -eux; \
     apt-get update -o Acquire::Retries=5; \
     apt-get install --no-install-recommends -y \
         at-spi2-core \
         bash \
+        bubblewrap \
         ca-certificates \
         curl \
         findutils \
@@ -220,31 +85,7 @@ RUN set -eux; \
         jq \
         gir1.2-gdkpixbuf-2.0 \
         gir1.2-gtk-3.0 \
-        libasound2t64 \
-        libatk-bridge2.0-0 \
-        libatk1.0-0 \
-        libcairo2 \
-        libcups2t64 \
-        libdbus-1-3 \
-        libdrm2 \
-        libgbm1 \
-        libglib2.0-0t64 \
-        libgtk-3-0t64 \
-        libnspr4 \
-        libnss3 \
-        libpango-1.0-0 \
         libsecret-1-0 \
-        libstdc++6 \
-        libx11-6 \
-        libx11-xcb1 \
-        libxcb-dri3-0 \
-        libxcb1 \
-        libxcomposite1 \
-        libxdamage1 \
-        libxext6 \
-        libxfixes3 \
-        libxkbcommon0 \
-        libxrandr2 \
         lsof \
         pkg-config \
         python3 \
@@ -260,10 +101,60 @@ RUN set -eux; \
         zip; \
     rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /opt/chatgpt /opt/chatgpt
-COPY --from=builder /opt/codex-cli /opt/codex-cli
-COPY --from=builder /opt/grotto-build/chatgpt-desktop-security.json \
-    /usr/share/grotto/chatgpt-desktop-security.json
+# Install the pinned vendor package. The archive is fetched by exact pool path
+# and checked against the digest published in the repository index, so the build
+# fails instead of silently installing a different application build.
+#
+# The package's postinst adds OpenAI's apt source unless repo_add_once is
+# already false. Seed that opt-out first: the image must stay on the pinned
+# version rather than drifting on the next `apt-get upgrade` inside a container.
+RUN set -eux; \
+    package_arch="$(dpkg --print-architecture)"; \
+    case "$package_arch" in \
+        amd64) package_sha256="${CHATGPT_PACKAGE_SHA256_AMD64}" ;; \
+        arm64) package_sha256="${CHATGPT_PACKAGE_SHA256_ARM64}" ;; \
+        *) echo "Unsupported build architecture: $package_arch" >&2; exit 1 ;; \
+    esac; \
+    package_name="chatgpt_${CHATGPT_PACKAGE_VERSION}_${package_arch}.deb"; \
+    install -d -m 0755 /etc/default; \
+    printf '%s\n' 'repo_add_once="false"' > /etc/default/chatgpt; \
+    chmod 0644 /etc/default/chatgpt; \
+    curl -fsSL \
+        "${CHATGPT_PACKAGE_BASE_URL}/pool/main/c/chatgpt/${package_name}" \
+        -o "/tmp/${package_name}"; \
+    printf '%s  %s\n' "$package_sha256" "/tmp/${package_name}" | sha256sum -c -; \
+    apt-get update -o Acquire::Retries=5; \
+    apt-get install --no-install-recommends -y "/tmp/${package_name}"; \
+    rm -f "/tmp/${package_name}"; \
+    rm -rf /var/lib/apt/lists/*; \
+    test ! -e /etc/apt/sources.list.d/chatgpt.sources; \
+    test "$(dpkg-query --show --showformat='${Version}' chatgpt)" = "${CHATGPT_PACKAGE_VERSION}"; \
+    test -x /usr/lib/chatgpt/ChatGPT; \
+    test -x /usr/bin/chatgpt; \
+    test -x /usr/lib/chatgpt/resources/codex; \
+    test -x /usr/lib/chatgpt/resources/cua_node/bin/node; \
+    ln -sf /usr/lib/chatgpt/resources/codex /usr/local/bin/codex; \
+    test -x /usr/local/bin/codex
+
+# Record what the installed application exposes. Grotto does not patch the
+# vendor package, so this is a provenance and policy statement about the shipped
+# bundle rather than a check that a local patch survived an upstream rebuild.
+RUN set -eux; \
+    install -d -m 0755 /usr/share/grotto; \
+    python3 /usr/local/libexec/grotto-verify-installed-chatgpt-policy \
+        --root /usr/lib/chatgpt \
+        --package-version "${CHATGPT_PACKAGE_VERSION}" \
+        --manifest /usr/share/grotto/chatgpt-desktop-security.json; \
+    test -s /usr/share/grotto/chatgpt-desktop-security.json; \
+    test "$(stat -c '%a' /usr/share/grotto/chatgpt-desktop-security.json)" = 444
+
+# Install Grotto's runtime overlay and self-check it.
+#
+# XDG_CACHE_HOME and the other XDG variables point into /config, so build-time
+# tools that write a cache leave root-owned directories behind there. The
+# session launcher runs `install -d` over those paths as `abc` and aborts if it
+# cannot chmod them, so this step takes ownership of them and then asserts that
+# nothing under /config is owned by anyone else.
 COPY runtimes/chatgpt-desktop/root/ /
 COPY tests/chatgpt-desktop-runtime.sh /usr/local/libexec/grotto-chatgpt-desktop-smoke
 COPY tests/test_grotto_doctor.py /usr/local/libexec/test-grotto-doctor.py
@@ -306,16 +197,19 @@ RUN set -eux; \
         /custom-cont-init.d/10-grotto-chatgpt-permissions \
         /usr/local/libexec/grotto-chatgpt-desktop-smoke; \
     for command_name in \
-        bash curl find gh git jq lsof node npm pip3 pkg-config python3 rg \
-        shellcheck sqlite3 unzip zip; \
+        bash bwrap chatgpt codex curl find gh git jq lsof node npm pip3 \
+        pkg-config python3 rg shellcheck sqlite3 unzip zip; \
     do \
         command -v "$command_name"; \
     done; \
     python3 -c 'import gi; gi.require_version("Gtk", "3.0"); gi.require_version("GdkPixbuf", "2.0"); from gi.repository import GdkPixbuf, Gtk'; \
     command -v qrencode; \
-    chmod -R a+rX /opt/chatgpt /opt/codex-cli; \
     install -d -o abc -g abc -m 0755 \
         /config \
+        /config/.cache \
+        /config/.config \
+        /config/.local \
+        /config/.local/state \
         /workspace \
         /tools \
         /tools/bin \
@@ -331,19 +225,18 @@ RUN set -eux; \
         /cache/pip \
         /cache/uv; \
     test "$(stat -c '%U:%G:%a' /config)" = 'abc:abc:755'; \
-    if [ -f /opt/chatgpt/.codex-linux/codex-desktop.png ]; then \
+    test -z "$(find /config ! -user abc -print -quit)"; \
+    if [ -f /usr/lib/chatgpt/resources/icon-chatgpt.png ]; then \
         install -m 0644 \
-            /opt/chatgpt/.codex-linux/codex-desktop.png \
+            /usr/lib/chatgpt/resources/icon-chatgpt.png \
             /usr/share/selkies/www/icon.png; \
     fi; \
     test -x /lsiopy/bin/selkies; \
     test "$(command -v selkies)" = /lsiopy/bin/selkies; \
-    test -x /opt/chatgpt/start.sh; \
     test -r /usr/share/grotto/chatgpt-desktop-security.json; \
     test "$(stat -c '%a' /usr/share/grotto/chatgpt-desktop-security.json)" = 444; \
-    test -x /opt/codex-cli/bin/codex; \
-    test "$(head -n 1 /opt/codex-cli/lib/node_modules/@openai/codex/bin/codex.js)" = '#!/opt/chatgpt/resources/node-runtime/bin/node'; \
-    env -i HOME=/tmp PATH=/usr/bin:/bin /opt/codex-cli/bin/codex --version
+    env -i HOME=/tmp PATH=/usr/bin:/bin \
+        /usr/lib/chatgpt/resources/codex --version
 
 WORKDIR /workspace
 

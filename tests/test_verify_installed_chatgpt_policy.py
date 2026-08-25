@@ -1,9 +1,8 @@
 #!/usr/bin/python3
-"""Fixture tests for the installed ChatGPT Desktop policy verifier."""
+"""Fixture tests for the installed ChatGPT package policy verifier."""
 
 from __future__ import annotations
 
-import hashlib
 import importlib.machinery
 import importlib.util
 import json
@@ -12,6 +11,7 @@ import stat
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 VERIFIER = ROOT / "runtimes/chatgpt-desktop/verify-installed-policy.py"
@@ -22,31 +22,24 @@ policy = importlib.util.module_from_spec(SPEC)
 sys.modules[LOADER.name] = policy
 LOADER.exec_module(policy)
 
-BROWSER_CLIENT = "export const browserClient = 'browser';\n"
-CHROME_CLIENT = "export const browserClient = 'chrome';\n"
-TRUSTED_HASHES = [
-    hashlib.sha256(BROWSER_CLIENT.encode()).hexdigest(),
-    hashlib.sha256(CHROME_CLIENT.encode()).hexdigest(),
-]
-SAFE_BROWSER_BUNDLE = f'''
-const __codexLinuxBundledBrowserClientSha256s={json.dumps(TRUSTED_HASHES)};
-function codexLinuxTrustedBrowserClientSha256s(hashes) {{
-  return Array.from(new Set([...hashes,...__codexLinuxBundledBrowserClientSha256s]));
-}}
-const hostConfigSchema={{
-  browserClientPath:pathSchema,
-  nodeReplPath:pathSchema,
-  trustedBrowserClientSha256s:hashSchema.transform(
-    codexLinuxTrustedBrowserClientSha256s
-  )
-}};
-'''
+PACKAGE_VERSION = "26.820.60940"
+PACKAGE = {
+    "name": "chatgpt",
+    "version": PACKAGE_VERSION,
+    "architecture": "amd64",
+}
+# Minified shapes taken from the vendor bundle: node_repl is wired up, and the
+# approval mode is a setting rather than a hardcoded approval.
+VENDOR_ASAR = (
+    "const hostConfig={browserClientPath:pathSchema,nodeReplPath:pathSchema};\n"
+    "const defaults={tools:null,default_tools_approval_mode:null};\n"
+)
 
 
 class InstalledPolicyVerifierTest(unittest.TestCase):
     def fixture(self, sources: dict[str, str]) -> tuple[tempfile.TemporaryDirectory, pathlib.Path]:
         temporary = tempfile.TemporaryDirectory()
-        root = pathlib.Path(temporary.name) / "opt" / "chatgpt"
+        root = pathlib.Path(temporary.name) / "usr" / "lib" / "chatgpt"
         root.mkdir(parents=True)
         for name, source in sources.items():
             path = root / name
@@ -54,36 +47,47 @@ class InstalledPolicyVerifierTest(unittest.TestCase):
             path.write_text(source, encoding="utf-8")
         return temporary, root
 
-    def safe_sources(self, bundle: str = SAFE_BROWSER_BUNDLE) -> dict[str, str]:
+    def vendor_sources(self, archive: str = VENDOR_ASAR) -> dict[str, str]:
         return {
-            "content/webview/assets/app.js": bundle,
-            "resources/plugins/openai-bundled/plugins/browser/scripts/browser-client.mjs": BROWSER_CLIENT,
-            "resources/plugins/openai-bundled/plugins/chrome/scripts/browser-client.mjs": CHROME_CLIENT,
+            "resources/app.asar": archive,
+            "resources/plugins/openai-bundled/plugins/browser/server.mjs": (
+                "export const client='browser-client.mjs';\n"
+            ),
         }
 
-    def test_trusted_hash_present_and_auto_approval_absent_passes(self) -> None:
-        temporary, root = self.fixture(self.safe_sources())
-        with temporary:
-            inspection = policy.inspect_installed_application(root)
-
-        self.assertTrue(inspection.node_repl_exposed)
-        self.assertFalse(inspection.node_repl_auto_approved)
-        self.assertTrue(inspection.browser_use_trusted_client_hash_patch)
-
-    def test_identical_verified_client_hashes_pass(self) -> None:
-        sources = self.safe_sources(
-            SAFE_BROWSER_BUNDLE.replace(TRUSTED_HASHES[1], TRUSTED_HASHES[0])
+    def installed(self, **overrides: str):
+        record = {**PACKAGE, **overrides}
+        completed = mock.Mock(
+            returncode=0,
+            stdout="\n".join(
+                (
+                    record["name"],
+                    record["version"],
+                    record["architecture"],
+                    "install ok installed",
+                )
+            ),
+            stderr="",
         )
-        sources[
-            "resources/plugins/openai-bundled/plugins/chrome/scripts/browser-client.mjs"
-        ] = BROWSER_CLIENT
-        temporary, root = self.fixture(sources)
-        with temporary:
-            inspection = policy.inspect_installed_application(root)
+        return mock.patch.object(policy.subprocess, "run", return_value=completed)
 
-        self.assertTrue(inspection.node_repl_exposed)
-        self.assertFalse(inspection.node_repl_auto_approved)
-        self.assertTrue(inspection.browser_use_trusted_client_hash_patch)
+    def test_vendor_bundle_without_auto_approval_passes(self) -> None:
+        temporary, root = self.fixture(self.vendor_sources())
+        with temporary, self.installed():
+            manifest = policy.build_manifest(root, PACKAGE_VERSION)
+
+        self.assertEqual(manifest["schema_version"], policy.SCHEMA_VERSION)
+        self.assertEqual(manifest["package"], PACKAGE)
+        self.assertTrue(manifest["node_repl"]["exposed"])
+        self.assertFalse(manifest["node_repl"]["auto_approved"])
+        self.assertTrue(manifest["node_repl"]["verified"])
+        self.assertEqual(
+            manifest["node_repl"]["verification_source"],
+            "installed-vendor-package",
+        )
+        self.assertTrue(manifest["browser_use"]["present"])
+        self.assertFalse(manifest["browser_use"]["trusted_client_hash_patch"])
+        self.assertTrue(manifest["browser_use"]["verified"])
 
     def test_normalized_auto_approval_variants_fail(self) -> None:
         variants = (
@@ -94,87 +98,94 @@ class InstalledPolicyVerifierTest(unittest.TestCase):
         for index, unsafe in enumerate(variants):
             with self.subTest(index=index):
                 temporary, root = self.fixture(
-                    self.safe_sources(SAFE_BROWSER_BUNDLE + unsafe)
+                    self.vendor_sources(VENDOR_ASAR + unsafe)
                 )
-                with temporary, self.assertRaisesRegex(
+                with temporary, self.installed(), self.assertRaisesRegex(
                     policy.VerificationError, "automatic approval"
                 ):
-                    policy.inspect_installed_application(root)
+                    policy.build_manifest(root, PACKAGE_VERSION)
 
-    def test_browser_use_without_trusted_hash_patch_fails(self) -> None:
-        source = r'''
-const hostConfigSchema={browserClientPath:pathSchema,nodeReplPath:pathSchema,
-  trustedBrowserClientSha256s:hashSchema};
-'''
-        temporary, root = self.fixture(self.safe_sources(source))
-        with temporary, self.assertRaisesRegex(
-            policy.VerificationError, "without a verified trusted-client hash adjustment"
-        ):
-            policy.inspect_installed_application(root)
-
-    def test_embedded_hash_mismatch_fails(self) -> None:
-        mismatch = SAFE_BROWSER_BUNDLE.replace(TRUSTED_HASHES[0], "0" * 64)
-        temporary, root = self.fixture(self.safe_sources(mismatch))
-        with temporary, self.assertRaisesRegex(
-            policy.VerificationError, "do not match the installed clients"
-        ):
-            policy.inspect_installed_application(root)
-
-    def test_finalizer_rebinds_stale_hashes_to_final_clients(self) -> None:
-        stale_hashes = ["0" * 64, "1" * 64]
-        stale_bundle = SAFE_BROWSER_BUNDLE.replace(
-            json.dumps(TRUSTED_HASHES),
-            json.dumps(stale_hashes),
+    def test_auto_approval_in_a_loose_script_fails(self) -> None:
+        sources = self.vendor_sources()
+        sources["resources/plugins/openai-bundled/plugins/browser/server.mjs"] = (
+            "const c={tools:{js:{approval_mode:'approve'}}};\n"
         )
-        temporary, root = self.fixture(self.safe_sources(stale_bundle))
-        with temporary:
-            with self.assertRaisesRegex(
-                policy.VerificationError, "do not match the installed clients"
-            ):
-                policy.inspect_installed_application(root)
-            self.assertTrue(policy.finalize_embedded_trusted_hashes(root))
-            inspection = policy.inspect_installed_application(root)
-            combined = "\n".join(
-                source
-                for _path, source in policy.read_sources(policy.javascript_files(root))
-            )
+        temporary, root = self.fixture(sources)
+        with temporary, self.installed(), self.assertRaisesRegex(
+            policy.VerificationError, "automatic approval"
+        ):
+            policy.build_manifest(root, PACKAGE_VERSION)
 
-        self.assertTrue(inspection.browser_use_trusted_client_hash_patch)
-        self.assertEqual(policy.embedded_trusted_hashes(combined), set(TRUSTED_HASHES))
+    def test_auto_approval_across_a_read_boundary_is_still_found(self) -> None:
+        unsafe = "tools:{js:{approval_mode:'approve'}}"
+        # Straddle the window boundary so the overlap, not luck, catches it.
+        padding = "/*pad*/" * ((policy.SCAN_WINDOW_BYTES // 7) - 1)
+        temporary, root = self.fixture(
+            self.vendor_sources(VENDOR_ASAR + padding + unsafe + padding)
+        )
+        with temporary, self.installed(), self.assertRaisesRegex(
+            policy.VerificationError, "automatic approval"
+        ):
+            policy.build_manifest(root, PACKAGE_VERSION)
 
     def test_node_repl_absent_upstream_is_not_claimed_exposed(self) -> None:
         temporary, root = self.fixture(
-            {"resources/app/main.js": "const ordinaryDesktopBundle = true;"}
+            {"resources/app.asar": "const ordinaryDesktopBundle = true;"}
         )
-        with temporary:
-            self.assertFalse(policy.finalize_embedded_trusted_hashes(root))
-            inspection = policy.inspect_installed_application(root)
+        with temporary, self.installed():
+            manifest = policy.build_manifest(root, PACKAGE_VERSION)
 
-        self.assertFalse(inspection.node_repl_exposed)
-        self.assertFalse(inspection.node_repl_auto_approved)
-        self.assertFalse(inspection.browser_use_trusted_client_hash_patch)
+        self.assertFalse(manifest["node_repl"]["exposed"])
+        self.assertFalse(manifest["node_repl"]["auto_approved"])
+        self.assertFalse(manifest["browser_use"]["present"])
 
-    def test_ambiguous_changed_bundle_fails_closed(self) -> None:
-        temporary, root = self.fixture(
-            {"resources/app/chunk.js": "const changed={nodeReplPath:value};"}
+    def test_missing_archive_fails_closed(self) -> None:
+        temporary, root = self.fixture({"resources/README.txt": "not a bundle"})
+        with temporary, self.installed(), self.assertRaisesRegex(
+            policy.VerificationError, "no app.asar archive"
+        ):
+            policy.build_manifest(root, PACKAGE_VERSION)
+
+    def test_missing_root_fails_closed(self) -> None:
+        temporary, root = self.fixture(self.vendor_sources())
+        with temporary, self.installed(), self.assertRaisesRegex(
+            policy.VerificationError, "installed application root is missing"
+        ):
+            policy.build_manifest(root / "absent", PACKAGE_VERSION)
+
+    def test_version_drift_from_the_pinned_build_fails(self) -> None:
+        temporary, root = self.fixture(self.vendor_sources())
+        with temporary, self.installed(version="26.821.1"), self.assertRaisesRegex(
+            policy.VerificationError, "does not match the pinned build version"
+        ):
+            policy.build_manifest(root, PACKAGE_VERSION)
+
+    def test_half_installed_package_fails(self) -> None:
+        temporary, root = self.fixture(self.vendor_sources())
+        completed = mock.Mock(
+            returncode=0,
+            stdout="chatgpt\n{}\namd64\ninstall ok half-configured".format(
+                PACKAGE_VERSION
+            ),
+            stderr="",
         )
-        with temporary, self.assertRaisesRegex(
-            policy.VerificationError, "ambiguous"
-        ):
-            policy.inspect_installed_application(root)
+        with temporary, mock.patch.object(
+            policy.subprocess, "run", return_value=completed
+        ), self.assertRaisesRegex(policy.VerificationError, "not fully installed"):
+            policy.build_manifest(root, PACKAGE_VERSION)
 
-    def test_empty_or_unreadable_bundle_structure_fails_closed(self) -> None:
-        temporary, root = self.fixture({"README.txt": "not a bundle"})
-        with temporary, self.assertRaisesRegex(
-            policy.VerificationError, "no JavaScript bundles"
-        ):
-            policy.inspect_installed_application(root)
+    def test_absent_package_fails(self) -> None:
+        temporary, root = self.fixture(self.vendor_sources())
+        completed = mock.Mock(returncode=1, stdout="", stderr="no packages found")
+        with temporary, mock.patch.object(
+            policy.subprocess, "run", return_value=completed
+        ), self.assertRaisesRegex(policy.VerificationError, "is not installed"):
+            policy.build_manifest(root, PACKAGE_VERSION)
 
     def test_manifest_is_derived_and_immutable(self) -> None:
-        temporary, root = self.fixture(self.safe_sources())
-        with temporary:
-            inspection = policy.inspect_installed_application(root)
-            manifest = inspection.manifest("7d4049b")
+        temporary, root = self.fixture(self.vendor_sources())
+        with temporary, self.installed():
+            manifest = policy.build_manifest(root, PACKAGE_VERSION)
             destination = root.parent / "security.json"
             policy.write_manifest(destination, manifest)
             loaded = json.loads(destination.read_text(encoding="utf-8"))

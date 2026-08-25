@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import importlib.machinery
 import importlib.util
-import json
 import os
 from pathlib import Path
 import tempfile
@@ -27,14 +26,11 @@ LABWC_CONFIG = Path(
         REPOSITORY / "runtimes/chatgpt-desktop/root/defaults/labwc.xml",
     )
 )
-FEATURES_CONFIG = REPOSITORY / (
-    "runtimes/chatgpt-desktop/codex-desktop-linux-features/features.json"
-)
-LOCAL_FEATURE = FEATURES_CONFIG.parent / (
-    "local/grotto-single-window-chrome"
-)
+AUTOSTART = REPOSITORY / "runtimes/chatgpt-desktop/root/defaults/autostart"
 CONTAINERFILE = REPOSITORY / "Containerfile.chatgpt-desktop"
-DOCKERIGNORE = REPOSITORY / ".dockerignore"
+# The vendor package sets no Grotto-specific WM_CLASS, so the launcher passes
+# --class and the window rules match that value.
+WM_CLASS = "chatgpt-desktop"
 
 
 def local_name(tag: object) -> str:
@@ -80,11 +76,13 @@ def assert_openbox_policy(config: Path) -> None:
     main = [
         rule
         for rule in rules
-        if rule.attrib.get("class") == "codex-desktop"
-        and rule.attrib.get("role") == "browser-window"
+        if rule.attrib.get("class") == WM_CLASS
         and rule.attrib.get("type") == "normal"
     ]
     assert len(main) == 1
+    # The application advertises no WM_WINDOW_ROLE, so a role match would never
+    # select this window.
+    assert "role" not in main[0].attrib
     assert child_settings(main[0]) == {
         "decor": "no",
         "focus": "no",
@@ -121,12 +119,14 @@ def assert_labwc_policy(config: Path) -> None:
     main = [
         rule
         for rule in rules
-        if rule.attrib.get("identifier") == "codex-desktop"
-        and rule.attrib.get("title") == "ChatGPT"
+        if rule.attrib.get("identifier") == WM_CLASS
         and rule.attrib.get("type") == "normal"
     ]
     assert len(main) == 1
     assert "matchOnce" not in main[0].attrib
+    # The window title follows the open conversation, so the rule must not
+    # narrow itself to one title.
+    assert "title" not in main[0].attrib
     assert main[0].attrib.get("serverDecoration") == "no"
     assert child_settings(main[0]).get("ignoreFocusRequest") == "yes"
     assert actions(main[0]) == ["Maximize", "Lower", "ToggleAlwaysOnBottom"]
@@ -144,44 +144,23 @@ def assert_labwc_policy(config: Path) -> None:
         ]
 
 
-def assert_client_window_chrome_policy() -> None:
-    feature_config = json.loads(FEATURES_CONFIG.read_text(encoding="utf-8"))
-    assert feature_config == {"enabled": ["grotto-single-window-chrome"]}
+def assert_launcher_matches_window_rules() -> None:
+    """The launcher and the window rules must agree on one WM class.
 
-    assert (LOCAL_FEATURE / "README.md").is_file()
-    manifest = json.loads(
-        (LOCAL_FEATURE / "feature.json").read_text(encoding="utf-8")
-    )
-    assert manifest["id"] == "grotto-single-window-chrome"
-    assert manifest["defaultEnabled"] is False
-    assert manifest["entrypoints"] == {"patchDescriptors": "./patch.js"}
-
-    patch_source = (LOCAL_FEATURE / "patch.js").read_text(encoding="utf-8")
-    assert "applyFramelessTitlebarMainPatch" in patch_source
-    assert "process.platform!==`linux`&&" in patch_source
-    assert patch_source.count('ciPolicy: "required-upstream"') == 2
+    Nothing at runtime reconciles them: if the launcher passes a class the
+    rules do not match, the desktop silently comes up decorated and unmanaged.
+    """
+    autostart = AUTOSTART.read_text(encoding="utf-8")
+    assert 'CHATGPT_WM_CLASS="${GROTTO_CHATGPT_WM_CLASS:-' + WM_CLASS + '}"' in autostart
+    assert '"--class=${CHATGPT_WM_CLASS}"' in autostart
 
     containerfile = CONTAINERFILE.read_text(encoding="utf-8")
-    feature_copy = containerfile.index(
-        "runtimes/chatgpt-desktop/codex-desktop-linux-features/"
-    )
-    install = containerfile.index("./install.sh --fresh")
-    report_check = containerfile.index(
-        'report.get("enabledFeatures") == ["grotto-single-window-chrome"]'
-    )
-    assert feature_copy < install < report_check
-    assert (
-        "linux-features/local/grotto-single-window-chrome/README.md"
-        in containerfile[feature_copy:install]
-    )
+    assert f"GROTTO_CHATGPT_WM_CLASS={WM_CLASS}" in containerfile
 
-    dockerignore = DOCKERIGNORE.read_text(encoding="utf-8").splitlines()
-    readme_exception = (
-        "!runtimes/chatgpt-desktop/"
-        "codex-desktop-linux-features/**/README.md"
+    configurator = CONFIGURATOR.read_text(encoding="utf-8")
+    assert (
+        f'os.environ.get("GROTTO_CHATGPT_WM_CLASS", "{WM_CLASS}")' in configurator
     )
-    assert readme_exception in dockerignore
-    assert dockerignore.index(readme_exception) > dockerignore.index("**/README.md")
 
 
 def load_configurator():
@@ -217,7 +196,7 @@ def main(*, installed_image: bool = False) -> None:
         assert_openbox_policy(Path(actual_openbox))
     assert_labwc_policy(LABWC_CONFIG)
     if not installed_image:
-        assert_client_window_chrome_policy()
+        assert_launcher_matches_window_rules()
     print("window-manager policy tests passed")
 
 

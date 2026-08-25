@@ -46,8 +46,13 @@
       special stacking behavior of a true fullscreen window. User clicks can
       still focus it, but client activation requests cannot pull focus back
       from a chooser or alert.
+
+      The identifier is the app_id Grotto gives the vendor package on the
+      launcher command line, not a vendor default. Matching on that alone is
+      deliberate: the window title follows the open conversation, so a title
+      match would stop applying as soon as the user starts chatting.
     -->
-    <windowRule identifier="codex-desktop" title="ChatGPT" type="normal" serverDecoration="no">
+    <windowRule identifier="chatgpt-desktop" type="normal" serverDecoration="no">
       <ignoreFocusRequest>yes</ignoreFocusRequest>
       <action name="Maximize" />
       <action name="Lower" />
