@@ -26,6 +26,7 @@ required=(
     shellcheck
     sqlite3
     unzip
+    wlrctl
     zip
 )
 for command_name in "${required[@]}"; do
@@ -37,14 +38,17 @@ done
 
 test -x /usr/local/libexec/grotto-configure-openbox
 test -x /usr/local/bin/grotto-chatgpt-desktop
+test -x /usr/local/libexec/grotto-chatgpt-fullscreen
 test -x /defaults/autostart
 test -x /defaults/autostart_wayland
 test -f /defaults/labwc.xml
 
-# X11/Openbox is the primary lane. The Openbox policy holds the main window
-# fullscreen on the bottom layer, so it has to be present in the config Openbox
-# actually reads.
-test "$(printenv PIXELFLUX_WAYLAND)" = false
+# Wayland/Labwc is the primary lane and holds the main window fullscreen on the
+# bottom layer. The Openbox policy is the secondary X11 path; both have to be
+# packaged, because the session mode is a run-time choice.
+test "$(printenv PIXELFLUX_WAYLAND)" = true
+grep -q 'identifier="chatgpt-desktop"' /defaults/labwc.xml
+grep -q 'ToggleFullscreen' /defaults/labwc.xml
 grep -q 'fullscreen>yes<' /etc/xdg/openbox/rc.xml
 grep -q 'class="chatgpt-desktop"' /etc/xdg/openbox/rc.xml
 

@@ -38,8 +38,9 @@
 
   <windowRules>
     <!--
-      Labwc is the secondary compatibility path; the primary lane is
-      X11/Openbox. Secondary normal windows open windowed, raised, and focused.
+      Labwc is the primary lane; the packaged Openbox policy is the
+      secondary X11 path. Secondary normal windows open windowed, raised,
+      and focused.
     -->
     <windowRule identifier="*" type="normal" serverDecoration="yes">
       <ignoreFocusRequest>no</ignoreFocusRequest>
@@ -51,8 +52,10 @@
     <!--
       ChatGPT is the persistent desktop surface. True fullscreen keeps it at
       the output size: the application resets its own window bounds shortly
-      after mapping, so a Maximize action is undone on every start. The bottom
-      layer keeps file-selection and alert windows visible above it.
+      after mapping, so a Maximize action is undone on every start. Under
+      Wayland a fullscreen size is not a request the client can decline: the
+      compositor configures the surface and the client draws at that size. The
+      bottom layer keeps file-selection and alert windows visible above it.
 
       The identifier is the app_id Grotto gives the vendor package on the
       launcher command line, not a vendor default. Matching on that alone is

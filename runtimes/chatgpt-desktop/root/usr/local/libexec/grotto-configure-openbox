@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Install Grotto's single-application stacking policy into Openbox."""
+"""Install Grotto's single-application stacking policy into Openbox.
+
+The primary lane is Wayland/Labwc. This policy is the secondary X11 path,
+used when Selkies runs the Openbox session.
+"""
 
 from __future__ import annotations
 

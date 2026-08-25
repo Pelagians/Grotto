@@ -32,6 +32,10 @@ LAUNCHER = REPOSITORY / (
 INIT_SCRIPT = REPOSITORY / (
     "runtimes/chatgpt-desktop/root/custom-cont-init.d/10-grotto-chatgpt-permissions"
 )
+AUTOSTART = REPOSITORY / "runtimes/chatgpt-desktop/root/defaults/autostart"
+FULLSCREEN_HELPER = REPOSITORY / (
+    "runtimes/chatgpt-desktop/root/usr/local/libexec/grotto-chatgpt-fullscreen"
+)
 CONTAINERFILE = REPOSITORY / "Containerfile.chatgpt-desktop"
 # The vendor package sets no Grotto-specific WM_CLASS, so the launcher passes
 # --class and the window rules match that value.
@@ -207,19 +211,43 @@ def assert_launcher_matches_window_rules() -> None:
     )
 
 
-def assert_primary_lane_is_x11() -> None:
-    """X11/Openbox is the primary lane, end to end.
+def assert_primary_lane_is_wayland() -> None:
+    """Wayland/Labwc is the primary lane, end to end.
 
     Selkies picks the session, the launcher picks the Chromium backend, and the
-    Openbox policy is what actually holds the window. If Selkies were left on
-    Wayland the app would run under XWayland with the Labwc policy unused.
+    Labwc policy is what actually holds the window. The two have to agree: with
+    Selkies on Wayland but Chromium on X11 the app runs under XWayland and the
+    Labwc rules never match it.
     """
     containerfile = CONTAINERFILE.read_text(encoding="utf-8")
-    assert "PIXELFLUX_WAYLAND=false" in containerfile
-    assert "ELECTRON_OZONE_PLATFORM_HINT=x11" in containerfile
+    assert "PIXELFLUX_WAYLAND=true" in containerfile
+    assert "ELECTRON_OZONE_PLATFORM_HINT=wayland" in containerfile
 
     launcher = LAUNCHER.read_text(encoding="utf-8")
-    assert '"${CODEX_OZONE_PLATFORM:-x11}"' in launcher
+    assert '"${CODEX_OZONE_PLATFORM:-wayland}"' in launcher
+
+
+def assert_wayland_fullscreen_is_repaired() -> None:
+    """The Labwc rule alone does not hold this application fullscreen.
+
+    It fullscreens the surface at map time and the application unsets it a few
+    seconds later when it resets its own bounds, so the session has to
+    re-request fullscreen once the application has settled.
+    """
+    helper = FULLSCREEN_HELPER.read_text(encoding="utf-8")
+    # Must set the state, never toggle it: a retry against an already
+    # fullscreen window would otherwise put it back in a corner.
+    assert 'wlrctl toplevel fullscreen "app_id:${CHATGPT_WM_CLASS}"' in helper
+    assert 'state:fullscreen' in helper
+    # X11 needs no repair, and the helper must not run forever.
+    assert 'if [[ -z "${WAYLAND_DISPLAY:-}" ]]; then' in helper
+    assert "APPEAR_TIMEOUT_SECONDS" in helper
+
+    autostart = AUTOSTART.read_text(encoding="utf-8")
+    assert "/usr/local/libexec/grotto-chatgpt-fullscreen &" in autostart
+
+    containerfile = CONTAINERFILE.read_text(encoding="utf-8")
+    assert "wlrctl" in containerfile
 
 
 def assert_policy_is_reapplied_to_persistent_state() -> None:
@@ -270,7 +298,8 @@ def main(*, installed_image: bool = False) -> None:
     assert_labwc_policy(LABWC_CONFIG)
     if not installed_image:
         assert_launcher_matches_window_rules()
-        assert_primary_lane_is_x11()
+        assert_primary_lane_is_wayland()
+        assert_wayland_fullscreen_is_repaired()
         assert_policy_is_reapplied_to_persistent_state()
     print("window-manager policy tests passed")
 

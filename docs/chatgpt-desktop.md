@@ -151,6 +151,7 @@ podman run --rm \
   --env TZ=America/Vancouver \
   --env CUSTOM_USER=abc \
   --env PASSWORD=change-me \
+  --env PIXELFLUX_WAYLAND=true \
   --env AUTO_GPU=true \
   --volume "$PWD/chatgpt-config:/config:Z" \
   --volume "$PWD/workspace:/workspace:Z" \
@@ -168,10 +169,11 @@ reverse proxy terminates TLS.
 
 ## Window behavior
 
-The primary lane is X11/Openbox, matching the Claude Desktop image. Selkies runs
-the Openbox session (`PIXELFLUX_WAYLAND=false`) and the launcher asks Chromium
-for the X11 backend. A Labwc policy stays packaged as a secondary Wayland
-compatibility path.
+The primary lane is Wayland/Labwc. Selkies runs the Labwc session
+(`PIXELFLUX_WAYLAND=true`) and the launcher asks Chromium for the Wayland
+backend. The two have to agree: with Selkies on Wayland but Chromium on X11 the
+application runs under XWayland and the Labwc rules never match it. An Openbox
+policy stays packaged as the secondary X11 path.
 
 ChatGPT is presented as the desktop surface rather than as an ordinary floating
 window: the visible window is undecorated, held true-fullscreen, and kept on the
@@ -182,8 +184,16 @@ place where the native package forced a change. The application resets its own
 window bounds a few seconds after mapping and ignores `--start-maximized` and
 `--window-size`, so a maximized rule is applied at map time and then undone on
 every start. It records `"window_placement":{}`, so it does not remember a
-maximize either. A fullscreen window is held at the monitor geometry by the
-window manager instead.
+maximize either. Fullscreen is held by the window manager instead.
+
+On the Wayland lane the map-time rule alone is not enough: the application
+unsets fullscreen when it resets its bounds. Measured on a 1600x900 output, the
+rule alone leaves a 1024x760 window in the corner with the application's own
+minimize and close controls drawn in it. The session therefore starts
+`grotto-chatgpt-fullscreen`, which waits for the window, re-requests fullscreen
+through the compositor once the application has settled, and exits. It sets the
+state rather than toggling it, runs once per session start, and is a no-op under
+X11, where Openbox holds a fullscreen window at the monitor geometry on its own.
 
 Native file choosers, Electron dialogs, and utility windows remain decorated
 and windowed. They are unmaximized, raised, and focused above ChatGPT when they
@@ -201,24 +211,26 @@ observed identity of the main window is
 class and type alone. The Labwc rule also does not match on window title,
 because the title follows the open conversation.
 
-Openbox merges every matching rule in document order, so the catch-all rule for
-ordinary windows is written before the ChatGPT rule that overrides it.
+Both window managers apply every matching rule in document order, so the
+catch-all rule for ordinary windows is written before the ChatGPT rule that
+overrides it.
 
 The vendor package is not patched, so the application keeps its own window
 chrome and its full `File` menu. Earlier images removed Electron's window
 controls and the `New Window` entry by patching the community wrapper. That is
 no longer possible; fullscreen takes the client control strip out of the stream,
 and the window rules above are what keeps it a single-application surface. The
-launcher also disables Chromium's `CustomTitlebar` feature and asks Electron for
-a system titlebar, which Openbox then removes from this surface.
+launcher also disables Chromium's `CustomTitlebar` and `WaylandWindowDecorations`
+features and asks Electron for a system titlebar, which the compositor then
+removes from this surface.
 
-Openbox reads its configuration from `/config`, so the build-time policy in
-`/etc/xdg` is only a seed. Container initialization refreshes the launchers, the
-Labwc configuration, and the Openbox policy into the persistent volume on every
-start, so an existing `/config` cannot keep the base terminal launcher,
-LinuxServer's catch-all maximization, or a superseded policy after an image
-update. The configurator edits only its own marked block, so unrelated changes
-to `rc.xml` survive.
+Both window managers read their configuration from `/config`, so the build-time
+Openbox policy in `/etc/xdg` is only a seed. Container initialization refreshes
+the launchers, the Labwc configuration, and the Openbox policy into the
+persistent volume on every start, so an existing `/config` cannot keep the base
+terminal launcher, LinuxServer's catch-all maximization, or a superseded policy
+after an image update. The Openbox configurator edits only its own marked block,
+so unrelated changes to `rc.xml` survive.
 
 For a software-rendering fallback, omit `/dev/dri` and use:
 
@@ -226,11 +238,11 @@ For a software-rendering fallback, omit `/dev/dri` and use:
 --env AUTO_GPU=false
 ```
 
-To run the secondary Wayland path instead, set both:
+To run the secondary X11 path instead, set both:
 
 ```bash
---env PIXELFLUX_WAYLAND=true \
---env CODEX_OZONE_PLATFORM=wayland
+--env PIXELFLUX_WAYLAND=false \
+--env CODEX_OZONE_PLATFORM=x11
 ```
 
 ## First-run authentication

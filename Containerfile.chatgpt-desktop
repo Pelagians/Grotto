@@ -31,7 +31,7 @@ LABEL io.pelagians.grotto.chatgpt-package-version="$CHATGPT_PACKAGE_VERSION" \
 # /usr/lib/chatgpt/resources, so Grotto no longer installs either separately.
 ENV TITLE="ChatGPT Desktop" \
     START_DOCKER=false \
-    PIXELFLUX_WAYLAND=false \
+    PIXELFLUX_WAYLAND=true \
     AUTO_GPU=true \
     RESTART_APP=true \
     FILE_MANAGER_PATH=/workspace \
@@ -41,7 +41,7 @@ ENV TITLE="ChatGPT Desktop" \
     GROTTO_CHATGPT_PACKAGE_VERSION="$CHATGPT_PACKAGE_VERSION" \
     GROTTO_SELKIES_BASE_IMAGE="$SELKIES_BASE_IMAGE" \
     GROTTO_CHATGPT_WM_CLASS=chatgpt-desktop \
-    ELECTRON_OZONE_PLATFORM_HINT=x11 \
+    ELECTRON_OZONE_PLATFORM_HINT=wayland \
     ELECTRON_USE_SYSTEM_TITLE_BAR=1 \
     CODEX_HOME=/config/.codex \
     CODEX_CLI_PATH=/usr/lib/chatgpt/resources/codex \
@@ -99,6 +99,7 @@ RUN set -eux; \
         shellcheck \
         sqlite3 \
         unzip \
+        wlrctl \
         xdg-utils \
         zip; \
     rm -rf /var/lib/apt/lists/*
@@ -170,11 +171,13 @@ RUN set -eux; \
         /usr/local/bin/grotto-chatgpt-auth \
         /usr/local/bin/grotto-chatgpt-desktop \
         /usr/local/libexec/grotto-configure-openbox \
+        /usr/local/libexec/grotto-chatgpt-fullscreen \
         /usr/local/libexec/grotto-chatgpt-desktop-smoke \
         /custom-cont-init.d/10-grotto-chatgpt-permissions; \
     bash -n /defaults/autostart; \
     bash -n /defaults/autostart_wayland; \
     bash -n /usr/local/bin/grotto-chatgpt-desktop; \
+    bash -n /usr/local/libexec/grotto-chatgpt-fullscreen; \
     python3 -m py_compile /usr/local/bin/grotto-chatgpt-auth; \
     python3 /usr/local/bin/grotto-chatgpt-auth --self-test; \
     bash -n /custom-cont-init.d/10-grotto-chatgpt-permissions; \
@@ -199,11 +202,12 @@ RUN set -eux; \
     shellcheck \
         /defaults/autostart \
         /usr/local/bin/grotto-chatgpt-desktop \
+        /usr/local/libexec/grotto-chatgpt-fullscreen \
         /custom-cont-init.d/10-grotto-chatgpt-permissions \
         /usr/local/libexec/grotto-chatgpt-desktop-smoke; \
     for command_name in \
         bash bwrap chatgpt codex curl find gh git jq lsof node npm pip3 \
-        pkg-config python3 rg shellcheck sqlite3 unzip zip; \
+        pkg-config python3 rg shellcheck sqlite3 unzip wlrctl zip; \
     do \
         command -v "$command_name"; \
     done; \

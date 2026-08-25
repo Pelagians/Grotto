@@ -44,5 +44,10 @@ case "${GROTTO_CHATGPT_AUTH_MODE:-device}" in
         ;;
 esac
 
+# Repair the startup fullscreen race on the Wayland lane. The helper waits for
+# the window, re-requests fullscreen once the application has finished resetting
+# its own bounds, and exits; it is a no-op under X11.
+/usr/local/libexec/grotto-chatgpt-fullscreen &
+
 cd /workspace
 exec /usr/local/bin/grotto-chatgpt-desktop

@@ -1,37 +1,39 @@
 #!/bin/bash
 set -Eeuo pipefail
 
-# Grotto's primary ChatGPT lane is X11/Openbox. The vendor package installs a
+# Grotto's primary ChatGPT lane is Wayland/Labwc. The vendor package installs a
 # two-line launcher that execs Chromium directly, so the container-specific
 # launch decisions are made here.
 #
-# The window manager, not the application, owns the desktop surface: Openbox
-# holds this window true-fullscreen on the bottom layer. Fullscreen rather than
+# The window manager, not the application, owns the desktop surface: Labwc holds
+# this window true-fullscreen on the bottom layer. Fullscreen rather than
 # borderless maximization is deliberate. The application resets its own window
 # bounds shortly after mapping and ignores --start-maximized and --window-size,
-# so a maximized rule is undone a few seconds into every start; a fullscreen
-# window is held at the monitor geometry by the window manager instead.
+# so a maximized rule is undone a few seconds into every start. Under Wayland a
+# fullscreen size is not a request the client can decline: the compositor
+# configures the surface and the client has to draw at that size.
 
 CHATGPT_WM_CLASS="${GROTTO_CHATGPT_WM_CLASS:-chatgpt-desktop}"
 
-# Ask Chromium for a system frame rather than a client-drawn titlebar. Openbox
-# then removes that frame from this surface while dialogs keep theirs.
-export ELECTRON_OZONE_PLATFORM_HINT="${ELECTRON_OZONE_PLATFORM_HINT:-x11}"
+# Ask Chromium for a system frame rather than a client-drawn titlebar. The
+# compositor then removes that frame from this surface while dialogs keep theirs.
+export ELECTRON_OZONE_PLATFORM_HINT="${ELECTRON_OZONE_PLATFORM_HINT:-wayland}"
 export ELECTRON_USE_SYSTEM_TITLE_BAR="${ELECTRON_USE_SYSTEM_TITLE_BAR:-1}"
 
-# The class is Grotto's choice, not a vendor default; the Openbox and Labwc
-# rules match the value passed here.
+# The class is Grotto's choice, not a vendor default; the Labwc and Openbox
+# rules match the value passed here. Chromium uses it for both the X11 WM_CLASS
+# and the Wayland app_id.
 chatgpt_args=("--class=${CHATGPT_WM_CLASS}")
 
-# X11 is the primary lane. CODEX_OZONE_PLATFORM keeps the override the previous
-# launcher documented, for hosts where the Wayland path is preferred.
-case "${CODEX_OZONE_PLATFORM:-x11}" in
+# Wayland is the primary lane. CODEX_OZONE_PLATFORM keeps the override the
+# previous launcher documented, for hosts that need the X11/Openbox path.
+case "${CODEX_OZONE_PLATFORM:-wayland}" in
     x11|wayland)
-        chatgpt_args+=("--ozone-platform=${CODEX_OZONE_PLATFORM:-x11}")
+        chatgpt_args+=("--ozone-platform=${CODEX_OZONE_PLATFORM:-wayland}")
         ;;
     *)
-        echo "[grotto] Unknown CODEX_OZONE_PLATFORM=${CODEX_OZONE_PLATFORM}; using x11" >&2
-        chatgpt_args+=(--ozone-platform=x11)
+        echo "[grotto] Unknown CODEX_OZONE_PLATFORM=${CODEX_OZONE_PLATFORM}; using wayland" >&2
+        chatgpt_args+=(--ozone-platform=wayland)
         ;;
 esac
 

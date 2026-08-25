@@ -1,0 +1,67 @@
+#!/bin/bash
+set -Eeuo pipefail
+
+# Hold the ChatGPT surface fullscreen on the Wayland lane.
+#
+# The Labwc window rule fullscreens the surface when it maps, but the
+# application resets its own window bounds a few seconds later, which unsets
+# fullscreen. Measured on a 1600x900 output: the rule alone leaves a 1024x760
+# window in the corner with the application's own minimize and close controls
+# drawn in it. Re-requesting fullscreen after the application has settled fixes
+# it, and it stays fixed.
+#
+# This runs once per session start and then exits, so it repairs the startup
+# race without fighting a user who later leaves fullscreen on purpose.
+#
+# The X11/Openbox lane needs none of this: Openbox holds a fullscreen window at
+# the monitor geometry itself, so this exits immediately when there is no
+# Wayland session.
+
+CHATGPT_WM_CLASS="${GROTTO_CHATGPT_WM_CLASS:-chatgpt-desktop}"
+APPEAR_TIMEOUT_SECONDS="${GROTTO_CHATGPT_FULLSCREEN_TIMEOUT:-120}"
+# The application resets its bounds within roughly five seconds of mapping.
+SETTLE_SECONDS="${GROTTO_CHATGPT_FULLSCREEN_SETTLE:-8}"
+ATTEMPTS=5
+
+if [[ -z "${WAYLAND_DISPLAY:-}" ]]; then
+    exit 0
+fi
+
+if ! command -v wlrctl >/dev/null 2>&1; then
+    echo "[grotto] wlrctl is unavailable; leaving the ChatGPT window to the compositor rule" >&2
+    exit 0
+fi
+
+is_present() {
+    wlrctl toplevel find "app_id:${CHATGPT_WM_CLASS}" 2>/dev/null
+}
+
+is_fullscreen() {
+    wlrctl toplevel find "app_id:${CHATGPT_WM_CLASS}" state:fullscreen 2>/dev/null
+}
+
+deadline=$((SECONDS + APPEAR_TIMEOUT_SECONDS))
+until is_present; do
+    if (( SECONDS >= deadline )); then
+        echo "[grotto] no ${CHATGPT_WM_CLASS} window appeared within ${APPEAR_TIMEOUT_SECONDS}s" >&2
+        exit 0
+    fi
+    sleep 2
+done
+
+sleep "$SETTLE_SECONDS"
+
+# `fullscreen` sets the state rather than toggling it, so a repeat is a no-op
+# and retrying cannot bounce the window back out of fullscreen.
+for _ in $(seq 1 "$ATTEMPTS"); do
+    if is_fullscreen; then
+        exit 0
+    fi
+    wlrctl toplevel fullscreen "app_id:${CHATGPT_WM_CLASS}" >/dev/null 2>&1 || true
+    sleep 3
+done
+
+if ! is_fullscreen; then
+    echo "[grotto] could not hold the ChatGPT window fullscreen" >&2
+fi
+exit 0
