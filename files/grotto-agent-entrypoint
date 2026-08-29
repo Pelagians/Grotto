@@ -12,4 +12,6 @@ if [ ! -x /home/linuxbrew/.linuxbrew/bin/brew ]; then
 fi
 # Hermes's upstream bootstrap owns /opt/data. Only repair mount roots here;
 # never recursively chown session databases or user workspaces on every boot.
-chown hermes:hermes /workspace /tools /cache /home/linuxbrew/.linuxbrew
+chown hermes:hermes /workspace /tools /cache /home/linuxbrew/.linuxbrew \
+    /cache/homebrew /tools/bin /tools/npm /tools/pnpm /tools/uv/tools \
+    /tools/pipx /tools/cargo /tools/mise
