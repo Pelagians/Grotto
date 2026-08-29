@@ -2,6 +2,13 @@
 set -eu
 
 install -d -m 0700 /config/.openclaw /config/.codex
+
+if [ ! -x /home/linuxbrew/.linuxbrew/bin/brew ] && [ -r /usr/share/grotto/homebrew-baseline.tar.zst ]; then
+    rm -rf /home/linuxbrew/.linuxbrew
+    install -d -m 0755 /home/linuxbrew/.linuxbrew
+    tar -C /home/linuxbrew -I zstd -xpf /usr/share/grotto/homebrew-baseline.tar.zst
+fi
+
 install -d -m 0755 \
     /config/.config \
     /config/.local/share \
