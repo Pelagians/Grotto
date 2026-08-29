@@ -47,6 +47,10 @@ jobs:
           python3 tests/test_window_manager_config.py
           python3 tests/test_verify_installed_chatgpt_policy.py
 
+      - name: Install ShellCheck
+        if: github.event_name == 'pull_request'
+        run: sudo apt-get update && sudo apt-get install --yes shellcheck
+
       - name: Shellcheck changed shell files
         if: github.event_name == 'pull_request'
         shell: bash
@@ -168,8 +172,8 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
           load: ${{ github.event_name == 'pull_request' }}
-          provenance: true
-          sbom: true
+          provenance: ${{ github.event_name != 'pull_request' }}
+          sbom: ${{ github.event_name != 'pull_request' }}
 
       - name: Smoke test Hermes image
         if: matrix.name == 'grotto-hermes' && github.event_name == 'pull_request'
