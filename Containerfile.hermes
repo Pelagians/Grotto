@@ -65,12 +65,15 @@ RUN set -eux; \
     HOMEBREW_NO_AUTO_UPDATE=0 brew update --force --quiet; \
     brew bundle --file=/usr/share/grotto/Brewfile; \
     for tool in jq yq rg uv mise; do command -v "$tool"; done; \
-    tar -C /home/linuxbrew -I zstd -cpf /usr/share/grotto/homebrew-baseline.tar.zst .linuxbrew; \
+    tar -C /home/linuxbrew -I zstd -cpf /tmp/homebrew-baseline.tar.zst .linuxbrew; \
     rm -rf /home/linuxbrew/.linuxbrew /home/linuxbrew/.cache/Homebrew /cache/homebrew; \
-    install -d -m 0755 /home/linuxbrew/.linuxbrew /cache/homebrew /opt/data /workspace /tools /cache; \
-    printf '%s\n' "${GROTTO_BUILD_REVISION}" > /usr/share/grotto/build-revision
+    install -d -m 0755 /home/linuxbrew/.linuxbrew /cache/homebrew /opt/data /workspace /tools /cache
 
 USER root
+RUN install -m 0444 /tmp/homebrew-baseline.tar.zst /usr/share/grotto/homebrew-baseline.tar.zst; \
+    printf '%s\n' "${GROTTO_BUILD_REVISION}" > /usr/share/grotto/build-revision; \
+    chmod 0444 /usr/share/grotto/build-revision; \
+    rm -f /tmp/homebrew-baseline.tar.zst
 LABEL org.opencontainers.image.title="Grotto Hermes" \
       org.opencontainers.image.description="Official Hermes Agent with Grotto persistent tool environments" \
       org.opencontainers.image.source="https://github.com/pelagians/Grotto" \
