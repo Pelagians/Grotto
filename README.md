@@ -11,6 +11,7 @@ It packages upstream applications with reproducible builds, practical dependenci
 | `ghcr.io/pelagians/grotto-openclaw:latest` | OpenClaw gateway with a broad baseline toolset and persistent user-installed tools |
 | `ghcr.io/pelagians/grotto-chatgpt-desktop:latest` | Selkies-streamed ChatGPT and Codex desktop workbench |
 | `ghcr.io/pelagians/grotto-openadapt-teach:latest` | UI-only OpenAdapt Teach worker that attaches to a caller-owned browser |
+| `ghcr.io/pelagians/grotto-hermes:latest` | Official Hermes Agent with persistent Grotto tool environments |
 
 See [`docs/image-matrix.md`](docs/image-matrix.md) for the runtime boundaries of both images.
 
@@ -62,7 +63,7 @@ verification. See [`docs/openadapt-teach.md`](docs/openadapt-teach.md).
 
 ## Release process
 
-GitHub Actions builds both images on:
+GitHub Actions builds all published images on:
 
 - pull requests targeting `main`
 - pushes to `main`
@@ -70,7 +71,7 @@ GitHub Actions builds both images on:
 - scheduled rebuilds
 - manual workflow runs
 
-Pull requests validate both images without publishing. Other events publish branch, tag, commit-SHA, and `latest` tags according to the workflow metadata rules.
+Pull requests validate images without publishing. Other events publish branch, tag, commit-SHA, and `latest` tags according to the workflow metadata rules.
 
 ## Adding an image
 
@@ -93,3 +94,7 @@ A Grotto image should:
 ## License
 
 See [LICENSE](LICENSE) for Grotto source licensing. Packaged upstream applications retain their own licenses and distribution terms.
+
+## Hermes
+
+See [`docs/hermes.md`](docs/hermes.md) for the official-Hermes image, persistent storage contract, and qualification path.

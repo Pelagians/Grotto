@@ -47,6 +47,10 @@ jobs:
           python3 tests/test_window_manager_config.py
           python3 tests/test_verify_installed_chatgpt_policy.py
 
+      - name: Install ShellCheck
+        if: github.event_name == 'pull_request'
+        run: sudo apt-get update && sudo apt-get install --yes shellcheck
+
       - name: Shellcheck changed shell files
         if: github.event_name == 'pull_request'
         shell: bash
@@ -83,6 +87,12 @@ jobs:
             title: Grotto OpenClaw
             description: General OpenClaw gateway with curated baseline tools and persistent user-installed toolchains
             file: ./Containerfile
+          - name: grotto-hermes
+            kind: agent
+            image: ghcr.io/pelagians/grotto-hermes
+            title: Grotto Hermes
+            description: Official Hermes Agent with persistent Grotto tool environments
+            file: ./Containerfile.hermes
           - name: grotto-chatgpt-desktop
             kind: desktop
             image: ghcr.io/pelagians/grotto-chatgpt-desktop
@@ -136,6 +146,8 @@ jobs:
       - name: Extract image metadata
         id: meta
         uses: docker/metadata-action@v5
+        env:
+          DOCKER_METADATA_SHORT_SHA_LENGTH: 40
         with:
           images: ${{ matrix.image }}
           tags: |
@@ -148,7 +160,7 @@ jobs:
             org.opencontainers.image.description=${{ matrix.description }}
             org.opencontainers.image.source=https://github.com/pelagians/grotto
 
-      - name: Build and publish OpenClaw image
+      - name: Build and publish agent image
         if: matrix.kind == 'agent'
         uses: docker/build-push-action@v6
         with:
@@ -157,8 +169,20 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            GROTTO_BUILD_REVISION=${{ github.sha }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+          load: ${{ github.event_name == 'pull_request' }}
+          provenance: ${{ github.event_name != 'pull_request' }}
+          sbom: ${{ github.event_name != 'pull_request' }}
+
+      - name: Smoke test Hermes image
+        if: matrix.name == 'grotto-hermes' && github.event_name == 'pull_request'
+        shell: bash
+        env:
+          GROTTO_HERMES_IMAGE: ${{ matrix.image }}:sha-${{ github.sha }}
+        run: CONTAINER_ENGINE=docker make smoke-hermes
 
       - name: Build and publish desktop image
         if: matrix.kind == 'desktop'

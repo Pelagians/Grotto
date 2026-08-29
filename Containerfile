@@ -112,14 +112,18 @@ RUN set -eux; \
     command -v mise; \
     command -v openclaw; \
     brew cleanup --prune=all -s || true; \
-    rm -rf "$(brew --cache)" /home/linuxbrew/.cache/Homebrew 2>/dev/null || true
+    tar -C /home/linuxbrew -I zstd -cpf /tmp/homebrew-baseline.tar.zst .linuxbrew; \
+    rm -rf /home/linuxbrew/.linuxbrew /home/linuxbrew/.cache/Homebrew 2>/dev/null || true; \
+    install -d -m 0755 /home/linuxbrew/.linuxbrew /cache/homebrew
 
 USER root
-RUN chmod 0755 /usr/local/bin/grotto-openclaw-entrypoint; \
+RUN install -m 0444 /tmp/homebrew-baseline.tar.zst /usr/share/grotto/homebrew-baseline.tar.zst; \
+    rm -f /tmp/homebrew-baseline.tar.zst; \
+    chmod 0755 /usr/local/bin/grotto-openclaw-entrypoint; \
     sh -n /usr/local/bin/grotto-openclaw-entrypoint; \
     chown -R node:node /config /workspace /tools /cache
 
-VOLUME ["/config", "/workspace", "/tools", "/cache"]
+VOLUME ["/config", "/workspace", "/tools", "/home/linuxbrew/.linuxbrew", "/cache"]
 EXPOSE 18789
 
 USER node

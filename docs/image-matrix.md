@@ -56,3 +56,7 @@ The image does not provide:
 - a public internet security boundary
 
 See [`chatgpt-desktop.md`](chatgpt-desktop.md).
+
+## Grotto Hermes
+
+See [`hermes.md`](hermes.md).

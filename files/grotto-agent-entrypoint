@@ -1,0 +1,17 @@
+#!/command/with-contenv sh
+# shellcheck shell=sh
+set -eu
+
+install -d -m 0755 /opt/data /opt/data/home /workspace /tools /cache /cache/homebrew \
+    /tools/bin /tools/npm /tools/pnpm /tools/uv/tools /tools/pipx /tools/cargo /tools/mise
+
+# Seed only an empty persistent prefix. Existing runtime-installed formulae win.
+if [ ! -x /home/linuxbrew/.linuxbrew/bin/brew ]; then
+    # The prefix itself may be a volume mount: seed into it, never remove it.
+    tar -C /home/linuxbrew -I zstd -xpf /usr/share/grotto/homebrew-baseline.tar.zst
+fi
+# Hermes's upstream bootstrap owns /opt/data. Only repair mount roots here;
+# never recursively chown session databases or user workspaces on every boot.
+chown hermes:hermes /workspace /tools /cache /home/linuxbrew/.linuxbrew \
+    /cache/homebrew /tools/bin /tools/npm /tools/pnpm /tools/uv/tools \
+    /tools/pipx /tools/cargo /tools/mise

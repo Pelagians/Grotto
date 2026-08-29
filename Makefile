@@ -1,4 +1,4 @@
-.PHONY: check check-container-engine image-openclaw image-chatgpt-desktop image-openadapt-teach image-all
+.PHONY: check check-container-engine image-openclaw image-chatgpt-desktop image-openadapt-teach image-hermes image-all smoke-hermes
 
 DETECTED_CONTAINER_ENGINE := $(shell if command -v podman >/dev/null 2>&1 && podman info >/dev/null 2>&1; then printf 'podman'; elif command -v sudo >/dev/null 2>&1 && sudo -n podman info >/dev/null 2>&1; then printf 'sudo podman'; elif command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then printf 'docker'; fi)
 CONTAINER_ENGINE ?= $(DETECTED_CONTAINER_ENGINE)
@@ -8,10 +8,12 @@ endif
 
 GROTTO_OPENCLAW_IMAGE ?= grotto-openclaw:dev
 GROTTO_CHATGPT_DESKTOP_IMAGE ?= grotto-chatgpt-desktop:dev
+GROTTO_HERMES_IMAGE ?= grotto-hermes:dev
 GROTTO_OPENADAPT_TEACH_IMAGE ?= grotto-openadapt-teach:dev
 CHATGPT_PACKAGE_VERSION ?= 26.820.60940
 
 check:
+	python3 tests/test_hermes_image_contract.py
 	sh -n files/grotto-openclaw-entrypoint
 	bash -n runtimes/chatgpt-desktop/root/defaults/autostart
 	bash -n runtimes/chatgpt-desktop/root/defaults/autostart_wayland
@@ -53,4 +55,10 @@ image-openadapt-teach: check-container-engine
 		-t $(GROTTO_OPENADAPT_TEACH_IMAGE) \
 		.
 
-image-all: image-openclaw image-chatgpt-desktop image-openadapt-teach
+image-hermes: check-container-engine
+	$(CONTAINER_ENGINE) build -f Containerfile.hermes -t $(GROTTO_HERMES_IMAGE) .
+
+smoke-hermes: check-container-engine
+	CONTAINER_ENGINE="$(CONTAINER_ENGINE)" GROTTO_HERMES_IMAGE="$(GROTTO_HERMES_IMAGE)" tests/smoke-hermes.sh
+
+image-all: image-openclaw image-chatgpt-desktop image-openadapt-teach image-hermes
