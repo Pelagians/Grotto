@@ -66,7 +66,7 @@ RUN set -eux; \
     brew bundle --file=/usr/share/grotto/Brewfile; \
     for tool in jq yq rg uv mise; do command -v "$tool"; done; \
     tar -C /home/linuxbrew -I zstd -cpf /tmp/homebrew-baseline.tar.zst .linuxbrew; \
-    rm -rf /home/linuxbrew/.linuxbrew /home/linuxbrew/.cache/Homebrew /cache/homebrew; \
+    rm -rf /home/linuxbrew/.linuxbrew /home/linuxbrew/.cache/Homebrew; \
     install -d -m 0755 /home/linuxbrew/.linuxbrew /cache/homebrew /opt/data /workspace /tools /cache
 
 USER root
