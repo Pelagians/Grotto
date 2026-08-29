@@ -47,6 +47,8 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
         build-essential ca-certificates file git curl unzip xz-utils zstd \
     && rm -rf /var/lib/apt/lists/* \
     && install -d -m 0755 /home/linuxbrew/.linuxbrew/bin /cache/homebrew /usr/share/grotto \
+        /opt/data /workspace /tools /cache \
+        /tools/bin /tools/npm /tools/pnpm /tools/uv/tools /tools/pipx /tools/cargo /tools/mise \
     && git clone --branch "${HOMEBREW_VERSION}" --depth 1 https://github.com/Homebrew/brew "${HOMEBREW_REPOSITORY}" \
     && ln -s "${HOMEBREW_REPOSITORY}/bin/brew" "${HOMEBREW_PREFIX}/bin/brew"
 
@@ -66,8 +68,7 @@ RUN set -eux; \
     brew bundle --file=/usr/share/grotto/Brewfile; \
     for tool in jq yq rg uv mise; do command -v "$tool"; done; \
     tar -C /home/linuxbrew -I zstd -cpf /tmp/homebrew-baseline.tar.zst .linuxbrew; \
-    rm -rf /home/linuxbrew/.linuxbrew /home/linuxbrew/.cache/Homebrew; \
-    install -d -m 0755 /home/linuxbrew/.linuxbrew /cache/homebrew /opt/data /workspace /tools /cache
+    rm -rf /home/linuxbrew/.linuxbrew /home/linuxbrew/.cache/Homebrew
 
 USER root
 RUN install -m 0444 /tmp/homebrew-baseline.tar.zst /usr/share/grotto/homebrew-baseline.tar.zst; \
