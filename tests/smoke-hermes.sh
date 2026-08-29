@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# The single-quoted payloads are intentionally evaluated inside the container.
+# shellcheck disable=SC2016
 set -Eeuo pipefail
 image="${GROTTO_HERMES_IMAGE:-grotto-hermes:dev}"
 engine="${CONTAINER_ENGINE:-docker}"

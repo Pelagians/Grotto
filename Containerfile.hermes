@@ -46,7 +46,7 @@ ENV HOMEBREW_PREFIX=/home/linuxbrew/.linuxbrew \
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         build-essential ca-certificates file git curl unzip xz-utils zstd \
     && rm -rf /var/lib/apt/lists/* \
-    && install -d -m 0755 /home/linuxbrew/.linuxbrew /cache/homebrew /usr/share/grotto \
+    && install -d -m 0755 /home/linuxbrew/.linuxbrew/bin /cache/homebrew /usr/share/grotto \
     && git clone --branch "${HOMEBREW_VERSION}" --depth 1 https://github.com/Homebrew/brew "${HOMEBREW_REPOSITORY}" \
     && ln -s "${HOMEBREW_REPOSITORY}/bin/brew" "${HOMEBREW_PREFIX}/bin/brew"
 
