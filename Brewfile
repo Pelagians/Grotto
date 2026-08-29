@@ -1,6 +1,5 @@
-# Grotto OpenClaw baseline tools.
-# This Brewfile is installed at image build time. Runtime additions should use
-# the persistent /tools volume through npm, pnpm, uv, pipx, mise, cargo, or Go.
+# Grotto agentic-runtime baseline tools.
+# This Brewfile is installed at image build time. Runtime additions use the persistent Homebrew prefix or /tools volume.
 
 # General agent and shell tooling
 brew "bat"

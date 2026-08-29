@@ -1,0 +1,78 @@
+# syntax=docker/dockerfile:1.7
+# Official Hermes image: v2026.8.27 / Hermes 0.20.6.
+# The digest is the Docker Hub multi-architecture index digest.
+FROM docker.io/nousresearch/hermes-agent:v2026.8.27@sha256:e0df6adebddf29b91112aefc999d4aaf6846c9eb544faca5672a16a13590ff79
+
+USER root
+ARG HOMEBREW_VERSION=5.1.6
+ARG GROTTO_BUILD_REVISION=
+ENV HOMEBREW_PREFIX=/home/linuxbrew/.linuxbrew \
+    HOMEBREW_CELLAR=/home/linuxbrew/.linuxbrew/Cellar \
+    HOMEBREW_REPOSITORY=/home/linuxbrew/.linuxbrew/Homebrew \
+    HOMEBREW_NO_ANALYTICS=1 \
+    HOMEBREW_NO_AUTO_UPDATE=1 \
+    HOMEBREW_NO_ENV_HINTS=1 \
+    HERMES_HOME=/opt/data \
+    HERMES_DATA_DIR=/opt/data \
+    HERMES_WRITE_SAFE_ROOT=/opt/data \
+    HERMES_DISABLE_LAZY_INSTALLS=1 \
+    HERMES_LAZY_INSTALL_TARGET=/opt/data/lazy-packages \
+    HERMES_WEB_DIST=/opt/hermes/hermes_cli/web_dist \
+    HERMES_TUI_DIR=/opt/hermes/ui-tui \
+    GROTTO_RUNTIME=hermes \
+    GROTTO_UPDATE_MODE=image \
+    HOME=/opt/data/home \
+    XDG_CONFIG_HOME=/opt/data/home/.config \
+    XDG_DATA_HOME=/opt/data/home/.local/share \
+    XDG_STATE_HOME=/opt/data/home/.local/state \
+    XDG_CACHE_HOME=/cache/xdg \
+    NPM_CONFIG_PREFIX=/tools/npm \
+    NPM_CONFIG_CACHE=/cache/npm \
+    PNPM_HOME=/tools/pnpm \
+    UV_TOOL_DIR=/tools/uv/tools \
+    UV_TOOL_BIN_DIR=/tools/bin \
+    UV_CACHE_DIR=/cache/uv \
+    PIPX_HOME=/tools/pipx \
+    PIPX_BIN_DIR=/tools/bin \
+    PIP_CACHE_DIR=/cache/pip \
+    MISE_DATA_DIR=/tools/mise \
+    MISE_CACHE_DIR=/cache/mise \
+    MISE_CONFIG_DIR=/opt/data/mise \
+    CARGO_HOME=/tools/cargo \
+    GOBIN=/tools/bin \
+    HOMEBREW_CACHE=/cache/homebrew \
+    PATH=/tools/bin:/tools/npm/bin:/tools/pnpm:/tools/uv/tools:/tools/pipx/bin:/tools/cargo/bin:/tools/mise/shims:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:/opt/hermes/bin:/opt/hermes/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        build-essential ca-certificates file git curl unzip xz-utils zstd \
+    && rm -rf /var/lib/apt/lists/* \
+    && install -d -m 0755 /home/linuxbrew/.linuxbrew /cache/homebrew /usr/share/grotto \
+    && git clone --branch "${HOMEBREW_VERSION}" --depth 1 https://github.com/Homebrew/brew "${HOMEBREW_REPOSITORY}" \
+    && ln -s "${HOMEBREW_REPOSITORY}/bin/brew" "${HOMEBREW_PREFIX}/bin/brew"
+
+COPY Brewfile /usr/share/grotto/Brewfile
+COPY files/profile.d/linuxbrew.sh /etc/profile.d/linuxbrew.sh
+COPY files/grotto-agent-entrypoint /etc/cont-init.d/00-grotto-agent-environment
+
+# Install the reproducible image baseline, then keep it as a seed archive.
+# Runtime writes go to the mounted prefix; /cache/homebrew is disposable.
+RUN set -eux; \
+    brew --version; \
+    HOMEBREW_NO_AUTO_UPDATE=0 brew update --force --quiet; \
+    brew bundle --file=/usr/share/grotto/Brewfile; \
+    for tool in jq yq rg uv mise; do command -v "$tool"; done; \
+    tar -C /home/linuxbrew -I zstd -cpf /usr/share/grotto/homebrew-baseline.tar.zst .linuxbrew; \
+    rm -rf /home/linuxbrew/.linuxbrew /home/linuxbrew/.cache/Homebrew /cache/homebrew; \
+    install -d -m 0755 /home/linuxbrew/.linuxbrew /cache/homebrew /opt/data /workspace /tools /cache; \
+    printf '%s\n' "${GROTTO_BUILD_REVISION}" > /usr/share/grotto/build-revision
+
+LABEL org.opencontainers.image.title="Grotto Hermes" \
+      org.opencontainers.image.description="Official Hermes Agent with Grotto persistent tool environments" \
+      org.opencontainers.image.source="https://github.com/pelagians/Grotto" \
+      org.opencontainers.image.vendor="Pelagian" \
+      grotto.runtime="hermes" \
+      grotto.hermes.version="v2026.8.27"
+
+VOLUME ["/opt/data", "/workspace", "/tools", "/home/linuxbrew/.linuxbrew", "/cache"]
+EXPOSE 8642 9119
+# Do not replace the upstream ENTRYPOINT: it owns the native s6 supervision tree.

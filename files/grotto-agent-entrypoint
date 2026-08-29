@@ -1,0 +1,13 @@
+#!/command/with-contenv sh
+set -eu
+
+install -d -m 0755 /opt/data /opt/data/home /workspace /tools /cache /cache/homebrew \
+    /tools/bin /tools/npm /tools/pnpm /tools/uv/tools /tools/pipx /tools/cargo /tools/mise
+
+# Seed only an empty persistent prefix. Existing runtime-installed formulae win.
+if [ ! -x /home/linuxbrew/.linuxbrew/bin/brew ]; then
+    rm -rf /home/linuxbrew/.linuxbrew
+    install -d -m 0755 /home/linuxbrew/.linuxbrew
+    tar -C /home/linuxbrew -I zstd -xpf /usr/share/grotto/homebrew-baseline.tar.zst
+fi
+chown -R hermes:hermes /opt/data /workspace /tools /cache /home/linuxbrew/.linuxbrew

@@ -83,6 +83,12 @@ jobs:
             title: Grotto OpenClaw
             description: General OpenClaw gateway with curated baseline tools and persistent user-installed toolchains
             file: ./Containerfile
+          - name: grotto-hermes
+            kind: agent
+            image: ghcr.io/pelagians/grotto-hermes
+            title: Grotto Hermes
+            description: Official Hermes Agent with persistent Grotto tool environments
+            file: ./Containerfile.hermes
           - name: grotto-chatgpt-desktop
             kind: desktop
             image: ghcr.io/pelagians/grotto-chatgpt-desktop
@@ -148,7 +154,7 @@ jobs:
             org.opencontainers.image.description=${{ matrix.description }}
             org.opencontainers.image.source=https://github.com/pelagians/grotto
 
-      - name: Build and publish OpenClaw image
+      - name: Build and publish agent image
         if: matrix.kind == 'agent'
         uses: docker/build-push-action@v6
         with:
@@ -159,6 +165,16 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+          load: ${{ github.event_name == 'pull_request' }}
+          provenance: true
+          sbom: true
+
+      - name: Smoke test Hermes image
+        if: matrix.name == 'grotto-hermes' && github.event_name == 'pull_request'
+        shell: bash
+        env:
+          GROTTO_HERMES_IMAGE: ${{ matrix.image }}
+        run: CONTAINER_ENGINE=docker make smoke-hermes
 
       - name: Build and publish desktop image
         if: matrix.kind == 'desktop'
