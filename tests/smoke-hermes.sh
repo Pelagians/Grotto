@@ -21,7 +21,7 @@ common=(-v "$tmp/data:/opt/data" -v "$tmp/workspace:/workspace" -v "$tmp/tools:/
   test -x "$(brew --prefix hello)/bin/hello"
   test -x /opt/hermes/.venv/bin/hermes
   ! pgrep -x supervisord >/dev/null
-  ! pgrep -f hermes-webui >/dev/null
+  ! pgrep -f '[h]ermes-webui' >/dev/null
 '
 "$engine" run --name "$run_name-recreated" "${common[@]}" "$image" sh -ceu '
   test -x "$(brew --prefix hello)/bin/hello"

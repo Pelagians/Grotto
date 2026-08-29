@@ -22,6 +22,7 @@ def main() -> None:
     assert "chown -R hermes:hermes" not in hook
     assert "chown -R hermes:hermes" not in smoke
     assert "brew install hello" in smoke
+    assert "! pgrep -f '[h]ermes-webui'" in smoke
     assert "run_name-recreated" in smoke
     print("Hermes image contract tests passed")
 
