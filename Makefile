@@ -13,6 +13,7 @@ GROTTO_OPENADAPT_TEACH_IMAGE ?= grotto-openadapt-teach:dev
 CHATGPT_PACKAGE_VERSION ?= 26.820.60940
 
 check:
+	python3 tests/test_hermes_image_contract.py
 	sh -n files/grotto-openclaw-entrypoint
 	bash -n runtimes/chatgpt-desktop/root/defaults/autostart
 	bash -n runtimes/chatgpt-desktop/root/defaults/autostart_wayland

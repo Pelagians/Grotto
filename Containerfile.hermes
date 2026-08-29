@@ -52,10 +52,14 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
 
 COPY Brewfile /usr/share/grotto/Brewfile
 COPY files/profile.d/linuxbrew.sh /etc/profile.d/linuxbrew.sh
-COPY files/grotto-agent-entrypoint /etc/cont-init.d/00-grotto-agent-environment
+# Run after Hermes's own 01-hermes-setup/015/02 bootstrap hooks.
+COPY files/grotto-agent-entrypoint /etc/cont-init.d/10-grotto-agent-environment
 
-# Install the reproducible image baseline, then keep it as a seed archive.
-# Runtime writes go to the mounted prefix; /cache/homebrew is disposable.
+# Install the reproducible image baseline as the non-root runtime user, then
+# keep it as an image-owned seed archive. Runtime writes go to the mounted
+# prefix; /cache/homebrew is disposable.
+RUN chown -R hermes:hermes /home/linuxbrew /cache/homebrew
+USER hermes
 RUN set -eux; \
     brew --version; \
     HOMEBREW_NO_AUTO_UPDATE=0 brew update --force --quiet; \
@@ -66,6 +70,7 @@ RUN set -eux; \
     install -d -m 0755 /home/linuxbrew/.linuxbrew /cache/homebrew /opt/data /workspace /tools /cache; \
     printf '%s\n' "${GROTTO_BUILD_REVISION}" > /usr/share/grotto/build-revision
 
+USER root
 LABEL org.opencontainers.image.title="Grotto Hermes" \
       org.opencontainers.image.description="Official Hermes Agent with Grotto persistent tool environments" \
       org.opencontainers.image.source="https://github.com/pelagians/Grotto" \

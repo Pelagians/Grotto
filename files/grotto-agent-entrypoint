@@ -10,4 +10,6 @@ if [ ! -x /home/linuxbrew/.linuxbrew/bin/brew ]; then
     install -d -m 0755 /home/linuxbrew/.linuxbrew
     tar -C /home/linuxbrew -I zstd -xpf /usr/share/grotto/homebrew-baseline.tar.zst
 fi
-chown -R hermes:hermes /opt/data /workspace /tools /cache /home/linuxbrew/.linuxbrew
+# Hermes's upstream bootstrap owns /opt/data. Only repair mount roots here;
+# never recursively chown session databases or user workspaces on every boot.
+chown hermes:hermes /workspace /tools /cache /home/linuxbrew/.linuxbrew
