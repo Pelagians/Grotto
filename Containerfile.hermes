@@ -69,6 +69,8 @@ RUN set -eux; \
 LABEL org.opencontainers.image.title="Grotto Hermes" \
       org.opencontainers.image.description="Official Hermes Agent with Grotto persistent tool environments" \
       org.opencontainers.image.source="https://github.com/pelagians/Grotto" \
+      org.opencontainers.image.revision="${GROTTO_BUILD_REVISION}" \
+      grotto.base.image="docker.io/nousresearch/hermes-agent:v2026.8.27@sha256:e0df6adebddf29b91112aefc999d4aaf6846c9eb544faca5672a16a13590ff79" \
       org.opencontainers.image.vendor="Pelagian" \
       grotto.runtime="hermes" \
       grotto.hermes.version="v2026.8.27"
