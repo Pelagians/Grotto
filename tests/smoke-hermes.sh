@@ -6,7 +6,15 @@ image="${GROTTO_HERMES_IMAGE:-grotto-hermes:dev}"
 engine="${CONTAINER_ENGINE:-docker}"
 run_name="grotto-hermes-smoke-$RANDOM"
 tmp="$(mktemp -d)"
-trap 'rm -rf "$tmp"; "$engine" rm -f "$run_name" "$run_name-recreated" >/dev/null 2>&1 || true' EXIT
+cleanup() {
+  "$engine" rm -f "$run_name" "$run_name-recreated" >/dev/null 2>&1 || true
+  if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+    sudo rm -rf "$tmp"
+  else
+    rm -rf "$tmp"
+  fi
+}
+trap cleanup EXIT
 mkdir -p "$tmp"/{data,workspace,tools,brew,cache}
 
 common=(-v "$tmp/data:/opt/data" -v "$tmp/workspace:/workspace" -v "$tmp/tools:/tools" -v "$tmp/brew:/home/linuxbrew/.linuxbrew" -v "$tmp/cache:/cache")

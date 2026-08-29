@@ -20,6 +20,7 @@ def main() -> None:
     assert "supervisord" not in image and "hermes-webui" not in image
     assert "brew bundle --file=/usr/share/grotto/Brewfile" in image
     assert "chown -R hermes:hermes" not in hook
+    assert "rm -rf /home/linuxbrew/.linuxbrew" not in hook
     assert "chown -R hermes:hermes" not in smoke
     assert "brew install hello" in smoke
     assert "! pgrep -f '[h]ermes-webui'" in smoke

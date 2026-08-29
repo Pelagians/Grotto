@@ -1,4 +1,5 @@
 #!/command/with-contenv sh
+# shellcheck shell=sh
 set -eu
 
 install -d -m 0755 /opt/data /opt/data/home /workspace /tools /cache /cache/homebrew \
@@ -6,8 +7,7 @@ install -d -m 0755 /opt/data /opt/data/home /workspace /tools /cache /cache/home
 
 # Seed only an empty persistent prefix. Existing runtime-installed formulae win.
 if [ ! -x /home/linuxbrew/.linuxbrew/bin/brew ]; then
-    rm -rf /home/linuxbrew/.linuxbrew
-    install -d -m 0755 /home/linuxbrew/.linuxbrew
+    # The prefix itself may be a volume mount: seed into it, never remove it.
     tar -C /home/linuxbrew -I zstd -xpf /usr/share/grotto/homebrew-baseline.tar.zst
 fi
 # Hermes's upstream bootstrap owns /opt/data. Only repair mount roots here;
