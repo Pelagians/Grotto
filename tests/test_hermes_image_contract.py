@@ -56,6 +56,8 @@ def main() -> None:
     assert "gnome-keyring-daemon --unlock" in desktop_session
     assert "dbus-launch --sh-syntax" in desktop_session
     assert "dbus-run-session" not in desktop_session
+    assert "/config/hermes-desktop/session.log" in desktop_session
+    assert "/config/hermes-desktop/session.log" in desktop_smoke
     assert "wlrctl toplevel list" in desktop_smoke
     assert "ghcr.io/pelagians/grotto-hermes-desktop" in workflow
 
