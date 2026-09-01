@@ -38,6 +38,7 @@ FULLSCREEN_HELPER = REPOSITORY / (
     "runtimes/chatgpt-desktop/root/usr/local/libexec/grotto-chatgpt-fullscreen"
 )
 CONTAINERFILE = REPOSITORY / "Containerfile.chatgpt-desktop"
+RUNTIME_SMOKE = REPOSITORY / "tests/chatgpt-desktop-runtime.sh"
 # The vendor package sets no Grotto-specific WM_CLASS, so the launcher passes
 # --class and the window rules match that value.
 WM_CLASS = "chatgpt-desktop"
@@ -240,6 +241,8 @@ def assert_inherits_pelagian_shell() -> None:
     assert 'GROTTO_PELAGIAN_SHELL_IMAGE="$PELAGIAN_SHELL_IMAGE"' in containerfile
     assert "pelagian-shellctl status" in containerfile
     assert "pelagian-layoutd status" in containerfile
+    smoke = RUNTIME_SMOKE.read_text(encoding="utf-8")
+    assert '.mode == "planner_only"' in smoke
 
 
 def assert_wayland_fullscreen_is_repaired() -> None:

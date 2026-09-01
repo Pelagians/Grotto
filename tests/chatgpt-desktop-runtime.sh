@@ -52,7 +52,7 @@ pelagian-shellctl status | jq -e '
 ' >/dev/null
 pelagian-shellctl config show >/dev/null
 pelagian-layoutd status | jq -e '
-  .layoutd == "planner_only" and
+  .mode == "planner_only" and
   .compositor_adapter == "unavailable"
 ' >/dev/null
 
