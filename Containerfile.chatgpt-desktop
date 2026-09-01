@@ -7,21 +7,24 @@ ARG CHATGPT_PACKAGE_VERSION=26.820.60940
 ARG CHATGPT_PACKAGE_SHA256_AMD64=31d956a8c6c515f8d87e0b7acd9ec919f7e685ba59331b4b97aa45f853afdfd7
 ARG CHATGPT_PACKAGE_SHA256_ARM64=8f4dacbff5f054a4f69c2a021f1396c57976972829a61041febac1b423f27c86
 ARG CHATGPT_PACKAGE_BASE_URL=https://persistent.oaistatic.com/codex-app-prod/linux/deb
-ARG SELKIES_BASE_IMAGE=ghcr.io/linuxserver/baseimage-selkies:debiantrixie@sha256:ac7fd6d182238b4a99e66554c5e75be48a714e2a0c9da81bd18e171ff9ba3dd5
+ARG PELAGIAN_SHELL_IMAGE=ghcr.io/pelagians/pelagian-shell@sha256:c444a61ba818bf7d0cad8d32574732e8da16099e018b760d2fc05d90bfb3f490
+ARG PELAGIAN_SHELL_SELKIES_IMAGE=ghcr.io/linuxserver/baseimage-selkies:debiantrixie@sha256:ac7fd6d182238b4a99e66554c5e75be48a714e2a0c9da81bd18e171ff9ba3dd5
 ARG GROTTO_BUILD_REVISION=unknown
 
-FROM ${SELKIES_BASE_IMAGE}
+FROM ${PELAGIAN_SHELL_IMAGE}
 
 ARG CHATGPT_PACKAGE_VERSION
 ARG CHATGPT_PACKAGE_SHA256_AMD64
 ARG CHATGPT_PACKAGE_SHA256_ARM64
 ARG CHATGPT_PACKAGE_BASE_URL
-ARG SELKIES_BASE_IMAGE
+ARG PELAGIAN_SHELL_IMAGE
+ARG PELAGIAN_SHELL_SELKIES_IMAGE
 ARG GROTTO_BUILD_REVISION
 
 LABEL io.pelagians.grotto.chatgpt-package-version="$CHATGPT_PACKAGE_VERSION" \
       io.pelagians.grotto.chatgpt-package-source="$CHATGPT_PACKAGE_BASE_URL" \
-      io.pelagians.grotto.selkies-base-image="$SELKIES_BASE_IMAGE" \
+      io.pelagians.grotto.pelagian-shell-image="$PELAGIAN_SHELL_IMAGE" \
+      io.pelagians.grotto.selkies-base-image="$PELAGIAN_SHELL_SELKIES_IMAGE" \
       org.opencontainers.image.revision="$GROTTO_BUILD_REVISION"
 
 # LinuxServer installs the Selkies backend in /lsiopy. Keep that venv on PATH;
@@ -39,7 +42,9 @@ ENV TITLE="ChatGPT Desktop" \
     GROTTO_CHATGPT_AUTH_MODE=device \
     GROTTO_BUILD_REVISION="$GROTTO_BUILD_REVISION" \
     GROTTO_CHATGPT_PACKAGE_VERSION="$CHATGPT_PACKAGE_VERSION" \
-    GROTTO_SELKIES_BASE_IMAGE="$SELKIES_BASE_IMAGE" \
+    GROTTO_PELAGIAN_SHELL_IMAGE="$PELAGIAN_SHELL_IMAGE" \
+    GROTTO_SELKIES_BASE_IMAGE="$PELAGIAN_SHELL_SELKIES_IMAGE" \
+    PELAGIAN_SHELL_PROFILE=browser \
     GROTTO_CHATGPT_WM_CLASS=chatgpt-desktop \
     ELECTRON_OZONE_PLATFORM_HINT=wayland \
     ELECTRON_USE_SYSTEM_TITLE_BAR=1 \
@@ -207,7 +212,7 @@ RUN set -eux; \
         /usr/local/libexec/grotto-chatgpt-desktop-smoke; \
     for command_name in \
         bash bwrap chatgpt codex curl find gh git jq lsof node npm pip3 \
-        pkg-config python3 rg shellcheck sqlite3 unzip wlrctl zip; \
+        pelagian-layoutd pelagian-shellctl pkg-config python3 rg shellcheck sqlite3 unzip wlrctl zip; \
     do \
         command -v "$command_name"; \
     done; \
@@ -242,6 +247,9 @@ RUN set -eux; \
     fi; \
     test -x /lsiopy/bin/selkies; \
     test "$(command -v selkies)" = /lsiopy/bin/selkies; \
+    pelagian-shellctl status >/dev/null; \
+    pelagian-shellctl config show >/dev/null; \
+    pelagian-layoutd status >/dev/null; \
     test -r /usr/share/grotto/chatgpt-desktop-security.json; \
     test "$(stat -c '%a' /usr/share/grotto/chatgpt-desktop-security.json)" = 444; \
     env -i HOME=/tmp PATH=/usr/bin:/bin \

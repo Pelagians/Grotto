@@ -1,8 +1,8 @@
 # Grotto ChatGPT Desktop
 
 `grotto-chatgpt-desktop` is a single-application interactive runtime that
-streams OpenAI's official ChatGPT Desktop package for Linux through
-LinuxServer's Selkies base image.
+streams OpenAI's official ChatGPT Desktop package for Linux through the
+shared Pelagian Shell Selkies/Labwc substrate.
 
 It is not a Grotto worker-contract image. It does not expose `grotto-workerd`
 or accept orchestrator tasks. It is intended as an interactive Codex workbench
@@ -11,7 +11,9 @@ tools.
 
 ## Image construction
 
-The image installs OpenAI's `chatgpt` Debian package on top of the Selkies base:
+The image derives from a digest-pinned
+`ghcr.io/pelagians/pelagian-shell@sha256:...` release, then installs OpenAI's
+`chatgpt` Debian package:
 
 1. Fetch one pinned pool artifact for the build architecture from OpenAI's
    package repository, by exact version rather than the `latest` alias.
@@ -20,6 +22,11 @@ The image installs OpenAI's `chatgpt` Debian package on top of the Selkies base:
 3. Install it with `apt-get`, which resolves the Electron dependency set the
    package declares.
 4. Record what the installed bundle exposes in a read-only security manifest.
+
+Pelagian Shell owns `/init`, Selkies HTTPS, Labwc, XWayland-ready defaults,
+GTK appearance, and shell diagnostics. Grotto keeps the ChatGPT-specific
+Labwc policy, true-fullscreen repair, authentication, tool planes, and
+application/runtime tests.
 
 Nothing is compiled, repacked, or patched, and container startup downloads
 nothing.
@@ -126,8 +133,9 @@ Component updates are intentional and reviewable:
    ```
 
    The version matches across architectures; the digests differ.
-2. Resolve the Selkies index digest with
-   `docker buildx imagetools inspect ghcr.io/linuxserver/baseimage-selkies:debiantrixie`.
+2. Select a qualified Pelagian Shell release and pin its manifest digest. The
+   transitive Selkies digest remains recorded for provenance but is owned and
+   qualified by Pelagian Shell.
 3. Build the image, run `grotto-doctor --json`, and review the recorded package,
    Codex, base-image, desktop, and Electron metadata.
 
