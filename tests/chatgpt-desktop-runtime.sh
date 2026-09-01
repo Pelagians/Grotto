@@ -1,5 +1,6 @@
 #!/bin/bash
 set -Eeuo pipefail
+trap 'rc=$?; printf "runtime smoke failed at line %s: %s\n" "$LINENO" "$BASH_COMMAND" >&2; exit "$rc"' ERR
 
 if [[ "$(id -un)" != "abc" ]]; then
     echo "runtime smoke test must run as abc" >&2
