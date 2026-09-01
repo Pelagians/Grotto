@@ -45,3 +45,10 @@ GROTTO_HERMES_DESKTOP_KEYRING_PASSWORD=test-only \
 ```
 
 The smoke starts the inherited `/init`, waits for Labwc, Pelagian autostart, GNOME Keyring, Hermes Desktop, and Selkies HTTPS, exercises shell diagnostics, prints the observed toplevel inventory, and rejects an unexpected local `hermes serve` backend.
+
+GitHub's container runtime does not permit Electron to create the PID/network
+namespace used by Chromium's sandbox. The measured failure is
+`zygote_host_impl_linux.cc:207`; the container launcher therefore passes
+`--no-sandbox`. This is a container-specific process-sandbox exception, not an
+upstream source patch. The surrounding container, non-root `abc` user, private
+streaming endpoint, and normal Grotto deployment controls remain required.

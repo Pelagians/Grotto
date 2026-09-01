@@ -58,6 +58,7 @@ def main() -> None:
     assert "dbus-run-session" not in desktop_session
     assert "/config/hermes-desktop/session.log" in desktop_session
     assert "/config/hermes-desktop/session.log" in desktop_smoke
+    assert "hermes-desktop --no-sandbox" in desktop_session
     assert "wlrctl toplevel list" in desktop_smoke
     assert "ghcr.io/pelagians/grotto-hermes-desktop" in workflow
 

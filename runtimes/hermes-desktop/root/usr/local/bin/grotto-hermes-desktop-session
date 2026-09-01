@@ -30,4 +30,4 @@ export XDG_CACHE_HOME=/cache/xdg
 cd /workspace
 session_log=/config/hermes-desktop/session.log
 printf '[grotto-hermes-desktop] launching Hermes Desktop\n' >> "$session_log"
-exec /usr/local/bin/hermes-desktop >> "$session_log" 2>&1
+exec /usr/local/bin/hermes-desktop --no-sandbox >> "$session_log" 2>&1
