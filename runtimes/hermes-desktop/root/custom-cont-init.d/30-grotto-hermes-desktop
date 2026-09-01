@@ -1,0 +1,62 @@
+#!/usr/bin/with-contenv bash
+# shellcheck shell=bash
+set -Eeuo pipefail
+
+install -d -o abc -g abc -m 0755 \
+    /config \
+    /config/hermes-desktop \
+    /config/.config \
+    /config/.local/share \
+    /config/.local/share/keyrings \
+    /config/.local/state \
+    /workspace \
+    /tools \
+    /cache \
+    /cache/homebrew \
+    /cache/xdg \
+    /tools/bin \
+    /tools/npm \
+    /tools/pnpm \
+    /tools/uv/tools \
+    /tools/pipx \
+    /tools/cargo \
+    /tools/mise
+
+if [[ ! -x /home/linuxbrew/.linuxbrew/bin/brew ]]; then
+    tar -C /home/linuxbrew -I zstd -xpf /usr/share/grotto/homebrew-baseline.tar.zst
+    # The seed archive carries the build-time uid; LinuxServer has already
+    # remapped abc to PUID/PGID by the time custom init runs, so reset the
+    # whole prefix or brew refuses to write to it at runtime.
+    chown -R abc:abc /home/linuxbrew/.linuxbrew
+fi
+
+policy=/config/hermes-desktop/secure-token-storage.json
+if [[ ! -e "$policy" ]]; then
+    umask 077
+    printf '%s\n' '{"on":true,"migrated":true}' > "${policy}.tmp"
+    chown abc:abc "${policy}.tmp"
+    mv "${policy}.tmp" "$policy"
+fi
+chmod 0600 "$policy"
+chown abc:abc "$policy"
+
+chown abc:abc \
+    /config \
+    /config/hermes-desktop \
+    /config/.config \
+    /config/.local/share \
+    /config/.local/share/keyrings \
+    /config/.local/state \
+    /workspace \
+    /tools \
+    /cache \
+    /cache/homebrew \
+    /cache/xdg \
+    /home/linuxbrew/.linuxbrew \
+    /tools/bin \
+    /tools/npm \
+    /tools/pnpm \
+    /tools/uv/tools \
+    /tools/pipx \
+    /tools/cargo \
+    /tools/mise

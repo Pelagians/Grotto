@@ -1,0 +1,148 @@
+# syntax=docker/dockerfile:1.7
+ARG NODE_IMAGE=node:22-bookworm@sha256:8a34c4ab3ea2c5cd194f07e317b2a8f09461d3c8b05c4e34c8ccd56d56024c4d
+ARG PELAGIAN_SHELL_IMAGE=ghcr.io/pelagians/pelagian-shell@sha256:c444a61ba818bf7d0cad8d32574732e8da16099e018b760d2fc05d90bfb3f490
+# Single source of truth for the pinned upstream commit: both the build stage
+# that compiles the .deb and the final stage that records the provenance label
+# inherit this default when no --build-arg is passed.
+ARG HERMES_DESKTOP_COMMIT=5fc308a70719a83cccdbba4c0e39c23f5a8239d5
+
+FROM ${NODE_IMAGE} AS desktop-build
+ARG HERMES_DESKTOP_COMMIT
+ENV CSC_IDENTITY_AUTO_DISCOVERY=false
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y ca-certificates git build-essential python3 \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+RUN git init \
+    && git remote add origin https://github.com/NousResearch/hermes-agent.git \
+    && git fetch --depth 1 origin "${HERMES_DESKTOP_COMMIT}" \
+    && git checkout --detach FETCH_HEAD \
+    && test "$(git rev-parse HEAD)" = "${HERMES_DESKTOP_COMMIT}"
+RUN npm ci
+WORKDIR /src/apps/desktop
+RUN npm run build \
+    && npm run builder -- --linux deb --publish never \
+    && set -- release/*.deb \
+    && test "$#" -eq 1 \
+    && install -D -m 0644 "$1" /out/hermes-desktop.deb
+
+FROM ${PELAGIAN_SHELL_IMAGE}
+ARG HERMES_DESKTOP_VERSION=v2026.8.27
+ARG HERMES_DESKTOP_COMMIT
+ARG PELAGIAN_SHELL_IMAGE
+ARG HOMEBREW_VERSION=5.1.6
+ARG GROTTO_BUILD_REVISION=unknown
+
+ENV TITLE="Hermes Desktop" \
+    START_DOCKER=false \
+    PIXELFLUX_WAYLAND=true \
+    AUTO_GPU=true \
+    RESTART_APP=true \
+    SELKIES_DESKTOP=false \
+    PELORUS=false \
+    PELAGIAN_SHELL_PROFILE=browser \
+    GROTTO_RUNTIME=hermes-desktop \
+    GROTTO_BUILD_REVISION="$GROTTO_BUILD_REVISION" \
+    GROTTO_PELAGIAN_SHELL_IMAGE="$PELAGIAN_SHELL_IMAGE" \
+    HERMES_DESKTOP_USER_DATA_DIR=/config/hermes-desktop \
+    HERMES_DESKTOP_PASSWORD_STORE=gnome-libsecret \
+    ELECTRON_OZONE_PLATFORM_HINT=wayland \
+    HOME=/config \
+    XDG_CONFIG_HOME=/config/.config \
+    XDG_DATA_HOME=/config/.local/share \
+    XDG_STATE_HOME=/config/.local/state \
+    XDG_CACHE_HOME=/cache/xdg \
+    HOMEBREW_PREFIX=/home/linuxbrew/.linuxbrew \
+    HOMEBREW_CELLAR=/home/linuxbrew/.linuxbrew/Cellar \
+    HOMEBREW_REPOSITORY=/home/linuxbrew/.linuxbrew/Homebrew \
+    HOMEBREW_NO_ANALYTICS=1 \
+    HOMEBREW_NO_AUTO_UPDATE=1 \
+    HOMEBREW_NO_ENV_HINTS=1 \
+    HOMEBREW_CACHE=/cache/homebrew \
+    NPM_CONFIG_PREFIX=/tools/npm \
+    NPM_CONFIG_CACHE=/cache/npm \
+    PNPM_HOME=/tools/pnpm \
+    UV_TOOL_DIR=/tools/uv/tools \
+    UV_TOOL_BIN_DIR=/tools/bin \
+    UV_CACHE_DIR=/cache/uv \
+    PIPX_HOME=/tools/pipx \
+    PIPX_BIN_DIR=/tools/bin \
+    PIP_CACHE_DIR=/cache/pip \
+    MISE_DATA_DIR=/tools/mise \
+    MISE_CACHE_DIR=/cache/mise \
+    CARGO_HOME=/tools/cargo \
+    GOBIN=/tools/bin \
+    PATH=/tools/bin:/tools/npm/bin:/tools/pnpm:/tools/uv/tools:/tools/pipx/bin:/tools/cargo/bin:/tools/mise/shims:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:/lsiopy/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+COPY --from=desktop-build /out/hermes-desktop.deb /tmp/hermes-desktop.deb
+RUN set -eux; \
+    apt-get update; \
+    apt-get install --no-install-recommends -y \
+        /tmp/hermes-desktop.deb \
+        bash build-essential ca-certificates curl dbus-x11 file git \
+        gnome-keyring jq libsecret-1-0 libsecret-tools unzip wlrctl xz-utils zstd; \
+    rm -f /tmp/hermes-desktop.deb; \
+    rm -rf /var/lib/apt/lists/*; \
+    desktop_binary=""; \
+    for candidate in /opt/Hermes/Hermes /opt/Hermes/hermes /opt/hermes/Hermes /opt/hermes/hermes /usr/bin/Hermes /usr/bin/hermes; do \
+        if [ -x "$candidate" ]; then desktop_binary="$candidate"; break; fi; \
+    done; \
+    test -n "$desktop_binary"; \
+    ln -sf "$desktop_binary" /usr/local/bin/hermes-desktop
+
+COPY Brewfile /usr/share/grotto/Brewfile
+COPY files/profile.d/linuxbrew.sh /etc/profile.d/linuxbrew.sh
+COPY runtimes/hermes-desktop/root/ /
+COPY tests/hermes-desktop-image-smoke.sh /usr/local/libexec/grotto-hermes-desktop-image-smoke
+
+RUN set -eux; \
+    chmod 0755 \
+        /defaults/autostart_wayland \
+        /custom-cont-init.d/30-grotto-hermes-desktop \
+        /usr/local/bin/grotto-hermes-desktop-session \
+        /usr/local/libexec/grotto-hermes-desktop-image-smoke; \
+    sh -n /defaults/autostart_wayland; \
+    bash -n /custom-cont-init.d/30-grotto-hermes-desktop; \
+    bash -n /usr/local/bin/grotto-hermes-desktop-session; \
+    bash -n /usr/local/libexec/grotto-hermes-desktop-image-smoke; \
+    install -d -o abc -g abc -m 0755 \
+        /config /config/.config /config/.local/share /config/.local/state \
+        /workspace /tools /cache /cache/homebrew \
+        /tools/bin /tools/npm /tools/pnpm /tools/uv/tools /tools/pipx /tools/cargo /tools/mise \
+        /home/linuxbrew/.linuxbrew/bin; \
+    git clone --branch "${HOMEBREW_VERSION}" --depth 1 https://github.com/Homebrew/brew "${HOMEBREW_REPOSITORY}"; \
+    ln -s "${HOMEBREW_REPOSITORY}/bin/brew" "${HOMEBREW_PREFIX}/bin/brew"; \
+    chown -R abc:abc /home/linuxbrew /cache/homebrew /config /workspace /tools /cache; \
+    pelagian-shellctl status >/dev/null; \
+    pelagian-shellctl config show >/dev/null; \
+    pelagian-layoutd status >/dev/null
+
+USER abc
+RUN set -eux; \
+    brew --version; \
+    HOMEBREW_NO_AUTO_UPDATE=0 brew update --force --quiet; \
+    brew bundle --file=/usr/share/grotto/Brewfile; \
+    for tool in jq yq rg uv mise; do command -v "$tool"; done; \
+    tar -C /home/linuxbrew -I zstd -cpf /tmp/homebrew-baseline.tar.zst .linuxbrew; \
+    rm -rf /home/linuxbrew/.linuxbrew /config/.cache/Homebrew
+
+USER root
+RUN set -eux; \
+    install -m 0444 /tmp/homebrew-baseline.tar.zst /usr/share/grotto/homebrew-baseline.tar.zst; \
+    printf '%s\n' "${HERMES_DESKTOP_COMMIT}" > /usr/share/grotto/hermes-desktop-source-revision; \
+    chmod 0444 /usr/share/grotto/hermes-desktop-source-revision; \
+    rm -f /tmp/homebrew-baseline.tar.zst
+
+LABEL org.opencontainers.image.title="Grotto Hermes Desktop" \
+      org.opencontainers.image.description="Official Hermes Desktop on the Pelagian Shell streamed workspace" \
+      org.opencontainers.image.source="https://github.com/pelagians/Grotto" \
+      org.opencontainers.image.revision="${GROTTO_BUILD_REVISION}" \
+      org.opencontainers.image.vendor="Pelagian" \
+      io.pelagians.grotto.pelagian-shell-image="$PELAGIAN_SHELL_IMAGE" \
+      io.pelagians.grotto.hermes-desktop-version="$HERMES_DESKTOP_VERSION" \
+      io.pelagians.grotto.hermes-desktop-source="https://github.com/NousResearch/hermes-agent" \
+      io.pelagians.grotto.hermes-desktop-commit="$HERMES_DESKTOP_COMMIT"
+
+WORKDIR /workspace
+EXPOSE 3001
+VOLUME ["/config", "/workspace", "/tools", "/home/linuxbrew/.linuxbrew", "/cache"]
