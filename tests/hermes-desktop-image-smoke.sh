@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 for command_name in \
-    dbus-run-session gnome-keyring-daemon hermes-desktop pelagian-layoutd \
+    dbus-launch gnome-keyring-daemon hermes-desktop pelagian-layoutd \
     pelagian-shellctl secret-tool wlrctl; do
     command -v "$command_name" >/dev/null
 done

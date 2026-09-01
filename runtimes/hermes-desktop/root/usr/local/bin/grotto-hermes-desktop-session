@@ -2,7 +2,9 @@
 set -Eeuo pipefail
 
 if [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]]; then
-    exec dbus-run-session -- "$0" "$@"
+    dbus_environment="$(dbus-launch --sh-syntax)"
+    eval "$dbus_environment"
+    unset dbus_environment
 fi
 
 if [[ -z "${GROTTO_HERMES_DESKTOP_KEYRING_PASSWORD:-}" ]]; then
