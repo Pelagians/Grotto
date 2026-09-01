@@ -7,9 +7,9 @@ name="grotto-hermes-desktop-smoke-$$"
 port=${GROTTO_HERMES_DESKTOP_SMOKE_PORT:-13002}
 volumes=(config workspace tools homebrew cache)
 
-# Invoked indirectly by the trap below; ShellCheck 0.11 misfires SC2329 here
-# because the script's last statement is a bare `exit 1`.
-# shellcheck disable=SC2329
+# Invoked indirectly by the trap below; ShellCheck versions classify this as
+# unreachable or unreferenced depending on their control-flow implementation.
+# shellcheck disable=SC2317,SC2329
 cleanup() {
     "$engine" rm -f "$name" >/dev/null 2>&1 || true
     for volume in "${volumes[@]}"; do
