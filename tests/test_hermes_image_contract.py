@@ -60,6 +60,8 @@ def main() -> None:
     assert "/config/hermes-desktop/session.log" in desktop_smoke
     assert "hermes-desktop --no-sandbox" in desktop_session
     assert "wlrctl toplevel list" in desktop_smoke
+    assert "--env XDG_RUNTIME_DIR=/config/.XDG" in desktop_smoke
+    assert "--env WAYLAND_DISPLAY=wayland-1" in desktop_smoke
     assert "pgrep -f '[H]ermes'" in desktop_smoke
     assert "PELAGIAN_SHELL_SESSION_SENTINEL" not in desktop_smoke
     assert "ghcr.io/pelagians/grotto-hermes-desktop" in workflow

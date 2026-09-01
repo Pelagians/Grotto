@@ -43,20 +43,23 @@ for _ in $(seq 1 180); do
         && "$engine" exec "$name" pgrep -f '[g]nome-keyring-daemon' >/dev/null 2>&1 \
         && curl --fail --silent --show-error --insecure --max-time 3 \
             "https://127.0.0.1:${port}/" >/dev/null 2>&1; then
-        "$engine" exec "$name" /usr/local/libexec/grotto-hermes-desktop-image-smoke
-        inventory="$($engine exec "$name" /usr/bin/with-contenv \
-            s6-setuidgid abc wlrctl toplevel list)"
-        printf 'Hermes Desktop window inventory:\n%s\n' "$inventory"
-        if ! grep -qi hermes <<< "$inventory"; then
-            echo "Hermes Desktop did not expose an observable toplevel" >&2
-            exit 1
+        inventory="$(
+            "$engine" exec \
+                --user abc \
+                --env XDG_RUNTIME_DIR=/config/.XDG \
+                --env WAYLAND_DISPLAY=wayland-1 \
+                "$name" wlrctl toplevel list 2>/dev/null || true
+        )"
+        if grep -qi hermes <<< "$inventory"; then
+            "$engine" exec "$name" /usr/local/libexec/grotto-hermes-desktop-image-smoke
+            printf 'Hermes Desktop window inventory:\n%s\n' "$inventory"
+            if "$engine" exec "$name" pgrep -f '[h]ermes serve' >/dev/null 2>&1; then
+                echo "Desktop unexpectedly started a second Hermes backend" >&2
+                exit 1
+            fi
+            echo "grotto-hermes-desktop smoke: PASS image=$image engine=$engine"
+            exit 0
         fi
-        if "$engine" exec "$name" pgrep -f '[h]ermes serve' >/dev/null 2>&1; then
-            echo "Desktop unexpectedly started a second Hermes backend" >&2
-            exit 1
-        fi
-        echo "grotto-hermes-desktop smoke: PASS image=$image engine=$engine"
-        exit 0
     fi
     sleep 1
 done
