@@ -43,16 +43,23 @@ for _ in $(seq 1 180); do
         && "$engine" exec "$name" pgrep -f '[g]nome-keyring-daemon' >/dev/null 2>&1 \
         && curl --fail --silent --show-error --insecure --max-time 3 \
             "https://127.0.0.1:${port}/" >/dev/null 2>&1; then
-        inventory="$(
+        wayland_inventory="$(
             "$engine" exec \
                 --user abc \
                 --env XDG_RUNTIME_DIR=/config/.XDG \
                 --env WAYLAND_DISPLAY=wayland-1 \
                 "$name" wlrctl toplevel list 2>/dev/null || true
         )"
-        if grep -qi hermes <<< "$inventory"; then
+        x11_inventory="$(
+            "$engine" exec \
+                --user abc \
+                --env DISPLAY=:0 \
+                "$name" xlsclients -display :0 -l 2>/dev/null || true
+        )"
+        if grep -qi hermes <<< "${wayland_inventory}${x11_inventory}"; then
             "$engine" exec "$name" /usr/local/libexec/grotto-hermes-desktop-image-smoke
-            printf 'Hermes Desktop window inventory:\n%s\n' "$inventory"
+            printf 'Hermes Desktop Wayland inventory:\n%s\n' "$wayland_inventory"
+            printf 'Hermes Desktop X11 inventory:\n%s\n' "$x11_inventory"
             if "$engine" exec "$name" pgrep -f '[h]ermes serve' >/dev/null 2>&1; then
                 echo "Desktop unexpectedly started a second Hermes backend" >&2
                 exit 1

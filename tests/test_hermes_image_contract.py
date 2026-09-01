@@ -63,6 +63,8 @@ def main() -> None:
     assert "/config/hermes-desktop/session.log" in desktop_smoke
     assert "hermes-desktop --no-sandbox" in desktop_session
     assert "wlrctl toplevel list" in desktop_smoke
+    assert "xlsclients -display :0 -l" in desktop_smoke
+    assert "x11-utils" in desktop_image
     assert "--env XDG_RUNTIME_DIR=/config/.XDG" in desktop_smoke
     assert "--env WAYLAND_DISPLAY=wayland-1" in desktop_smoke
     assert "pgrep -f '[H]ermes'" in desktop_smoke

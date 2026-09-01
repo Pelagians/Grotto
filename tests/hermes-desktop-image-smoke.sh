@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 for command_name in \
     dbus-launch gnome-keyring-daemon hermes-desktop pelagian-layoutd \
-    pelagian-shellctl secret-tool wlrctl; do
+    pelagian-shellctl secret-tool wlrctl xlsclients; do
     command -v "$command_name" >/dev/null
 done
 

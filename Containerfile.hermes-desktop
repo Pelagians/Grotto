@@ -87,7 +87,7 @@ RUN set -eux; \
     apt-get install --no-install-recommends -y \
         /tmp/hermes-desktop.deb \
         bash build-essential ca-certificates curl dbus-x11 file git \
-        gnome-keyring jq libsecret-1-0 libsecret-tools unzip wlrctl xz-utils zstd; \
+        gnome-keyring jq libsecret-1-0 libsecret-tools unzip wlrctl x11-utils xz-utils zstd; \
     rm -f /tmp/hermes-desktop.deb; \
     rm -rf /var/lib/apt/lists/*; \
     desktop_binary=""; \
