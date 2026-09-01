@@ -44,6 +44,8 @@ def main() -> None:
     assert "5fc308a70719a83cccdbba4c0e39c23f5a8239d5" in desktop_image
     assert "node:22-bookworm@sha256:8a34c4ab3ea2c5cd194f07e317b2a8f09461d3c8b05c4e34c8ccd56d56024c4d" in desktop_image
     assert "npm run builder -- --linux deb --publish never" in desktop_image
+    assert "for attempt in 1 2 3" in desktop_image
+    assert "npm ci" in desktop_image
     assert "pipefail" not in desktop_autostart
     assert "sh -n runtimes/hermes-desktop/root/defaults/autostart_wayland" in (ROOT / "Makefile").read_text()
     assert "HERMES_DESKTOP_USER_DATA_DIR=/config/hermes-desktop" in desktop_image

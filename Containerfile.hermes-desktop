@@ -18,7 +18,13 @@ RUN git init \
     && git fetch --depth 1 origin "${HERMES_DESKTOP_COMMIT}" \
     && git checkout --detach FETCH_HEAD \
     && test "$(git rev-parse HEAD)" = "${HERMES_DESKTOP_COMMIT}"
-RUN npm ci
+RUN set -eu; \
+    for attempt in 1 2 3; do \
+        if npm ci; then exit 0; fi; \
+        if [ "$attempt" -eq 3 ]; then exit 1; fi; \
+        rm -rf node_modules apps/*/node_modules; \
+        sleep "$((attempt * 5))"; \
+    done
 WORKDIR /src/apps/desktop
 RUN npm run build \
     && npm run builder -- --linux deb --publish never \
