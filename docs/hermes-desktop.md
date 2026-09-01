@@ -36,6 +36,21 @@ The exact upstream release makes keychain encryption opt-in. Grotto enables upst
 
 Hermes Desktop is multi-window software: the main window, session and browser pop-outs, authentication windows, HUD, and Quick Entry retain upstream semantics. Grotto adds no global fullscreen rule. The real `/init` smoke prints the observed `wlrctl toplevel list` inventory and requires a Hermes toplevel before publication. Add an application-specific one-shot main-window rule only if that measurement proves it necessary.
 
+The qualified container run mapped the initial window through XWayland rather
+than the foreign-toplevel interface. Its observed identity was:
+
+```text
+Name: hermes-desktop
+Icon Name: hermes-desktop
+Command: hermes-desktop
+Instance/Class: hermes-desktop/Hermes-desktop
+```
+
+The Wayland inventory was empty. This is still a Labwc/Wayland Pelagian Shell
+session, with XWayland providing application compatibility. Grotto does not add
+a blanket rule or force fullscreen based on this first-window measurement;
+secondary windows must retain upstream semantics.
+
 ## Qualification
 
 ```bash
