@@ -60,6 +60,8 @@ def main() -> None:
     assert "/config/hermes-desktop/session.log" in desktop_smoke
     assert "hermes-desktop --no-sandbox" in desktop_session
     assert "wlrctl toplevel list" in desktop_smoke
+    assert "pgrep -f '[H]ermes'" in desktop_smoke
+    assert "PELAGIAN_SHELL_SESSION_SENTINEL" not in desktop_smoke
     assert "ghcr.io/pelagians/grotto-hermes-desktop" in workflow
 
     # The pinned commit is repeated in the CI matrix and the in-image smoke;

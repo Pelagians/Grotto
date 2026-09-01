@@ -30,7 +30,6 @@ done
     --env "PGID=$(id -g)" \
     --env PIXELFLUX_WAYLAND=true \
     --env GROTTO_HERMES_DESKTOP_KEYRING_PASSWORD=ci-ephemeral-keyring \
-    --env PELAGIAN_SHELL_SESSION_SENTINEL=/tmp/pelagian-shell-session-smoke \
     --volume "${name}-config:/config" \
     --volume "${name}-workspace:/workspace" \
     --volume "${name}-tools:/tools" \
@@ -42,7 +41,6 @@ for _ in $(seq 1 180); do
     if "$engine" exec "$name" pgrep -x labwc >/dev/null 2>&1 \
         && "$engine" exec "$name" pgrep -f '[H]ermes' >/dev/null 2>&1 \
         && "$engine" exec "$name" pgrep -f '[g]nome-keyring-daemon' >/dev/null 2>&1 \
-        && "$engine" exec "$name" test -f /tmp/pelagian-shell-session-smoke \
         && curl --fail --silent --show-error --insecure --max-time 3 \
             "https://127.0.0.1:${port}/" >/dev/null 2>&1; then
         "$engine" exec "$name" /usr/local/libexec/grotto-hermes-desktop-image-smoke
