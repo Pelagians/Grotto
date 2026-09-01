@@ -7,6 +7,7 @@ import argparse
 import importlib.machinery
 import importlib.util
 import os
+import re
 from pathlib import Path
 import tempfile
 import xml.etree.ElementTree as ET
@@ -227,6 +228,20 @@ def assert_primary_lane_is_wayland() -> None:
     assert '"${CODEX_OZONE_PLATFORM:-wayland}"' in launcher
 
 
+def assert_inherits_pelagian_shell() -> None:
+    containerfile = CONTAINERFILE.read_text(encoding="utf-8")
+    assert re.search(
+        r"ARG PELAGIAN_SHELL_IMAGE=(ghcr\.io/pelagians/pelagian-shell@sha256:[0-9a-f]{64})",
+        containerfile,
+    ), "ChatGPT Desktop must pin the canonical Pelagian Shell image"
+    assert "FROM ${PELAGIAN_SHELL_IMAGE}" in containerfile
+    assert "FROM ${SELKIES_BASE_IMAGE}" not in containerfile
+    assert 'io.pelagians.grotto.pelagian-shell-image="$PELAGIAN_SHELL_IMAGE"' in containerfile
+    assert 'GROTTO_PELAGIAN_SHELL_IMAGE="$PELAGIAN_SHELL_IMAGE"' in containerfile
+    assert "pelagian-shellctl status" in containerfile
+    assert "pelagian-layoutd status" in containerfile
+
+
 def assert_wayland_fullscreen_is_repaired() -> None:
     """The Labwc rule alone does not hold this application fullscreen.
 
@@ -261,7 +276,7 @@ def assert_policy_is_reapplied_to_persistent_state() -> None:
         "/usr/local/libexec/grotto-configure-openbox /config/.config/openbox/rc.xml"
         in init_script
     )
-    assert "/config/.config/labwc/rc.xml" in init_script
+    assert "/config/.config/labwc/rc.xml" not in init_script
 
 
 def load_configurator():
@@ -299,6 +314,7 @@ def main(*, installed_image: bool = False) -> None:
     if not installed_image:
         assert_launcher_matches_window_rules()
         assert_primary_lane_is_wayland()
+        assert_inherits_pelagian_shell()
         assert_wayland_fullscreen_is_repaired()
         assert_policy_is_reapplied_to_persistent_state()
     print("window-manager policy tests passed")

@@ -918,6 +918,10 @@ def collect(*, active_probe: bool = False) -> dict[str, Any]:
             ),
             "chatgpt_package_version": package_version,
             "codex_cli_build_version": tools["codex"]["version"] or "unknown",
+            "pelagian_shell_image": os.environ.get(
+                "GROTTO_PELAGIAN_SHELL_IMAGE",
+                "unknown",
+            ),
             "selkies_base_image": os.environ.get(
                 "GROTTO_SELKIES_BASE_IMAGE",
                 "unknown",
@@ -1073,6 +1077,7 @@ def render_human(report: dict[str, Any]) -> str:
         ),
         f"codex: {report['tools']['codex']['version'] or 'unavailable'}",
         f"chatgpt package: {report['runtime']['chatgpt_package_version']}",
+        f"pelagian shell: {report['runtime']['pelagian_shell_image']}",
         (
             "node_repl: "
             f"exposed={human_value(report['node_repl_exposed'])} "

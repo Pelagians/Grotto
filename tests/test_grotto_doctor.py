@@ -194,6 +194,21 @@ class DoctorTest(unittest.TestCase):
             any(pathlib.Path(command[0]).name == "bwrap" for command in commands)
         )
 
+    def test_runtime_reports_the_pinned_pelagian_shell_image(self) -> None:
+        image = "ghcr.io/pelagians/pelagian-shell@sha256:" + "a" * 64
+        with ExitStack() as stack:
+            self.static_environment(stack)
+            stack.enter_context(
+                mock.patch.dict(
+                    os.environ,
+                    {"GROTTO_PELAGIAN_SHELL_IMAGE": image},
+                    clear=False,
+                )
+            )
+            report = doctor.collect()
+
+        self.assertEqual(report["runtime"]["pelagian_shell_image"], image)
+
     def test_json_changes_only_output_formatting(self) -> None:
         report = {
             "ok": None,

@@ -20,6 +20,8 @@ required=(
     node
     npm
     pip3
+    pelagian-layoutd
+    pelagian-shellctl
     pkg-config
     python3
     rg
@@ -42,6 +44,16 @@ test -x /usr/local/libexec/grotto-chatgpt-fullscreen
 test -x /defaults/autostart
 test -x /defaults/autostart_wayland
 test -f /defaults/labwc.xml
+
+pelagian-shellctl status | jq -e '
+  .layoutd == "planner_only" and
+  .compositor_adapter == "unavailable"
+' >/dev/null
+pelagian-shellctl config show >/dev/null
+pelagian-layoutd status | jq -e '
+  .layoutd == "planner_only" and
+  .compositor_adapter == "unavailable"
+' >/dev/null
 
 # Wayland/Labwc is the primary lane and holds the main window fullscreen on the
 # bottom layer. The Openbox policy is the secondary X11 path; both have to be
