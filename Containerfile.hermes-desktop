@@ -46,6 +46,7 @@ ENV TITLE="Hermes Desktop" \
     GROTTO_PELAGIAN_SHELL_IMAGE="$PELAGIAN_SHELL_IMAGE" \
     HERMES_DESKTOP_USER_DATA_DIR=/config/hermes-desktop \
     HERMES_DESKTOP_PASSWORD_STORE=gnome-libsecret \
+    HERMES_DESKTOP_DISABLE_GPU=1 \
     ELECTRON_OZONE_PLATFORM_HINT=wayland \
     HOME=/config \
     XDG_CONFIG_HOME=/config/.config \

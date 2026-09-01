@@ -48,6 +48,7 @@ def main() -> None:
     assert "sh -n runtimes/hermes-desktop/root/defaults/autostart_wayland" in (ROOT / "Makefile").read_text()
     assert "HERMES_DESKTOP_USER_DATA_DIR=/config/hermes-desktop" in desktop_image
     assert "HERMES_DESKTOP_PASSWORD_STORE=gnome-libsecret" in desktop_image
+    assert "HERMES_DESKTOP_DISABLE_GPU=1" in desktop_image
     assert 'VOLUME ["/config", "/workspace", "/tools", "/home/linuxbrew/.linuxbrew", "/cache"]' in desktop_image
     assert "/opt/data" not in desktop_image
     assert "secure-token-storage.json" in desktop_init

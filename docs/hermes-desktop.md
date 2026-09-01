@@ -52,3 +52,8 @@ namespace used by Chromium's sandbox. The measured failure is
 `--no-sandbox`. This is a container-specific process-sandbox exception, not an
 upstream source patch. The surrounding container, non-root `abc` user, private
 streaming endpoint, and normal Grotto deployment controls remain required.
+
+The Selkies endpoint is a remote display, so Grotto also uses upstream's
+`HERMES_DESKTOP_DISABLE_GPU=1` path. This avoids Chromium GPU command-buffer
+failures and remote-display flicker while leaving Selkies to encode the
+software-rendered Wayland output.
