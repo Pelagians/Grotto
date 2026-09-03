@@ -1,12 +1,14 @@
 # Grotto Image Matrix
 
-Grotto currently publishes three OCI images.
+Grotto publishes application, agent, desktop, and bounded worker images.
 
 | Image | Type | Purpose | Persistent paths | Ports |
 | --- | --- | --- | --- | --- |
 | `ghcr.io/pelagians/grotto-openclaw:latest` | Agent application | General OpenClaw gateway with curated baseline tools and a persistent user toolchain | `/config`, `/workspace`, `/tools`, `/cache` | `18789` |
 | `ghcr.io/pelagians/grotto-chatgpt-desktop:latest` | Interactive workbench | Selkies-streamed ChatGPT Desktop and Codex workspace | `/config`, `/workspace`, `/tools`, `/cache` | `3001` |
 | `ghcr.io/pelagians/grotto-openadapt-teach:latest` | Ephemeral worker | Attach upstream OpenAdapt Flow to a `web-apps` browser for governed Teach recording and compilation | None; `/work` is ephemeral staging | None |
+| `ghcr.io/pelagians/grotto-hermes:latest` | Agent application | Official Hermes Agent backend with persistent Grotto tool environments | `/opt/data`, `/workspace`, `/tools`, `/home/linuxbrew/.linuxbrew`, `/cache` | `8642`, `9119` |
+| `ghcr.io/pelagians/grotto-hermes-desktop:latest` | Interactive workbench | Official Hermes Desktop client connected to a separate Hermes backend | `/config`, `/workspace`, `/tools`, `/home/linuxbrew/.linuxbrew`, `/cache` | `3001` |
 
 ## Grotto OpenAdapt Teach
 
@@ -60,3 +62,7 @@ See [`chatgpt-desktop.md`](chatgpt-desktop.md).
 ## Grotto Hermes
 
 See [`hermes.md`](hermes.md).
+
+## Grotto Hermes Desktop
+
+See [`hermes-desktop.md`](hermes-desktop.md).

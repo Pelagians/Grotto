@@ -12,6 +12,7 @@ It packages upstream applications with reproducible builds, practical dependenci
 | `ghcr.io/pelagians/grotto-chatgpt-desktop:latest` | Selkies-streamed ChatGPT and Codex desktop workbench |
 | `ghcr.io/pelagians/grotto-openadapt-teach:latest` | UI-only OpenAdapt Teach worker that attaches to a caller-owned browser |
 | `ghcr.io/pelagians/grotto-hermes:latest` | Official Hermes Agent with persistent Grotto tool environments |
+| `ghcr.io/pelagians/grotto-hermes-desktop:latest` | Official Hermes Desktop client streamed through Pelagian Shell |
 
 See [`docs/image-matrix.md`](docs/image-matrix.md) for the runtime boundaries of both images.
 
@@ -98,3 +99,7 @@ See [LICENSE](LICENSE) for Grotto source licensing. Packaged upstream applicatio
 ## Hermes
 
 See [`docs/hermes.md`](docs/hermes.md) for the official-Hermes image, persistent storage contract, and qualification path.
+
+## Hermes Desktop
+
+See [`docs/hermes-desktop.md`](docs/hermes-desktop.md) for the official desktop client, remote-backend boundary, keyring, storage, and window qualification path.

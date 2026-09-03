@@ -1,0 +1,33 @@
+#!/bin/bash
+set -Eeuo pipefail
+
+if [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]]; then
+    dbus_environment="$(dbus-launch --sh-syntax)"
+    eval "$dbus_environment"
+    unset dbus_environment
+fi
+
+if [[ -z "${GROTTO_HERMES_DESKTOP_KEYRING_PASSWORD:-}" ]]; then
+    echo "grotto-hermes-desktop: GROTTO_HERMES_DESKTOP_KEYRING_PASSWORD is required" >&2
+    exit 2
+fi
+
+keyring_environment="$(
+    printf '%s\n' "$GROTTO_HERMES_DESKTOP_KEYRING_PASSWORD" |
+        gnome-keyring-daemon --unlock --components=secrets
+)"
+eval "$keyring_environment"
+unset GROTTO_HERMES_DESKTOP_KEYRING_PASSWORD keyring_environment
+
+export HOME=/config
+export HERMES_DESKTOP_USER_DATA_DIR=/config/hermes-desktop
+export HERMES_DESKTOP_PASSWORD_STORE=gnome-libsecret
+export XDG_CONFIG_HOME=/config/.config
+export XDG_DATA_HOME=/config/.local/share
+export XDG_STATE_HOME=/config/.local/state
+export XDG_CACHE_HOME=/cache/xdg
+
+cd /workspace
+session_log=/config/hermes-desktop/session.log
+printf '[grotto-hermes-desktop] launching Hermes Desktop\n' >> "$session_log"
+exec /usr/local/bin/hermes-desktop --no-sandbox >> "$session_log" 2>&1
