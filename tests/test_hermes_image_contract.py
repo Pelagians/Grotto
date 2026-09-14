@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Static contract checks for the Grotto Hermes image."""
 import re
+import os
 from pathlib import Path
+import subprocess
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTAINERFILE = ROOT / "Containerfile.hermes"
@@ -9,10 +12,12 @@ HOOK = ROOT / "files/grotto-agent-entrypoint"
 SMOKE = ROOT / "tests/smoke-hermes.sh"
 DESKTOP_CONTAINERFILE = ROOT / "Containerfile.hermes-desktop"
 DESKTOP_AUTOSTART = ROOT / "runtimes/hermes-desktop/root/defaults/autostart_wayland"
+DESKTOP_CONSUMER = ROOT / "runtimes/hermes-desktop/root/usr/local/bin/pelagian-shell-consumer"
 DESKTOP_INIT = ROOT / "runtimes/hermes-desktop/root/custom-cont-init.d/30-grotto-hermes-desktop"
 DESKTOP_SESSION = ROOT / "runtimes/hermes-desktop/root/usr/local/bin/grotto-hermes-desktop-session"
 DESKTOP_SMOKE = ROOT / "tests/smoke-hermes-desktop.sh"
 DESKTOP_IMAGE_SMOKE = ROOT / "tests/hermes-desktop-image-smoke.sh"
+DESKTOP_DOCS = ROOT / "docs/hermes-desktop.md"
 WORKFLOW = ROOT / ".github/workflows/build.yml"
 SHELL_IMAGE = (
     "ghcr.io/pelagians/pelagian-shell@sha256:"
@@ -55,10 +60,12 @@ def main() -> None:
     assert "run_name-recreated" in smoke
 
     desktop_image = DESKTOP_CONTAINERFILE.read_text()
-    desktop_autostart = DESKTOP_AUTOSTART.read_text()
+    assert not DESKTOP_AUTOSTART.exists()
+    desktop_consumer = DESKTOP_CONSUMER.read_text()
     desktop_init = DESKTOP_INIT.read_text()
     desktop_session = DESKTOP_SESSION.read_text()
     desktop_smoke = DESKTOP_SMOKE.read_text()
+    desktop_docs = DESKTOP_DOCS.read_text()
     workflow = WORKFLOW.read_text()
     chatgpt_image = (ROOT / "Containerfile.chatgpt-desktop").read_text()
     for containerfile in (desktop_image, chatgpt_image):
@@ -70,8 +77,9 @@ def main() -> None:
     assert "npm run builder -- --linux deb --publish never" in desktop_image
     assert "for attempt in 1 2 3" in desktop_image
     assert "npm ci" in desktop_image
-    assert "pipefail" not in desktop_autostart
-    assert "sh -n runtimes/hermes-desktop/root/defaults/autostart_wayland" in (ROOT / "Makefile").read_text()
+    assert "pipefail" not in desktop_consumer
+    assert "exec /usr/local/bin/grotto-hermes-desktop-session" in desktop_consumer
+    assert "sh -n runtimes/hermes-desktop/root/usr/local/bin/pelagian-shell-consumer" in (ROOT / "Makefile").read_text()
     assert "HERMES_DESKTOP_USER_DATA_DIR=/config/hermes-desktop" in desktop_image
     assert "HERMES_DESKTOP_PASSWORD_STORE=gnome-libsecret" in desktop_image
     assert "HERMES_DESKTOP_DISABLE_GPU=1" in desktop_image
@@ -83,9 +91,12 @@ def main() -> None:
     assert "gnome-keyring-daemon --unlock" in desktop_session
     assert "dbus-launch --sh-syntax" in desktop_session
     assert "dbus-run-session" not in desktop_session
-    assert "/config/hermes-desktop/session.log" in desktop_session
+    assert "session.log" in desktop_session
     assert "/config/hermes-desktop/session.log" in desktop_smoke
-    assert "hermes-desktop --no-sandbox" in desktop_session
+    assert "exec /usr/local/bin/hermes-desktop" in desktop_session
+    assert "--no-sandbox" in desktop_session
+    assert "--enable-features=UseOzonePlatform" in desktop_session
+    assert "--ozone-platform=wayland" in desktop_session
     assert "wlrctl toplevel list" in desktop_smoke
     assert "xlsclients -display :0 -l" in desktop_smoke
     assert "x11-utils" in desktop_image
@@ -116,6 +127,30 @@ def main() -> None:
         'CONTAINER_ENGINE=docker GROTTO_HERMES_DESKTOP_IMAGE="$IMAGE_UNDER_TEST" \\'
         in hermes_lines
     )
+    assert "/usr/local/bin/pelagian-shell-consumer" in desktop_docs
+    assert "--enable-features=UseOzonePlatform" in desktop_docs
+    assert "--ozone-platform=wayland" in desktop_docs
+    assert "GROTTO_HERMES_DESKTOP_KEYRING_PASSWORD" in desktop_docs
+    assert "type=env,target=GROTTO_HERMES_DESKTOP_KEYRING_PASSWORD" in desktop_docs
+
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        session_dir = Path(temporary_directory) / "hermes-desktop"
+        environment = os.environ | {
+            "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/grotto-hermes-test-bus",
+            "HERMES_DESKTOP_USER_DATA_DIR": str(session_dir),
+        }
+        environment.pop("GROTTO_HERMES_DESKTOP_KEYRING_PASSWORD", None)
+        result = subprocess.run(
+            ["bash", str(DESKTOP_SESSION)],
+            env=environment,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert result.returncode == 2
+        session_log = session_dir / "session.log"
+        assert session_log.exists()
+        assert "GROTTO_HERMES_DESKTOP_KEYRING_PASSWORD is required" in session_log.read_text()
 
     # The pinned commit is repeated in the CI matrix and the in-image smoke;
     # a bump has to land in every copy or the build ships mismatched provenance.

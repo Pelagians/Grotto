@@ -171,16 +171,16 @@ COPY tests/test_window_manager_config.py /usr/local/libexec/test-window-manager-
 RUN set -eux; \
     chmod 0755 \
         /defaults/autostart \
-        /defaults/autostart_wayland \
         /usr/local/bin/grotto-doctor \
         /usr/local/bin/grotto-chatgpt-auth \
         /usr/local/bin/grotto-chatgpt-desktop \
+        /usr/local/bin/pelagian-shell-consumer \
         /usr/local/libexec/grotto-configure-openbox \
         /usr/local/libexec/grotto-chatgpt-fullscreen \
         /usr/local/libexec/grotto-chatgpt-desktop-smoke \
         /custom-cont-init.d/10-grotto-chatgpt-permissions; \
     bash -n /defaults/autostart; \
-    bash -n /defaults/autostart_wayland; \
+    bash -n /usr/local/bin/pelagian-shell-consumer; \
     bash -n /usr/local/bin/grotto-chatgpt-desktop; \
     bash -n /usr/local/libexec/grotto-chatgpt-fullscreen; \
     python3 -m py_compile /usr/local/bin/grotto-chatgpt-auth; \

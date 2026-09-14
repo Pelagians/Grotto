@@ -1,6 +1,22 @@
 #!/bin/bash
 set -Eeuo pipefail
 
+export HOME=/config
+export HERMES_DESKTOP_USER_DATA_DIR="${HERMES_DESKTOP_USER_DATA_DIR:-/config/hermes-desktop}"
+export HERMES_DESKTOP_PASSWORD_STORE="${HERMES_DESKTOP_PASSWORD_STORE:-gnome-libsecret}"
+export XDG_CONFIG_HOME=/config/.config
+export XDG_DATA_HOME=/config/.local/share
+export XDG_STATE_HOME=/config/.local/state
+export XDG_CACHE_HOME=/cache/xdg
+
+umask 077
+mkdir -p "$HERMES_DESKTOP_USER_DATA_DIR"
+session_log="$HERMES_DESKTOP_USER_DATA_DIR/session.log"
+: >> "$session_log"
+chmod 0600 "$session_log"
+exec >> "$session_log" 2>&1
+printf '[grotto-hermes-desktop] starting session\n'
+
 if [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]]; then
     dbus_environment="$(dbus-launch --sh-syntax)"
     eval "$dbus_environment"
@@ -19,15 +35,9 @@ keyring_environment="$(
 eval "$keyring_environment"
 unset GROTTO_HERMES_DESKTOP_KEYRING_PASSWORD keyring_environment
 
-export HOME=/config
-export HERMES_DESKTOP_USER_DATA_DIR=/config/hermes-desktop
-export HERMES_DESKTOP_PASSWORD_STORE=gnome-libsecret
-export XDG_CONFIG_HOME=/config/.config
-export XDG_DATA_HOME=/config/.local/share
-export XDG_STATE_HOME=/config/.local/state
-export XDG_CACHE_HOME=/cache/xdg
-
 cd /workspace
-session_log=/config/hermes-desktop/session.log
-printf '[grotto-hermes-desktop] launching Hermes Desktop\n' >> "$session_log"
-exec /usr/local/bin/hermes-desktop --no-sandbox >> "$session_log" 2>&1
+printf '[grotto-hermes-desktop] launching Hermes Desktop\n'
+exec /usr/local/bin/hermes-desktop \
+    --no-sandbox \
+    --enable-features=UseOzonePlatform \
+    --ozone-platform=wayland

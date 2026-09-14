@@ -34,11 +34,18 @@ INIT_SCRIPT = REPOSITORY / (
     "runtimes/chatgpt-desktop/root/custom-cont-init.d/10-grotto-chatgpt-permissions"
 )
 AUTOSTART = REPOSITORY / "runtimes/chatgpt-desktop/root/defaults/autostart"
+WAYLAND_AUTOSTART = REPOSITORY / (
+    "runtimes/chatgpt-desktop/root/defaults/autostart_wayland"
+)
+CONSUMER_HOOK = REPOSITORY / (
+    "runtimes/chatgpt-desktop/root/usr/local/bin/pelagian-shell-consumer"
+)
 FULLSCREEN_HELPER = REPOSITORY / (
     "runtimes/chatgpt-desktop/root/usr/local/libexec/grotto-chatgpt-fullscreen"
 )
 CONTAINERFILE = REPOSITORY / "Containerfile.chatgpt-desktop"
 RUNTIME_SMOKE = REPOSITORY / "tests/chatgpt-desktop-runtime.sh"
+DOCS = REPOSITORY / "docs/chatgpt-desktop.md"
 # The vendor package sets no Grotto-specific WM_CLASS, so the launcher passes
 # --class and the window rules match that value.
 WM_CLASS = "chatgpt-desktop"
@@ -268,6 +275,24 @@ def assert_wayland_fullscreen_is_repaired() -> None:
     assert "wlrctl" in containerfile
 
 
+def assert_shell_consumer_hook() -> None:
+    assert not WAYLAND_AUTOSTART.exists()
+    hook = CONSUMER_HOOK.read_text(encoding="utf-8")
+    assert "exec /defaults/autostart" in hook
+
+    containerfile = CONTAINERFILE.read_text(encoding="utf-8")
+    assert "/usr/local/bin/pelagian-shell-consumer" in containerfile
+    assert "/defaults/autostart_wayland" not in containerfile
+
+    runtime_smoke = RUNTIME_SMOKE.read_text(encoding="utf-8")
+    assert "test -x /usr/local/bin/pelagian-shell-consumer" in runtime_smoke
+    assert "test ! -e /defaults/autostart_wayland" in runtime_smoke
+
+    docs = DOCS.read_text(encoding="utf-8")
+    assert "/usr/local/bin/pelagian-shell-consumer" in docs
+    assert "planner-only" in docs
+
+
 def assert_policy_is_reapplied_to_persistent_state() -> None:
     """Openbox reads the persistent copy, not the build-time one.
 
@@ -319,6 +344,7 @@ def main(*, installed_image: bool = False) -> None:
         assert_primary_lane_is_wayland()
         assert_inherits_pelagian_shell()
         assert_wayland_fullscreen_is_repaired()
+        assert_shell_consumer_hook()
         assert_policy_is_reapplied_to_persistent_state()
     print("window-manager policy tests passed")
 

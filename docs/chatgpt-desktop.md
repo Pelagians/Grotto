@@ -28,6 +28,10 @@ GTK appearance, and shell diagnostics. Grotto keeps the ChatGPT-specific
 Labwc policy, true-fullscreen repair, authentication, tool planes, and
 application/runtime tests.
 
+Grotto installs `/usr/local/bin/pelagian-shell-consumer`, which delegates to
+its application autostart. It no longer replaces Pelagian Shell's complete
+Wayland autostart, so Shell-owned session services remain in the startup path.
+
 Nothing is compiled, repacked, or patched, and container startup downloads
 nothing.
 
@@ -186,6 +190,12 @@ policy stays packaged as the secondary X11 path.
 ChatGPT is presented as the desktop surface rather than as an ordinary floating
 window: the visible window is undecorated, held true-fullscreen, and kept on the
 bottom layer.
+
+This policy remains a temporary exception while Pelagian Shell is honestly
+planner-only: stock Labwc exposes no reliable targeted native-Wayland geometry
+control interface. Remove the ChatGPT Labwc policy and fullscreen repair only
+when the Shell can enforce deterministic placement without focus races or fake
+input.
 
 Fullscreen rather than borderless maximization is deliberate, and it is the one
 place where the native package forced a change. The application resets its own

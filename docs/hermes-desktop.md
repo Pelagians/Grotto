@@ -16,6 +16,10 @@ Pelagian Shell
 
 Desktop never mounts backend `/opt/data` and does not start a second persistent Hermes Agent. On first launch, choose **Connect to existing Hermes** and enter the backend URL, for example `http://hermes-suite.ai.svc:9119` inside Kubernetes.
 
+Grotto installs `/usr/local/bin/pelagian-shell-consumer` as the application
+hook. It does not replace Pelagian Shell's Labwc autostart; the Shell retains
+session ownership and invokes the Hermes session launcher independently.
+
 ## Persistent paths
 
 | Path | Purpose |
@@ -32,24 +36,33 @@ Desktop never mounts backend `/opt/data` and does not start a second persistent 
 
 The exact upstream release makes keychain encryption opt-in. Grotto enables upstream's existing `secure-token-storage.json` policy and starts GNOME Keyring through a private D-Bus session. Supply `GROTTO_HERMES_DESKTOP_KEYRING_PASSWORD` from a Kubernetes Secret or equivalent runtime secret; it is required and is never baked into the image. Keyring data persists under `/config/.local/share/keyrings`.
 
-## Window policy
+For rootless Podman, create the named secret through the operator's secret
+workflow, then map it to the required environment variable:
 
-Hermes Desktop is multi-window software: the main window, session and browser pop-outs, authentication windows, HUD, and Quick Entry retain upstream semantics. Grotto adds no global fullscreen rule. The real `/init` smoke prints the observed `wlrctl toplevel list` inventory and requires a Hermes toplevel before publication. Add an application-specific one-shot main-window rule only if that measurement proves it necessary.
-
-The qualified container run mapped the initial window through XWayland rather
-than the foreign-toplevel interface. Its observed identity was:
-
-```text
-Name: hermes-desktop
-Icon Name: hermes-desktop
-Command: hermes-desktop
-Instance/Class: hermes-desktop/Hermes-desktop
+```bash
+podman run \
+  --secret grotto-hermes-keyring,type=env,target=GROTTO_HERMES_DESKTOP_KEYRING_PASSWORD \
+  ghcr.io/pelagians/grotto-hermes-desktop:latest
 ```
 
-The Wayland inventory was empty. This is still a Labwc/Wayland Pelagian Shell
-session, with XWayland providing application compatibility. Grotto does not add
-a blanket rule or force fullscreen based on this first-window measurement;
-secondary windows must retain upstream semantics.
+The equivalent Quadlet entry is:
+
+```ini
+[Container]
+Image=ghcr.io/pelagians/grotto-hermes-desktop:latest
+Secret=grotto-hermes-keyring,type=env,target=GROTTO_HERMES_DESKTOP_KEYRING_PASSWORD
+```
+
+No default password is provided. Startup errors, including a missing secret,
+are written to `/config/hermes-desktop/session.log` without logging the secret.
+
+## Window policy
+
+Hermes Desktop is multi-window software: the main window, session and browser pop-outs, authentication windows, HUD, and Quick Entry retain upstream semantics. Grotto adds no global fullscreen rule. The launcher selects native Wayland explicitly with `--enable-features=UseOzonePlatform` and `--ozone-platform=wayland`; `ELECTRON_OZONE_PLATFORM_HINT=wayland` alone is insufficient for this Hermes build. The real `/init` smoke prints the observed `wlrctl toplevel list` inventory and requires a Hermes toplevel before publication.
+
+Pelagian Shell remains planner-only until Labwc exposes a reliable targeted
+geometry-control path. Therefore Grotto does not claim automatic tiling or add
+a Hermes-specific maximize/fullscreen workaround.
 
 ## Qualification
 

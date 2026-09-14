@@ -104,11 +104,11 @@ COPY tests/hermes-desktop-image-smoke.sh /usr/local/libexec/grotto-hermes-deskto
 
 RUN set -eux; \
     chmod 0755 \
-        /defaults/autostart_wayland \
         /custom-cont-init.d/30-grotto-hermes-desktop \
         /usr/local/bin/grotto-hermes-desktop-session \
+        /usr/local/bin/pelagian-shell-consumer \
         /usr/local/libexec/grotto-hermes-desktop-image-smoke; \
-    sh -n /defaults/autostart_wayland; \
+    sh -n /usr/local/bin/pelagian-shell-consumer; \
     bash -n /custom-cont-init.d/30-grotto-hermes-desktop; \
     bash -n /usr/local/bin/grotto-hermes-desktop-session; \
     bash -n /usr/local/libexec/grotto-hermes-desktop-image-smoke; \

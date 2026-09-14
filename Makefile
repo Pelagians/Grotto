@@ -17,12 +17,12 @@ check:
 	python3 tests/test_hermes_image_contract.py
 	sh -n files/grotto-openclaw-entrypoint
 	bash -n runtimes/chatgpt-desktop/root/defaults/autostart
-	bash -n runtimes/chatgpt-desktop/root/defaults/autostart_wayland
+	bash -n runtimes/chatgpt-desktop/root/usr/local/bin/pelagian-shell-consumer
 	python3 -m py_compile runtimes/chatgpt-desktop/root/usr/local/bin/grotto-chatgpt-auth
 	python3 -m py_compile runtimes/chatgpt-desktop/root/usr/local/bin/grotto-doctor
 	python3 -m py_compile runtimes/chatgpt-desktop/verify-installed-policy.py
 	bash -n runtimes/chatgpt-desktop/root/custom-cont-init.d/10-grotto-chatgpt-permissions
-	sh -n runtimes/hermes-desktop/root/defaults/autostart_wayland
+	sh -n runtimes/hermes-desktop/root/usr/local/bin/pelagian-shell-consumer
 	bash -n runtimes/hermes-desktop/root/custom-cont-init.d/30-grotto-hermes-desktop
 	bash -n runtimes/hermes-desktop/root/usr/local/bin/grotto-hermes-desktop-session
 	bash -n tests/hermes-desktop-image-smoke.sh
