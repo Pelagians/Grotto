@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Static contract checks for the Grotto Hermes image."""
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -13,6 +14,25 @@ DESKTOP_SESSION = ROOT / "runtimes/hermes-desktop/root/usr/local/bin/grotto-herm
 DESKTOP_SMOKE = ROOT / "tests/smoke-hermes-desktop.sh"
 DESKTOP_IMAGE_SMOKE = ROOT / "tests/hermes-desktop-image-smoke.sh"
 WORKFLOW = ROOT / ".github/workflows/build.yml"
+SHELL_IMAGE = (
+    "ghcr.io/pelagians/pelagian-shell@sha256:"
+    "286b429c20b2515d35f8021112df32808b3cdd7e02e10c43154282412305e3cf"
+)
+
+
+def workflow_step(workflow: str, name: str) -> str:
+    marker = f"      - name: {name}\n"
+    start = workflow.index(marker)
+    end = workflow.find("\n      - name: ", start + len(marker))
+    return workflow[start:] if end == -1 else workflow[start:end]
+
+
+def active_lines(block: str) -> set[str]:
+    return {
+        line.strip()
+        for line in block.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
 
 
 def main() -> None:
@@ -40,7 +60,11 @@ def main() -> None:
     desktop_session = DESKTOP_SESSION.read_text()
     desktop_smoke = DESKTOP_SMOKE.read_text()
     workflow = WORKFLOW.read_text()
-    assert "ghcr.io/pelagians/pelagian-shell@sha256:c444a61ba818bf7d0cad8d32574732e8da16099e018b760d2fc05d90bfb3f490" in desktop_image
+    chatgpt_image = (ROOT / "Containerfile.chatgpt-desktop").read_text()
+    for containerfile in (desktop_image, chatgpt_image):
+        assert re.findall(r"^ARG PELAGIAN_SHELL_IMAGE=(\S+)$", containerfile, re.M) == [
+            SHELL_IMAGE
+        ]
     assert "5fc308a70719a83cccdbba4c0e39c23f5a8239d5" in desktop_image
     assert "node:22-bookworm@sha256:8a34c4ab3ea2c5cd194f07e317b2a8f09461d3c8b05c4e34c8ccd56d56024c4d" in desktop_image
     assert "npm run builder -- --linux deb --publish never" in desktop_image
@@ -70,6 +94,28 @@ def main() -> None:
     assert "pgrep -f '[H]ermes'" in desktop_smoke
     assert "PELAGIAN_SHELL_SESSION_SENTINEL" not in desktop_smoke
     assert "ghcr.io/pelagians/grotto-hermes-desktop" in workflow
+    build_step = workflow_step(workflow, "Build and publish desktop image")
+    selector_step = workflow_step(workflow, "Select desktop image under test")
+    chatgpt_step = workflow_step(workflow, "Smoke test ChatGPT desktop runtime")
+    hermes_step = workflow_step(workflow, "Smoke test Hermes desktop runtime")
+    build_lines = active_lines(build_step)
+    selector_lines = active_lines(selector_step)
+    chatgpt_lines = active_lines(chatgpt_step)
+    hermes_lines = active_lines(hermes_step)
+    assert "id: desktop-build" in build_lines
+    assert "id: desktop-image" in selector_lines
+    assert "if [[ '${{ github.event_name }}' == pull_request ]]; then" in selector_lines
+    assert 'image="$(head -n 1 <<< "$IMAGE_TAGS")"' in selector_lines
+    assert "image='${{ matrix.image }}@${{ steps.desktop-build.outputs.digest }}'" in selector_lines
+    assert 'docker pull "$image"' in selector_lines
+    for lines in (chatgpt_lines, hermes_lines):
+        assert "IMAGE_UNDER_TEST: ${{ steps.desktop-image.outputs.image }}" in lines
+        assert not any(":latest" in line for line in lines)
+    assert '"$IMAGE_UNDER_TEST"' in chatgpt_lines
+    assert (
+        'CONTAINER_ENGINE=docker GROTTO_HERMES_DESKTOP_IMAGE="$IMAGE_UNDER_TEST" \\'
+        in hermes_lines
+    )
 
     # The pinned commit is repeated in the CI matrix and the in-image smoke;
     # a bump has to land in every copy or the build ships mismatched provenance.

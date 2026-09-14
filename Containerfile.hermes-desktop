@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 ARG NODE_IMAGE=node:22-bookworm@sha256:8a34c4ab3ea2c5cd194f07e317b2a8f09461d3c8b05c4e34c8ccd56d56024c4d
-ARG PELAGIAN_SHELL_IMAGE=ghcr.io/pelagians/pelagian-shell@sha256:c444a61ba818bf7d0cad8d32574732e8da16099e018b760d2fc05d90bfb3f490
+ARG PELAGIAN_SHELL_IMAGE=ghcr.io/pelagians/pelagian-shell@sha256:286b429c20b2515d35f8021112df32808b3cdd7e02e10c43154282412305e3cf
 # Single source of truth for the pinned upstream commit: both the build stage
 # that compiles the .deb and the final stage that records the provenance label
 # inherit this default when no --build-arg is passed.

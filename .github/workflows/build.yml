@@ -194,6 +194,7 @@ jobs:
         run: CONTAINER_ENGINE=docker make smoke-hermes
 
       - name: Build and publish desktop image
+        id: desktop-build
         if: matrix.kind == 'desktop'
         uses: docker/build-push-action@v6
         with:
@@ -211,6 +212,22 @@ jobs:
           cache-to: type=gha,mode=min,scope=${{ matrix.name }}
           provenance: ${{ github.event_name != 'pull_request' }}
           sbom: ${{ github.event_name != 'pull_request' }}
+
+      - name: Select desktop image under test
+        id: desktop-image
+        if: matrix.kind == 'desktop'
+        shell: bash
+        env:
+          IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          if [[ '${{ github.event_name }}' == pull_request ]]; then
+            image="$(head -n 1 <<< "$IMAGE_TAGS")"
+          else
+            image='${{ matrix.image }}@${{ steps.desktop-build.outputs.digest }}'
+            docker pull "$image"
+          fi
+          printf 'image=%s\n' "$image" >> "$GITHUB_OUTPUT"
 
       - name: Build and publish worker image
         if: matrix.kind == 'worker'
@@ -243,28 +260,26 @@ jobs:
           test "$(docker run --rm --network none --entrypoint id "${tag}" -u)" = 10001
 
       - name: Smoke test ChatGPT desktop runtime
-        if: matrix.name == 'grotto-chatgpt-desktop' && github.event_name == 'pull_request'
+        if: matrix.name == 'grotto-chatgpt-desktop'
         shell: bash
         env:
-          IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
+          IMAGE_UNDER_TEST: ${{ steps.desktop-image.outputs.image }}
         run: |
           set -euo pipefail
-          image="$(head -n 1 <<< "$IMAGE_TAGS")"
           docker run --rm \
             --user abc \
             --shm-size=2g \
             --env HOME=/config \
             --env CODEX_HOME=/config/.codex \
             --entrypoint /usr/local/libexec/grotto-chatgpt-desktop-smoke \
-            "$image"
+            "$IMAGE_UNDER_TEST"
 
       - name: Smoke test Hermes desktop runtime
-        if: matrix.name == 'grotto-hermes-desktop' && github.event_name == 'pull_request'
+        if: matrix.name == 'grotto-hermes-desktop'
         shell: bash
         env:
-          IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
+          IMAGE_UNDER_TEST: ${{ steps.desktop-image.outputs.image }}
         run: |
           set -euo pipefail
-          image="$(head -n 1 <<< "$IMAGE_TAGS")"
-          CONTAINER_ENGINE=docker GROTTO_HERMES_DESKTOP_IMAGE="$image" \
+          CONTAINER_ENGINE=docker GROTTO_HERMES_DESKTOP_IMAGE="$IMAGE_UNDER_TEST" \
             tests/smoke-hermes-desktop.sh
