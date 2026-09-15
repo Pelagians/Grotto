@@ -60,9 +60,8 @@ are written to `/config/hermes-desktop/session.log` without logging the secret.
 
 Hermes Desktop is multi-window software: the main window, session and browser pop-outs, authentication windows, HUD, and Quick Entry retain upstream semantics. Grotto adds no global fullscreen rule. The launcher selects native Wayland explicitly with `--enable-features=UseOzonePlatform` and `--ozone-platform=wayland`; `ELECTRON_OZONE_PLATFORM_HINT=wayland` alone is insufficient for this Hermes build. The real `/init` smoke prints the observed `wlrctl toplevel list` inventory and requires a Hermes toplevel before publication.
 
-Pelagian Shell remains planner-only until Labwc exposes a reliable targeted
-geometry-control path. Therefore Grotto does not claim automatic tiling or add
-a Hermes-specific maximize/fullscreen workaround.
+Pelagian Shell's daemonized Labwc adapter provides live automatic tiling, so
+Grotto adds no Hermes-specific maximize/fullscreen workaround.
 
 ## Qualification
 

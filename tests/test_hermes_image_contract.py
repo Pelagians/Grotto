@@ -69,6 +69,11 @@ def main() -> None:
     desktop_docs = DESKTOP_DOCS.read_text()
     workflow = WORKFLOW.read_text()
     chatgpt_image = (ROOT / "Containerfile.chatgpt-desktop").read_text()
+    assert not (
+        ROOT
+        / "runtimes/chatgpt-desktop/root/usr/local/libexec/grotto-configure-openbox"
+    ).exists()
+    assert not (ROOT / "tests/test_window_manager_config.py").exists()
     for containerfile in (desktop_image, chatgpt_image):
         assert re.findall(r"^ARG PELAGIAN_SHELL_IMAGE=(\S+)$", containerfile, re.M) == [
             SHELL_IMAGE
@@ -108,6 +113,11 @@ def main() -> None:
     )
     assert "--env WAYLAND_DISPLAY=wayland-1" not in desktop_smoke_lines
     assert "xlsclients -display :0 -l" in desktop_smoke
+    assert 'grep -qi hermes <<< "$wayland_inventory"' in desktop_smoke
+    assert 'grep -qi hermes <<< "$x11_inventory"' in desktop_smoke
+    assert "visible only through X11/XWayland" in desktop_smoke
+    assert "visible through X11/XWayland as well as Wayland" in desktop_smoke
+    assert "${wayland_inventory}${x11_inventory}" not in desktop_smoke
     assert "x11-utils" in desktop_image
     assert "--env XDG_RUNTIME_DIR=/config/.XDG" in desktop_smoke
     assert "pgrep -f '[H]ermes'" in desktop_smoke
@@ -130,7 +140,22 @@ def main() -> None:
     for lines in (chatgpt_lines, hermes_lines):
         assert "IMAGE_UNDER_TEST: ${{ steps.desktop-image.outputs.image }}" in lines
         assert not any(":latest" in line for line in lines)
-    assert '"$IMAGE_UNDER_TEST"' in chatgpt_lines
+    assert '"$IMAGE_UNDER_TEST" >/dev/null' in chatgpt_lines
+    assert "for socket in /config/.XDG/wayland-*; do" in chatgpt_lines
+    assert any(
+        'WAYLAND_DISPLAY="${socket##*/}" wlrctl toplevel list' in line
+        for line in chatgpt_lines
+    )
+    assert any("xlsclients -display :0 -l" in line for line in chatgpt_lines)
+    assert any(
+        "ChatGPT is visible only through X11/XWayland" in line
+        for line in chatgpt_lines
+    )
+    assert "x11-utils" in chatgpt_image
+    assert any("chatgpt-volume-sentinel" in line for line in chatgpt_lines)
+    assert any('--volume "$volume:/config"' in line for line in chatgpt_lines)
+    assert "hermes-volume-sentinel" in desktop_smoke
+    assert "hermes-keyring-sentinel" in desktop_smoke
     assert (
         'CONTAINER_ENGINE=docker GROTTO_HERMES_DESKTOP_IMAGE="$IMAGE_UNDER_TEST" \\'
         in hermes_lines
@@ -138,6 +163,8 @@ def main() -> None:
     assert "/usr/local/bin/pelagian-shell-consumer" in desktop_docs
     assert "--enable-features=UseOzonePlatform" in desktop_docs
     assert "--ozone-platform=wayland" in desktop_docs
+    assert "planner-only" not in desktop_docs
+    assert "live automatic tiling" in desktop_docs
     assert "GROTTO_HERMES_DESKTOP_KEYRING_PASSWORD" in desktop_docs
     assert "type=env,target=GROTTO_HERMES_DESKTOP_KEYRING_PASSWORD" in desktop_docs
 

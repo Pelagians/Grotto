@@ -105,6 +105,7 @@ RUN set -eux; \
         sqlite3 \
         unzip \
         wlrctl \
+        x11-utils \
         xdg-utils \
         zip; \
     rm -rf /var/lib/apt/lists/*
@@ -166,48 +167,32 @@ RUN set -eux; \
 COPY runtimes/chatgpt-desktop/root/ /
 COPY tests/chatgpt-desktop-runtime.sh /usr/local/libexec/grotto-chatgpt-desktop-smoke
 COPY tests/test_grotto_doctor.py /usr/local/libexec/test-grotto-doctor.py
-COPY tests/test_window_manager_config.py /usr/local/libexec/test-window-manager-config.py
 
 RUN set -eux; \
     chmod 0755 \
-        /defaults/autostart \
         /usr/local/bin/grotto-doctor \
         /usr/local/bin/grotto-chatgpt-auth \
         /usr/local/bin/grotto-chatgpt-desktop \
         /usr/local/bin/pelagian-shell-consumer \
-        /usr/local/libexec/grotto-configure-openbox \
-        /usr/local/libexec/grotto-chatgpt-fullscreen \
         /usr/local/libexec/grotto-chatgpt-desktop-smoke \
         /custom-cont-init.d/10-grotto-chatgpt-permissions; \
-    bash -n /defaults/autostart; \
     bash -n /usr/local/bin/pelagian-shell-consumer; \
     bash -n /usr/local/bin/grotto-chatgpt-desktop; \
-    bash -n /usr/local/libexec/grotto-chatgpt-fullscreen; \
     python3 -m py_compile /usr/local/bin/grotto-chatgpt-auth; \
     python3 /usr/local/bin/grotto-chatgpt-auth --self-test; \
     bash -n /custom-cont-init.d/10-grotto-chatgpt-permissions; \
     bash -n /usr/local/libexec/grotto-chatgpt-desktop-smoke; \
     python3 -m py_compile \
         /usr/local/bin/grotto-doctor \
-        /usr/local/libexec/grotto-configure-openbox \
-        /usr/local/libexec/test-window-manager-config.py \
         /usr/local/libexec/test-grotto-doctor.py; \
-    /usr/local/libexec/grotto-configure-openbox /etc/xdg/openbox/rc.xml; \
-    GROTTO_OPENBOX_CONFIG=/etc/xdg/openbox/rc.xml \
-    GROTTO_LABWC_CONFIG=/defaults/labwc.xml \
-    GROTTO_WINDOW_CONFIGURATOR=/usr/local/libexec/grotto-configure-openbox \
-        python3 /usr/local/libexec/test-window-manager-config.py \
-            --installed-image; \
     GROTTO_DOCTOR_UNDER_TEST=/usr/local/bin/grotto-doctor \
         python3 /usr/local/libexec/test-grotto-doctor.py; \
     rm -f \
-        /usr/local/libexec/test-grotto-doctor.py \
-        /usr/local/libexec/test-window-manager-config.py; \
+        /usr/local/libexec/test-grotto-doctor.py; \
     rm -rf /usr/local/bin/__pycache__ /usr/local/libexec/__pycache__; \
     shellcheck \
-        /defaults/autostart \
+        /usr/local/bin/pelagian-shell-consumer \
         /usr/local/bin/grotto-chatgpt-desktop \
-        /usr/local/libexec/grotto-chatgpt-fullscreen \
         /custom-cont-init.d/10-grotto-chatgpt-permissions \
         /usr/local/libexec/grotto-chatgpt-desktop-smoke; \
     for command_name in \

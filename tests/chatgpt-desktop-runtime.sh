@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC2251 # `! grep` assertions intentionally fail the smoke.
 set -Eeuo pipefail
 trap 'printf "runtime smoke failed at line %s: %s\n" "$LINENO" "$BASH_COMMAND" >&2' ERR
 
@@ -39,9 +40,9 @@ for command_name in "${required[@]}"; do
     fi
 done
 
-test -x /usr/local/libexec/grotto-configure-openbox
+test ! -e /usr/local/libexec/grotto-configure-openbox
 test -x /usr/local/bin/grotto-chatgpt-desktop
-test -x /usr/local/libexec/grotto-chatgpt-fullscreen
+test ! -e /usr/local/libexec/grotto-chatgpt-fullscreen
 test -x /defaults/autostart
 test -x /usr/local/bin/pelagian-shell-consumer
 test -x /defaults/autostart_wayland
@@ -49,23 +50,23 @@ grep -q 'consumer_hook=/usr/local/bin/pelagian-shell-consumer' /defaults/autosta
 test -f /defaults/labwc.xml
 
 pelagian-shellctl status | jq -e '
-  .layoutd == "planner_only" and
-  .compositor_adapter == "unavailable"
+  .compositor_adapter == "labwc-ipc" and
+  .runtime.layoutd == "healthy" and
+  .runtime.adapter_connected == true and
+  .runtime.reconciliation == "healthy"
 ' >/dev/null
 pelagian-shellctl config show >/dev/null
-pelagian-layoutd status | jq -e '
-  .mode == "planner_only" and
-  .compositor_adapter == "unavailable"
-' >/dev/null
+layoutd_status="$(pelagian-layoutd status)"
+if grep -q planner_only <<<"$layoutd_status"; then
+    echo "pelagian-layoutd is still planner-only" >&2
+    exit 1
+fi
+jq -e '.compositor_adapter == "labwc-ipc"' <<<"$layoutd_status" >/dev/null
 
-# Wayland/Labwc is the primary lane and holds the main window fullscreen on the
-# bottom layer. The Openbox policy is the secondary X11 path; both have to be
-# packaged, because the session mode is a run-time choice.
+# Shell owns Labwc placement; the consumer carries no product-specific sizing.
 test "$(printenv PIXELFLUX_WAYLAND)" = true
-grep -q 'identifier="chatgpt-desktop"' /defaults/labwc.xml
-grep -q 'ToggleFullscreen' /defaults/labwc.xml
-grep -q 'fullscreen>yes<' /etc/xdg/openbox/rc.xml
-grep -q 'class="chatgpt-desktop"' /etc/xdg/openbox/rc.xml
+! grep -q 'identifier="chatgpt-desktop"' /defaults/labwc.xml
+! grep -q 'exec /defaults/autostart' /usr/local/bin/pelagian-shell-consumer
 
 # The vendor package supplies the application, the Codex CLI, and the Node
 # runtime as one unit. Check the entry points Grotto actually launches rather

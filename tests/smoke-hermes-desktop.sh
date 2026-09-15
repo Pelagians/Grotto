@@ -22,6 +22,14 @@ for volume in "${volumes[@]}"; do
     "$engine" volume create "${name}-${volume}" >/dev/null
 done
 
+"$engine" run --rm --entrypoint sh \
+    --volume "${name}-config:/config" \
+    "$image" -c '
+        mkdir -p /config/hermes-desktop /config/.local/share/keyrings
+        printf preserved > /config/hermes-desktop/hermes-volume-sentinel
+        printf preserved > /config/.local/share/keyrings/hermes-keyring-sentinel
+    '
+
 "$engine" run -d \
     --name "$name" \
     --shm-size=2g \
@@ -62,8 +70,14 @@ for _ in $(seq 1 180); do
                 --env DISPLAY=:0 \
                 "$name" xlsclients -display :0 -l 2>/dev/null || true
         )"
-        if grep -qi hermes <<< "${wayland_inventory}${x11_inventory}"; then
+        if grep -qi hermes <<< "$wayland_inventory"; then
+            if grep -qi hermes <<< "$x11_inventory"; then
+                echo "Hermes is visible through X11/XWayland as well as Wayland" >&2
+                exit 1
+            fi
             "$engine" exec "$name" /usr/local/libexec/grotto-hermes-desktop-image-smoke
+            test "$("$engine" exec "$name" cat /config/hermes-desktop/hermes-volume-sentinel)" = preserved
+            test "$("$engine" exec "$name" cat /config/.local/share/keyrings/hermes-keyring-sentinel)" = preserved
             printf 'Hermes Desktop Wayland inventory:\n%s\n' "$wayland_inventory"
             printf 'Hermes Desktop X11 inventory:\n%s\n' "$x11_inventory"
             if "$engine" exec "$name" pgrep -f '[h]ermes serve' >/dev/null 2>&1; then
@@ -72,6 +86,10 @@ for _ in $(seq 1 180); do
             fi
             echo "grotto-hermes-desktop smoke: PASS image=$image engine=$engine"
             exit 0
+        fi
+        if grep -qi hermes <<< "$x11_inventory"; then
+            echo "Hermes is visible only through X11/XWayland" >&2
+            exit 1
         fi
     fi
     sleep 1

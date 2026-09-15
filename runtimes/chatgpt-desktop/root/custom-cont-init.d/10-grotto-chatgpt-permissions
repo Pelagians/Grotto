@@ -13,7 +13,6 @@ install -d -o abc -g abc -m 0755 \
     /config/.cache \
     /config/.config \
     /config/.config/labwc \
-    /config/.config/openbox \
     /config/.local \
     /config/.local/state \
     /workspace \
@@ -32,23 +31,6 @@ install -d -o abc -g abc -m 0755 \
     /cache/uv \
     /cache/xdg
 
-# Pelagian Shell refreshes the child image's `/defaults/labwc.xml` and
-# `/defaults/autostart_wayland` into persistent state. Grotto owns only the
-# secondary Openbox seed here.
-install -o abc -g abc -m 0755 \
-    /defaults/autostart \
-    /config/.config/openbox/autostart
-
-# Openbox reads the persistent copy, so the build-time policy in /etc/xdg is
-# only a seed. Reapply it here: the configurator is idempotent and edits just
-# its own marked block, so unrelated user changes to rc.xml survive.
-if [[ ! -f /config/.config/openbox/rc.xml ]]; then
-    install -o abc -g abc -m 0644 \
-        /etc/xdg/openbox/rc.xml \
-        /config/.config/openbox/rc.xml
-fi
-/usr/local/libexec/grotto-configure-openbox /config/.config/openbox/rc.xml
-chown abc:abc /config/.config/openbox/rc.xml
 
 # Repair only the persistent roots and Grotto-managed tool/cache directories.
 # Project contents keep their existing ownership so host-side checkouts are not
