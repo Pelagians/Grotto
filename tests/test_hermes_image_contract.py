@@ -65,6 +65,7 @@ def main() -> None:
     desktop_init = DESKTOP_INIT.read_text()
     desktop_session = DESKTOP_SESSION.read_text()
     desktop_smoke = DESKTOP_SMOKE.read_text()
+    desktop_smoke_lines = active_lines(desktop_smoke)
     desktop_docs = DESKTOP_DOCS.read_text()
     workflow = WORKFLOW.read_text()
     chatgpt_image = (ROOT / "Containerfile.chatgpt-desktop").read_text()
@@ -98,11 +99,17 @@ def main() -> None:
     assert "--no-sandbox" in desktop_session
     assert "--enable-features=UseOzonePlatform" in desktop_session
     assert "--ozone-platform=wayland" in desktop_session
-    assert "wlrctl toplevel list" in desktop_smoke
+    assert any("wlrctl toplevel list" in line for line in desktop_smoke_lines)
+    assert "for socket in /config/.XDG/wayland-*; do" in desktop_smoke_lines
+    assert '[ -S "$socket" ] || continue' in desktop_smoke_lines
+    assert (
+        'WAYLAND_DISPLAY="${socket##*/}" wlrctl toplevel list 2>/dev/null || true'
+        in desktop_smoke_lines
+    )
+    assert "--env WAYLAND_DISPLAY=wayland-1" not in desktop_smoke_lines
     assert "xlsclients -display :0 -l" in desktop_smoke
     assert "x11-utils" in desktop_image
     assert "--env XDG_RUNTIME_DIR=/config/.XDG" in desktop_smoke
-    assert "--env WAYLAND_DISPLAY=wayland-1" in desktop_smoke
     assert "pgrep -f '[H]ermes'" in desktop_smoke
     assert "PELAGIAN_SHELL_SESSION_SENTINEL" not in desktop_smoke
     assert "ghcr.io/pelagians/grotto-hermes-desktop" in workflow

@@ -43,12 +43,18 @@ for _ in $(seq 1 180); do
         && "$engine" exec "$name" pgrep -f '[g]nome-keyring-daemon' >/dev/null 2>&1 \
         && curl --fail --silent --show-error --insecure --max-time 3 \
             "https://127.0.0.1:${port}/" >/dev/null 2>&1; then
+        # The inner shell expands socket; the smoke runner must not.
+        # shellcheck disable=SC2016
         wayland_inventory="$(
             "$engine" exec \
                 --user abc \
                 --env XDG_RUNTIME_DIR=/config/.XDG \
-                --env WAYLAND_DISPLAY=wayland-1 \
-                "$name" wlrctl toplevel list 2>/dev/null || true
+                "$name" sh -c '
+                    for socket in /config/.XDG/wayland-*; do
+                        [ -S "$socket" ] || continue
+                        WAYLAND_DISPLAY="${socket##*/}" wlrctl toplevel list 2>/dev/null || true
+                    done
+                '
         )"
         x11_inventory="$(
             "$engine" exec \
