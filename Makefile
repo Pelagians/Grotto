@@ -16,7 +16,6 @@ CHATGPT_PACKAGE_VERSION ?= 26.820.60940
 check:
 	python3 tests/test_hermes_image_contract.py
 	sh -n files/grotto-openclaw-entrypoint
-	bash -n runtimes/chatgpt-desktop/root/defaults/autostart
 	bash -n runtimes/chatgpt-desktop/root/usr/local/bin/pelagian-shell-consumer
 	python3 -m py_compile runtimes/chatgpt-desktop/root/usr/local/bin/grotto-chatgpt-auth
 	python3 -m py_compile runtimes/chatgpt-desktop/root/usr/local/bin/grotto-doctor
@@ -28,8 +27,6 @@ check:
 	bash -n tests/hermes-desktop-image-smoke.sh
 	bash -n tests/smoke-hermes-desktop.sh
 	python3 tests/test_grotto_doctor.py
-	python3 tests/test_window_manager_config.py
-	python3 tests/test_window_manager_config.py --installed-image
 	python3 tests/test_verify_installed_chatgpt_policy.py
 	python3 tests/test_openadapt_teach_adapter.py
 	python3 tests/test_openadapt_teach_policy.py

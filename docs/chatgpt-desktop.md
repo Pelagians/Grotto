@@ -24,13 +24,11 @@ The image derives from a digest-pinned
 4. Record what the installed bundle exposes in a read-only security manifest.
 
 Pelagian Shell owns `/init`, Selkies HTTPS, Labwc, XWayland-ready defaults,
-GTK appearance, and shell diagnostics. Grotto keeps the ChatGPT-specific
-Labwc policy, true-fullscreen repair, authentication, tool planes, and
-application/runtime tests.
+GTK appearance, window layout, and shell diagnostics. Grotto owns only
+ChatGPT authentication, tool planes, application startup, and runtime tests.
 
-Grotto installs `/usr/local/bin/pelagian-shell-consumer`, which delegates to
-its application autostart. It no longer replaces Pelagian Shell's complete
-Wayland autostart, so Shell-owned session services remain in the startup path.
+Grotto installs `/usr/local/bin/pelagian-shell-consumer`, which launches the
+application without replacing Shell's session autostart or Labwc policy.
 
 Nothing is compiled, repacked, or patched, and container startup downloads
 nothing.
@@ -181,74 +179,15 @@ reverse proxy terminates TLS.
 
 ## Window behavior
 
-The primary lane is Wayland/Labwc. Selkies runs the Labwc session
-(`PIXELFLUX_WAYLAND=true`) and the launcher asks Chromium for the Wayland
-backend. The two have to agree: with Selkies on Wayland but Chromium on X11 the
-application runs under XWayland and the Labwc rules never match it. An Openbox
-policy stays packaged as the secondary X11 path.
+The supported lane is native Wayland. Selkies starts Labwc
+(`PIXELFLUX_WAYLAND=true`), the launcher asks Chromium for Wayland, and
+`pelagian-layoutd` applies Shell's shared normal-window and dialog policy.
+ChatGPT carries no compositor configuration or application-specific sizing
+repair. One normal window fills the workspace, two normal windows tile, and
+dialogs float according to the inherited Shell contract.
 
-ChatGPT is presented as the desktop surface rather than as an ordinary floating
-window: the visible window is undecorated, held true-fullscreen, and kept on the
-bottom layer.
-
-This policy remains a temporary exception while Pelagian Shell is honestly
-planner-only: stock Labwc exposes no reliable targeted native-Wayland geometry
-control interface. Remove the ChatGPT Labwc policy and fullscreen repair only
-when the Shell can enforce deterministic placement without focus races or fake
-input.
-
-Fullscreen rather than borderless maximization is deliberate, and it is the one
-place where the native package forced a change. The application resets its own
-window bounds a few seconds after mapping and ignores `--start-maximized` and
-`--window-size`, so a maximized rule is applied at map time and then undone on
-every start. It records `"window_placement":{}`, so it does not remember a
-maximize either. Fullscreen is held by the window manager instead.
-
-On the Wayland lane the map-time rule alone is not enough: the application
-unsets fullscreen when it resets its bounds. Measured on a 1600x900 output, the
-rule alone leaves a 1024x760 window in the corner with the application's own
-minimize and close controls drawn in it. The session therefore starts
-`grotto-chatgpt-fullscreen`, which waits for the window, re-requests fullscreen
-through the compositor once the application has settled, and exits. It sets the
-state rather than toggling it, runs once per session start, and is a no-op under
-X11, where Openbox holds a fullscreen window at the monitor geometry on its own.
-
-Native file choosers, Electron dialogs, and utility windows remain decorated
-and windowed. They are unmaximized, raised, and focused above ChatGPT when they
-open, and ordinary secondary windows default to the foreground. ChatGPT ignores
-client-generated focus requests in Labwc; direct user clicks still focus it
-normally. The equivalent Openbox rule declines initial focus and keeps ChatGPT
-below dialog windows.
-
-The window rules key off a WM class Grotto chooses rather than a vendor
-default: the launcher starts the application with `--class=chatgpt-desktop`,
-and `GROTTO_CHATGPT_WM_CLASS` sets both sides so they cannot drift apart. The
-observed identity of the main window is
-`WM_CLASS = "chatgpt (...)", "chatgpt-desktop"` with
-`_NET_WM_WINDOW_TYPE_NORMAL` and no `WM_WINDOW_ROLE`, so the rules match on
-class and type alone. The Labwc rule also does not match on window title,
-because the title follows the open conversation.
-
-Both window managers apply every matching rule in document order, so the
-catch-all rule for ordinary windows is written before the ChatGPT rule that
-overrides it.
-
-The vendor package is not patched, so the application keeps its own window
-chrome and its full `File` menu. Earlier images removed Electron's window
-controls and the `New Window` entry by patching the community wrapper. That is
-no longer possible; fullscreen takes the client control strip out of the stream,
-and the window rules above are what keeps it a single-application surface. The
-launcher also disables Chromium's `CustomTitlebar` and `WaylandWindowDecorations`
-features and asks Electron for a system titlebar, which the compositor then
-removes from this surface.
-
-Both window managers read their configuration from `/config`, so the build-time
-Openbox policy in `/etc/xdg` is only a seed. Container initialization refreshes
-the launchers, the Labwc configuration, and the Openbox policy into the
-persistent volume on every start, so an existing `/config` cannot keep the base
-terminal launcher, LinuxServer's catch-all maximization, or a superseded policy
-after an image update. The Openbox configurator edits only its own marked block,
-so unrelated changes to `rc.xml` survive.
+The launcher keeps `--class=chatgpt-desktop` as a stable application identity,
+not as a selector for consumer-owned window-manager rules.
 
 For a software-rendering fallback, omit `/dev/dri` and use:
 
@@ -256,12 +195,6 @@ For a software-rendering fallback, omit `/dev/dri` and use:
 --env AUTO_GPU=false
 ```
 
-To run the secondary X11 path instead, set both:
-
-```bash
---env PIXELFLUX_WAYLAND=false \
---env CODEX_OZONE_PLATFORM=x11
-```
 
 ## First-run authentication
 
