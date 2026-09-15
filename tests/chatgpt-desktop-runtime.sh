@@ -44,7 +44,8 @@ test -x /usr/local/bin/grotto-chatgpt-desktop
 test -x /usr/local/libexec/grotto-chatgpt-fullscreen
 test -x /defaults/autostart
 test -x /usr/local/bin/pelagian-shell-consumer
-test ! -e /defaults/autostart_wayland
+test -x /defaults/autostart_wayland
+grep -q 'consumer_hook=/usr/local/bin/pelagian-shell-consumer' /defaults/autostart_wayland
 test -f /defaults/labwc.xml
 
 pelagian-shellctl status | jq -e '

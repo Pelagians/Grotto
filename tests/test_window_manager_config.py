@@ -286,7 +286,8 @@ def assert_shell_consumer_hook() -> None:
 
     runtime_smoke = RUNTIME_SMOKE.read_text(encoding="utf-8")
     assert "test -x /usr/local/bin/pelagian-shell-consumer" in runtime_smoke
-    assert "test ! -e /defaults/autostart_wayland" in runtime_smoke
+    assert "test -x /defaults/autostart_wayland" in runtime_smoke
+    assert "consumer_hook=/usr/local/bin/pelagian-shell-consumer" in runtime_smoke
 
     docs = DOCS.read_text(encoding="utf-8")
     assert "/usr/local/bin/pelagian-shell-consumer" in docs
