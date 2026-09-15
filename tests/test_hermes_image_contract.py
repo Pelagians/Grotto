@@ -93,6 +93,7 @@ def main() -> None:
     assert "dbus-run-session" not in desktop_session
     assert "session.log" in desktop_session
     assert "/config/hermes-desktop/session.log" in desktop_smoke
+    assert "/config/hermes-desktop/hermes-home/logs/desktop.log" in desktop_smoke
     assert "exec /usr/local/bin/hermes-desktop" in desktop_session
     assert "--no-sandbox" in desktop_session
     assert "--enable-features=UseOzonePlatform" in desktop_session

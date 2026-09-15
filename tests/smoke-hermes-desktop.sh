@@ -73,6 +73,7 @@ done
 
 "$engine" logs "$name" >&2 || true
 "$engine" exec "$name" cat /config/hermes-desktop/session.log >&2 || true
+"$engine" exec "$name" cat /config/hermes-desktop/hermes-home/logs/desktop.log >&2 || true
 "$engine" exec "$name" ps aux >&2 || true
 echo "grotto-hermes-desktop smoke: startup did not become ready" >&2
 exit 1
