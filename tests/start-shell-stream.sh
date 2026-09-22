@@ -5,7 +5,7 @@ engine=${CONTAINER_ENGINE:-docker}
 name=${1:?container name required}
 client=$(mktemp)
 trap 'rm -f "$client"' EXIT
-revision=3a17b6be5e3d8f27dc53ff00566dc56b90c4fa27
+revision=fe25c6756d7976322be97ece671ca8f9f9e5c7f7
 curl --fail --silent --show-error --retry 3 \
     "https://raw.githubusercontent.com/Pelagians/pelagian-shell/$revision/tests/selkies-smoke-client.py" > "$client"
 printf '%s  %s\n' cef81eb602743419b98b3c4bd4387cb1585bd97bc1ba495ab4e893e3ef407a52 "$client" | sha256sum --check --status

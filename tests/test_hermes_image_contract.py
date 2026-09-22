@@ -21,7 +21,7 @@ DESKTOP_DOCS = ROOT / "docs/hermes-desktop.md"
 WORKFLOW = ROOT / ".github/workflows/build.yml"
 SHELL_IMAGE = (
     "ghcr.io/pelagians/pelagian-shell@sha256:"
-    "083dc52c943c0a92d5a9b15a25e9798fc2967b95fd6f2ccbca4e3bbb2c91b1bb"
+    "73a5d952d3dd47eb2467d656ca4665cb2bde18fe811a320deaeeaf9f4459fd92"
 )
 
 

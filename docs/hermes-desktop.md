@@ -88,8 +88,8 @@ software-rendered Wayland output.
 ### Live Shell qualification
 
 The consumer pins the Shell image published from
-`Pelagians/pelagian-shell@3a17b6be5e3d8f27dc53ff00566dc56b90c4fa27`
-(Shell PR #6). The smoke viewer is fetched from that same commit and verified
+`Pelagians/pelagian-shell@fe25c6756d7976322be97ece671ca8f9f9e5c7f7`
+(Shell PR #7). The smoke viewer is fetched from that same commit and verified
 against its SHA-256 before execution. CI starts the inherited `/init`, decodes
 1920x1080 streamed frames, and checks the real application window through Labwc
 IPC: healthy reconciliation, maximized usable-area geometry, visible titlebar,
