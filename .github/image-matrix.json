@@ -1,0 +1,44 @@
+[
+  {
+    "name": "grotto-openclaw",
+    "kind": "agent",
+    "image": "ghcr.io/pelagians/grotto-openclaw",
+    "title": "Grotto OpenClaw",
+    "description": "General OpenClaw gateway with curated baseline tools and persistent user-installed toolchains",
+    "file": "./Containerfile"
+  },
+  {
+    "name": "grotto-hermes",
+    "kind": "agent",
+    "image": "ghcr.io/pelagians/grotto-hermes",
+    "title": "Grotto Hermes",
+    "description": "Official Hermes Agent with persistent Grotto tool environments",
+    "file": "./Containerfile.hermes"
+  },
+  {
+    "name": "grotto-chatgpt-desktop",
+    "kind": "desktop",
+    "image": "ghcr.io/pelagians/grotto-chatgpt-desktop",
+    "title": "Grotto ChatGPT Desktop",
+    "description": "Selkies-streamed ChatGPT and Codex desktop workbench",
+    "file": "./Containerfile.chatgpt-desktop",
+    "build_args": "CHATGPT_PACKAGE_VERSION=26.820.60940"
+  },
+  {
+    "name": "grotto-hermes-desktop",
+    "kind": "desktop",
+    "image": "ghcr.io/pelagians/grotto-hermes-desktop",
+    "title": "Grotto Hermes Desktop",
+    "description": "Official Hermes Desktop on the Pelagian Shell streamed workspace",
+    "file": "./Containerfile.hermes-desktop",
+    "build_args": "HERMES_DESKTOP_VERSION=v2026.8.27\nHERMES_DESKTOP_COMMIT=5fc308a70719a83cccdbba4c0e39c23f5a8239d5"
+  },
+  {
+    "name": "grotto-openadapt-teach",
+    "kind": "worker",
+    "image": "ghcr.io/pelagians/grotto-openadapt-teach",
+    "title": "Grotto OpenAdapt Teach worker",
+    "description": "UI-only OpenAdapt recording and compilation worker for caller-owned browser runtimes",
+    "file": "./Containerfile.openadapt-teach"
+  }
+]

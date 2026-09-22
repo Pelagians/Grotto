@@ -445,8 +445,9 @@ as a convenience layer, not an internet-grade security boundary.
 
 The consumer pins the Shell image published from
 `Pelagians/pelagian-shell@fe25c6756d7976322be97ece671ca8f9f9e5c7f7`
-(Shell PR #7). The smoke viewer is fetched from that same commit and verified
-against its SHA-256 before execution. CI starts the inherited `/init`, decodes
+(Shell PR #7). CI checks out the shared Shell conformance harness at
+`a9c6100aabc0cb79deb43910e92639f9b92b4a3d` and verifies the viewer's
+SHA-256 before execution. CI starts the inherited `/init`, decodes
 1920x1080 streamed frames, and checks the real application window through Labwc
 IPC: healthy reconciliation, maximized usable-area geometry, visible titlebar,
 and no fullscreen state. Multiwindow reflow and dialog policy remain owned and
