@@ -37,6 +37,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Run repository checks
         run: make check
@@ -44,7 +45,6 @@ jobs:
       - name: Run focused Python tests
         run: |
           python3 tests/test_grotto_doctor.py
-          python3 tests/test_window_manager_config.py
           python3 tests/test_verify_installed_chatgpt_policy.py
 
       - name: Install ShellCheck
@@ -119,6 +119,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Reclaim runner disk space
         if: matrix.kind == 'desktop'
@@ -179,7 +181,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            GROTTO_BUILD_REVISION=${{ github.sha }}
+            GROTTO_BUILD_REVISION=${{ github.event.pull_request.head.sha || github.sha }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
           load: ${{ github.event_name == 'pull_request' }}
@@ -207,7 +209,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             ${{ matrix.build_args }}
-            GROTTO_BUILD_REVISION=${{ github.sha }}
+            GROTTO_BUILD_REVISION=${{ github.event.pull_request.head.sha || github.sha }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=min,scope=${{ matrix.name }}
           provenance: ${{ github.event_name != 'pull_request' }}
@@ -259,27 +261,44 @@ jobs:
           docker run --rm --network none "${tag}" --help >/dev/null
           test "$(docker run --rm --network none --entrypoint id "${tag}" -u)" = 10001
 
-      - name: Smoke test ChatGPT desktop runtime
+      - name: Probe ChatGPT Docker compatibility
         if: matrix.name == 'grotto-chatgpt-desktop'
-        shell: bash
         env:
           IMAGE_UNDER_TEST: ${{ steps.desktop-image.outputs.image }}
+        shell: bash
         run: |
           set -euo pipefail
-          docker run --rm \
-            --user abc \
-            --shm-size=2g \
-            --env HOME=/config \
-            --env CODEX_HOME=/config/.codex \
-            --entrypoint /usr/local/libexec/grotto-chatgpt-desktop-smoke \
-            "$IMAGE_UNDER_TEST"
+          log="$(mktemp)"
+          trap 'rm -f "$log"' EXIT
+          if CONTAINER_ENGINE=docker GROTTO_CHATGPT_DESKTOP_IMAGE="$IMAGE_UNDER_TEST" \
+              tests/smoke-chatgpt-desktop.sh 2>&1 | tee "$log"; then
+            echo 'ChatGPT Docker runtime: passed.' >> "$GITHUB_STEP_SUMMARY"
+          elif grep -Eq 'FATAL:content/browser/zygote_host/zygote_host_impl_linux\.cc:[0-9]+\] No usable sandbox!' "$log"; then
+            echo '::warning::ChatGPT is not qualified under default Docker: Chromium cannot create its sandbox. Rootless Podman remains the required runtime gate.'
+            echo 'ChatGPT Docker runtime: unsupported on this runner (Chromium namespace sandbox denied). The rootless Podman runtime check remains required.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            exit 1
+          fi
 
       - name: Smoke test Hermes desktop runtime
         if: matrix.name == 'grotto-hermes-desktop'
-        shell: bash
         env:
           IMAGE_UNDER_TEST: ${{ steps.desktop-image.outputs.image }}
+        run: CONTAINER_ENGINE=docker GROTTO_HERMES_DESKTOP_IMAGE="$IMAGE_UNDER_TEST" tests/smoke-hermes-desktop.sh
+
+      - name: Smoke desktop with rootless Podman
+        if: ${{ !cancelled() && matrix.kind == 'desktop' && steps.desktop-image.outcome == 'success' }}
+        env:
+          IMAGE_UNDER_TEST: ${{ steps.desktop-image.outputs.image }}
+          DESKTOP: ${{ matrix.name }}
         run: |
           set -euo pipefail
-          CONTAINER_ENGINE=docker GROTTO_HERMES_DESKTOP_IMAGE="$IMAGE_UNDER_TEST" \
-            tests/smoke-hermes-desktop.sh
+          sudo apt-get update
+          sudo apt-get install --yes podman uidmap slirp4netns fuse-overlayfs
+          test "$(podman info --format '{{.Host.Security.Rootless}}')" = true
+          # Import precisely the image already exercised with Docker.
+          podman_tag="localhost/grotto-smoke:${GITHUB_RUN_ID}"
+          docker tag "$IMAGE_UNDER_TEST" "$podman_tag"
+          docker save "$podman_tag" | podman load
+          kind="${DESKTOP#grotto-}"
+          CONTAINER_ENGINE=podman tests/smoke-desktop.sh "${kind%-desktop}" "$podman_tag"

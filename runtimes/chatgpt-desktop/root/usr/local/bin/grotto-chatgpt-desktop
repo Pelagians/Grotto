@@ -5,18 +5,13 @@ set -Eeuo pipefail
 # two-line launcher that execs Chromium directly, so the container-specific
 # launch decisions are made here.
 #
-# The window manager, not the application, owns the desktop surface: Labwc holds
-# this window true-fullscreen on the bottom layer. Fullscreen rather than
-# borderless maximization is deliberate. The application resets its own window
-# bounds shortly after mapping and ignores --start-maximized and --window-size,
-# so a maximized rule is undone a few seconds into every start. Under Wayland a
-# fullscreen size is not a request the client can decline: the compositor
-# configures the surface and the client has to draw at that size.
+# Pelagian Shell owns placement and state reconciliation. This launcher only
+# selects the native Wayland backend and starts the application.
 
 CHATGPT_WM_CLASS="${GROTTO_CHATGPT_WM_CLASS:-chatgpt-desktop}"
 
-# Ask Chromium for a system frame rather than a client-drawn titlebar. The
-# compositor then removes that frame from this surface while dialogs keep theirs.
+# Prefer the native/system frame where this vendor build supports it. Shell does
+# not patch or crop application-drawn chrome.
 export ELECTRON_OZONE_PLATFORM_HINT="${ELECTRON_OZONE_PLATFORM_HINT:-wayland}"
 export ELECTRON_USE_SYSTEM_TITLE_BAR="${ELECTRON_USE_SYSTEM_TITLE_BAR:-1}"
 

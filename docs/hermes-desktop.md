@@ -60,9 +60,8 @@ are written to `/config/hermes-desktop/session.log` without logging the secret.
 
 Hermes Desktop is multi-window software: the main window, session and browser pop-outs, authentication windows, HUD, and Quick Entry retain upstream semantics. Grotto adds no global fullscreen rule. The launcher selects native Wayland explicitly with `--enable-features=UseOzonePlatform` and `--ozone-platform=wayland`; `ELECTRON_OZONE_PLATFORM_HINT=wayland` alone is insufficient for this Hermes build. The real `/init` smoke prints the observed `wlrctl toplevel list` inventory and requires a Hermes toplevel before publication.
 
-Pelagian Shell remains planner-only until Labwc exposes a reliable targeted
-geometry-control path. Therefore Grotto does not claim automatic tiling or add
-a Hermes-specific maximize/fullscreen workaround.
+Pelagian Shell's daemonized Labwc adapter provides live automatic tiling, so
+Grotto adds no Hermes-specific maximize/fullscreen workaround.
 
 ## Qualification
 
@@ -85,3 +84,29 @@ The Selkies endpoint is a remote display, so Grotto also uses upstream's
 `HERMES_DESKTOP_DISABLE_GPU=1` path. This avoids Chromium GPU command-buffer
 failures and remote-display flicker while leaving Selkies to encode the
 software-rendered Wayland output.
+
+### Live Shell qualification
+
+The consumer pins the Shell image published from
+`Pelagians/pelagian-shell@fe25c6756d7976322be97ece671ca8f9f9e5c7f7`
+(Shell PR #7). The smoke viewer is fetched from that same commit and verified
+against its SHA-256 before execution. CI starts the inherited `/init`, decodes
+1920x1080 streamed frames, and checks the real application window through Labwc
+IPC: healthy reconciliation, maximized usable-area geometry, visible titlebar,
+and no fullscreen state. Multiwindow reflow and dialog policy remain owned and
+qualified by the Shell repository.
+
+Rootless Podman is the required runtime gate for both desktops; Hermes also
+requires the Docker runtime gate. ChatGPT probes Docker compatibility and
+reports its known Chromium namespace-sandbox rejection explicitly; any other
+Docker failure still fails CI. Each engine uses the same built image. Tests require
+native Wayland inventory and absence from the application's X11 display, then
+restart the container and verify preserved configuration. Hermes also stores
+and retrieves an ephemeral libsecret value across that restart on its own
+session bus. These automated checks use no real account credentials; ChatGPT
+login and Hermes remote-server pairing still require an authenticated user
+acceptance check. No second Hermes backend is started.
+
+Run locally with `CONTAINER_ENGINE=docker tests/smoke-chatgpt-desktop.sh` or
+`CONTAINER_ENGINE=docker tests/smoke-hermes-desktop.sh`, setting the corresponding
+`GROTTO_CHATGPT_DESKTOP_IMAGE` or `GROTTO_HERMES_DESKTOP_IMAGE` to the built image.
