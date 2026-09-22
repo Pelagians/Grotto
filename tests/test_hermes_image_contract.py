@@ -2,6 +2,7 @@
 """Static contract checks for the Grotto Hermes image."""
 import re
 import os
+import json
 from pathlib import Path
 import subprocess
 import tempfile
@@ -65,7 +66,6 @@ def main() -> None:
     desktop_init = DESKTOP_INIT.read_text()
     desktop_session = DESKTOP_SESSION.read_text()
     desktop_smoke = (ROOT / "tests/smoke-desktop.sh").read_text()
-    verifier = (ROOT / "tests/verify-shell-session.py").read_text()
     desktop_smoke_lines = active_lines(desktop_smoke)
     desktop_docs = DESKTOP_DOCS.read_text()
     workflow = WORKFLOW.read_text()
@@ -105,32 +105,35 @@ def main() -> None:
     assert "--no-sandbox" in desktop_session
     assert "--enable-features=UseOzonePlatform" in desktop_session
     assert "--ozone-platform=wayland" in desktop_session
-    assert '"wlrctl", "toplevel", "list"' in verifier
-    assert '"xlsclients", "-display", env["DISPLAY"]' in verifier
-    assert 'assert not re.search(args.pattern, x11' in verifier
+    assert "a9c6100aabc0cb79deb43910e92639f9b92b4a3d" in desktop_smoke
+    assert "conformance/verify-shell-session.py" in desktop_smoke
+    assert "conformance/start-shell-stream.sh" in desktop_smoke
     assert "--native" in desktop_smoke
     assert "GROTTO_CHATGPT_AUTH_MODE=off" in desktop_smoke
     assert "--keyring" in desktop_smoke
     assert '"$engine" restart "$name"' in desktop_smoke
     assert "x11-utils" in desktop_image
-    assert "ghcr.io/pelagians/grotto-hermes-desktop" in workflow
-    build_step = workflow_step(workflow, "Build and publish desktop image")
-    selector_step = workflow_step(workflow, "Select desktop image under test")
+    image_matrix = json.loads((ROOT / ".github/image-matrix.json").read_text())
+    assert any(row["name"] == "grotto-hermes-desktop" and row["image"] == "ghcr.io/pelagians/grotto-hermes-desktop" for row in image_matrix)
+    build_step = workflow_step(workflow, "Build candidate image")
+    selector_step = workflow_step(workflow, "Select exact image under test")
+    promote_step = workflow_step(workflow, "Promote qualified digest to release tags")
     chatgpt_step = workflow_step(workflow, "Probe ChatGPT Docker compatibility")
     hermes_step = workflow_step(workflow, "Smoke test Hermes desktop runtime")
     build_lines = active_lines(build_step)
     selector_lines = active_lines(selector_step)
     chatgpt_lines = active_lines(chatgpt_step)
     hermes_lines = active_lines(hermes_step)
-    assert "id: desktop-build" in build_lines
-    assert "id: desktop-image" in selector_lines
-    assert "if [[ '${{ github.event_name }}' == pull_request ]]; then" in selector_lines
+    assert "id: build" in build_lines
+    assert "id: image" in selector_lines
+    assert "candidate-{1}-{2}" in build_step
     assert 'image="$(head -n 1 <<< "$IMAGE_TAGS")"' in selector_lines
-    assert "image='${{ matrix.image }}@${{ steps.desktop-build.outputs.digest }}'" in selector_lines
+    assert "image='${{ matrix.image }}@${{ steps.build.outputs.digest }}'" in selector_lines
     assert 'docker pull "$image"' in selector_lines
     for lines in (chatgpt_lines, hermes_lines):
-        assert "IMAGE_UNDER_TEST: ${{ steps.desktop-image.outputs.image }}" in lines
+        assert "IMAGE_UNDER_TEST: ${{ steps.image.outputs.image }}" in lines
         assert not any(":latest" in line for line in lines)
+    assert 'docker buildx imagetools create "${tags[@]}" "$IMAGE_UNDER_TEST"' in promote_step
     assert "tests/smoke-chatgpt-desktop.sh" in chatgpt_step
     assert "tests/smoke-hermes-desktop.sh" in hermes_step
     assert "consumer-volume-sentinel" in desktop_smoke
@@ -166,7 +169,7 @@ def main() -> None:
     # The pinned commit is repeated in the CI matrix and the in-image smoke;
     # a bump has to land in every copy or the build ships mismatched provenance.
     pinned_commit = "5fc308a70719a83cccdbba4c0e39c23f5a8239d5"
-    assert pinned_commit in workflow
+    assert pinned_commit in (ROOT / ".github/image-matrix.json").read_text()
     assert pinned_commit in DESKTOP_IMAGE_SMOKE.read_text()
     print("Hermes image contract tests passed")
 

@@ -28,13 +28,12 @@ check:
 	bash -n tests/smoke-hermes-desktop.sh
 	bash -n tests/smoke-chatgpt-desktop.sh
 	bash -n tests/smoke-desktop.sh
-	bash -n tests/start-shell-stream.sh
-	python3 tests/test_shell_session.py
 	python3 tests/test_grotto_doctor.py
 	python3 tests/test_verify_installed_chatgpt_policy.py
 	python3 tests/test_openadapt_teach_adapter.py
 	python3 tests/test_openadapt_teach_policy.py
 	python3 tests/test_openadapt_compat_canary.py
+	python3 tests/test_ci_matrix.py
 
 check-container-engine:
 	@if [ -z "$(CONTAINER_ENGINE)" ]; then \
