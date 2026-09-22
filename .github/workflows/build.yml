@@ -37,6 +37,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Run repository checks
         run: make check
@@ -118,6 +119,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Reclaim runner disk space
         if: matrix.kind == 'desktop'
@@ -178,7 +181,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            GROTTO_BUILD_REVISION=${{ github.sha }}
+            GROTTO_BUILD_REVISION=${{ github.event.pull_request.head.sha || github.sha }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
           load: ${{ github.event_name == 'pull_request' }}
@@ -206,7 +209,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             ${{ matrix.build_args }}
-            GROTTO_BUILD_REVISION=${{ github.sha }}
+            GROTTO_BUILD_REVISION=${{ github.event.pull_request.head.sha || github.sha }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=min,scope=${{ matrix.name }}
           provenance: ${{ github.event_name != 'pull_request' }}
@@ -260,72 +263,29 @@ jobs:
 
       - name: Smoke test ChatGPT desktop runtime
         if: matrix.name == 'grotto-chatgpt-desktop'
-        shell: bash
         env:
           IMAGE_UNDER_TEST: ${{ steps.desktop-image.outputs.image }}
-        run: |
-          set -Eeuo pipefail
-          name=grotto-chatgpt-desktop-smoke-${GITHUB_RUN_ID}
-          volume=${name}-config
-          cleanup() {
-            docker rm -f "$name" >/dev/null 2>&1 || true
-            docker volume rm -f "$volume" >/dev/null 2>&1 || true
-          }
-          trap cleanup EXIT
-          docker volume create "$volume" >/dev/null
-          docker run --rm --entrypoint sh --volume "$volume:/config" \
-            "$IMAGE_UNDER_TEST" -c \
-            'mkdir -p /config/.codex; printf preserved > /config/chatgpt-volume-sentinel'
-          docker run -d \
-            --name "$name" \
-            --shm-size=2g \
-            --env HOME=/config \
-            --env CODEX_HOME=/config/.codex \
-            --volume "$volume:/config" \
-            "$IMAGE_UNDER_TEST" >/dev/null
-          ready=false
-          for _ in $(seq 1 180); do
-            if docker exec "$name" pgrep -x labwc >/dev/null 2>&1 \
-                && docker exec "$name" pgrep -f '[c]hatgpt' >/dev/null 2>&1; then
-              ready=true
-              break
-            fi
-            sleep 1
-          done
-          test "$ready" = true
-          docker exec --user abc "$name" /usr/local/libexec/grotto-chatgpt-desktop-smoke
-          test "$(docker exec "$name" cat /config/chatgpt-volume-sentinel)" = preserved
-          # The inner shell expands socket; the workflow shell must not.
-          # shellcheck disable=SC2016
-          wayland_inventory="$(
-            docker exec --user abc --env XDG_RUNTIME_DIR=/config/.XDG "$name" sh -c '
-              for socket in /config/.XDG/wayland-*; do
-                [ -S "$socket" ] || continue
-                WAYLAND_DISPLAY="${socket##*/}" wlrctl toplevel list 2>/dev/null || true
-              done
-            '
-          )"
-          x11_inventory="$(
-            docker exec --user abc --env DISPLAY=:0 "$name" \
-              xlsclients -display :0 -l 2>/dev/null || true
-          )"
-          if ! grep -qi chatgpt <<< "$wayland_inventory"; then
-            echo "ChatGPT did not expose a native Wayland toplevel" >&2
-            printf 'Wayland inventory:\n%s\nX11 inventory:\n%s\n' \
-              "$wayland_inventory" "$x11_inventory" >&2
-            exit 1
-          fi
-          if grep -qi chatgpt <<< "$x11_inventory"; then
-            echo "ChatGPT is visible only through X11/XWayland or duplicated there" >&2
-            exit 1
-          fi
+        run: CONTAINER_ENGINE=docker GROTTO_CHATGPT_DESKTOP_IMAGE="$IMAGE_UNDER_TEST" tests/smoke-chatgpt-desktop.sh
 
       - name: Smoke test Hermes desktop runtime
         if: matrix.name == 'grotto-hermes-desktop'
-        shell: bash
         env:
           IMAGE_UNDER_TEST: ${{ steps.desktop-image.outputs.image }}
+        run: CONTAINER_ENGINE=docker GROTTO_HERMES_DESKTOP_IMAGE="$IMAGE_UNDER_TEST" tests/smoke-hermes-desktop.sh
+
+      - name: Smoke desktop with rootless Podman
+        if: matrix.kind == 'desktop'
+        env:
+          IMAGE_UNDER_TEST: ${{ steps.desktop-image.outputs.image }}
+          DESKTOP: ${{ matrix.name }}
         run: |
           set -euo pipefail
-          CONTAINER_ENGINE=docker GROTTO_HERMES_DESKTOP_IMAGE="$IMAGE_UNDER_TEST" \
-            tests/smoke-hermes-desktop.sh
+          sudo apt-get update
+          sudo apt-get install --yes podman uidmap slirp4netns fuse-overlayfs
+          test "$(podman info --format '{{.Host.Security.Rootless}}')" = true
+          # Import precisely the image already exercised with Docker.
+          podman_tag="localhost/grotto-smoke:${GITHUB_RUN_ID}"
+          docker tag "$IMAGE_UNDER_TEST" "$podman_tag"
+          docker save "$podman_tag" | podman load
+          kind="${DESKTOP#grotto-}"
+          CONTAINER_ENGINE=podman tests/smoke-desktop.sh "${kind%-desktop}" "$podman_tag"

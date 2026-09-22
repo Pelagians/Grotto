@@ -21,7 +21,7 @@ DESKTOP_DOCS = ROOT / "docs/hermes-desktop.md"
 WORKFLOW = ROOT / ".github/workflows/build.yml"
 SHELL_IMAGE = (
     "ghcr.io/pelagians/pelagian-shell@sha256:"
-    "91caa1525db1ecd98e94074e4008510311a41aa718abf7b41935e391fbde4619"
+    "083dc52c943c0a92d5a9b15a25e9798fc2967b95fd6f2ccbca4e3bbb2c91b1bb"
 )
 
 
@@ -64,7 +64,8 @@ def main() -> None:
     desktop_consumer = DESKTOP_CONSUMER.read_text()
     desktop_init = DESKTOP_INIT.read_text()
     desktop_session = DESKTOP_SESSION.read_text()
-    desktop_smoke = DESKTOP_SMOKE.read_text()
+    desktop_smoke = (ROOT / "tests/smoke-desktop.sh").read_text()
+    verifier = (ROOT / "tests/verify-shell-session.py").read_text()
     desktop_smoke_lines = active_lines(desktop_smoke)
     desktop_docs = DESKTOP_DOCS.read_text()
     workflow = WORKFLOW.read_text()
@@ -104,24 +105,14 @@ def main() -> None:
     assert "--no-sandbox" in desktop_session
     assert "--enable-features=UseOzonePlatform" in desktop_session
     assert "--ozone-platform=wayland" in desktop_session
-    assert any("wlrctl toplevel list" in line for line in desktop_smoke_lines)
-    assert "for socket in /config/.XDG/wayland-*; do" in desktop_smoke_lines
-    assert '[ -S "$socket" ] || continue' in desktop_smoke_lines
-    assert (
-        'WAYLAND_DISPLAY="${socket##*/}" wlrctl toplevel list 2>/dev/null || true'
-        in desktop_smoke_lines
-    )
-    assert "--env WAYLAND_DISPLAY=wayland-1" not in desktop_smoke_lines
-    assert "xlsclients -display :0 -l" in desktop_smoke
-    assert 'grep -qi hermes <<< "$wayland_inventory"' in desktop_smoke
-    assert 'grep -qi hermes <<< "$x11_inventory"' in desktop_smoke
-    assert "visible only through X11/XWayland" in desktop_smoke
-    assert "visible through X11/XWayland as well as Wayland" in desktop_smoke
-    assert "${wayland_inventory}${x11_inventory}" not in desktop_smoke
+    assert '"wlrctl", "toplevel", "list"' in verifier
+    assert '"xlsclients", "-display", env["DISPLAY"]' in verifier
+    assert 'assert not re.search(args.pattern, x11' in verifier
+    assert "--native" in desktop_smoke
+    assert "GROTTO_CHATGPT_AUTH_MODE=off" in desktop_smoke
+    assert "--keyring" in desktop_smoke
+    assert '"$engine" restart "$name"' in desktop_smoke
     assert "x11-utils" in desktop_image
-    assert "--env XDG_RUNTIME_DIR=/config/.XDG" in desktop_smoke
-    assert "pgrep -f '[H]ermes'" in desktop_smoke
-    assert "PELAGIAN_SHELL_SESSION_SENTINEL" not in desktop_smoke
     assert "ghcr.io/pelagians/grotto-hermes-desktop" in workflow
     build_step = workflow_step(workflow, "Build and publish desktop image")
     selector_step = workflow_step(workflow, "Select desktop image under test")
@@ -140,26 +131,11 @@ def main() -> None:
     for lines in (chatgpt_lines, hermes_lines):
         assert "IMAGE_UNDER_TEST: ${{ steps.desktop-image.outputs.image }}" in lines
         assert not any(":latest" in line for line in lines)
-    assert '"$IMAGE_UNDER_TEST" >/dev/null' in chatgpt_lines
-    assert "for socket in /config/.XDG/wayland-*; do" in chatgpt_lines
-    assert any(
-        'WAYLAND_DISPLAY="${socket##*/}" wlrctl toplevel list' in line
-        for line in chatgpt_lines
-    )
-    assert any("xlsclients -display :0 -l" in line for line in chatgpt_lines)
-    assert any(
-        "ChatGPT is visible only through X11/XWayland" in line
-        for line in chatgpt_lines
-    )
+    assert "tests/smoke-chatgpt-desktop.sh" in chatgpt_step
+    assert "tests/smoke-hermes-desktop.sh" in hermes_step
+    assert "consumer-volume-sentinel" in desktop_smoke
     assert "x11-utils" in chatgpt_image
-    assert any("chatgpt-volume-sentinel" in line for line in chatgpt_lines)
-    assert any('--volume "$volume:/config"' in line for line in chatgpt_lines)
-    assert "hermes-volume-sentinel" in desktop_smoke
-    assert "hermes-keyring-sentinel" in desktop_smoke
-    assert (
-        'CONTAINER_ENGINE=docker GROTTO_HERMES_DESKTOP_IMAGE="$IMAGE_UNDER_TEST" \\'
-        in hermes_lines
-    )
+    assert "Smoke desktop with rootless Podman" in workflow
     assert "/usr/local/bin/pelagian-shell-consumer" in desktop_docs
     assert "--enable-features=UseOzonePlatform" in desktop_docs
     assert "--ozone-platform=wayland" in desktop_docs

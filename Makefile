@@ -26,6 +26,10 @@ check:
 	bash -n runtimes/hermes-desktop/root/usr/local/bin/grotto-hermes-desktop-session
 	bash -n tests/hermes-desktop-image-smoke.sh
 	bash -n tests/smoke-hermes-desktop.sh
+	bash -n tests/smoke-chatgpt-desktop.sh
+	bash -n tests/smoke-desktop.sh
+	bash -n tests/start-shell-stream.sh
+	python3 tests/test_shell_session.py
 	python3 tests/test_grotto_doctor.py
 	python3 tests/test_verify_installed_chatgpt_policy.py
 	python3 tests/test_openadapt_teach_adapter.py

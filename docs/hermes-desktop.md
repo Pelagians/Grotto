@@ -84,3 +84,26 @@ The Selkies endpoint is a remote display, so Grotto also uses upstream's
 `HERMES_DESKTOP_DISABLE_GPU=1` path. This avoids Chromium GPU command-buffer
 failures and remote-display flicker while leaving Selkies to encode the
 software-rendered Wayland output.
+
+### Live Shell qualification
+
+The consumer pins the Shell image published from
+`Pelagians/pelagian-shell@3a17b6be5e3d8f27dc53ff00566dc56b90c4fa27`
+(Shell PR #6). The smoke viewer is fetched from that same commit and verified
+against its SHA-256 before execution. CI starts the inherited `/init`, decodes
+1920x1080 streamed frames, and checks the real application window through Labwc
+IPC: healthy reconciliation, maximized usable-area geometry, visible titlebar,
+and no fullscreen state. Multiwindow reflow and dialog policy remain owned and
+qualified by the Shell repository.
+
+Both desktops run the same image under Docker and rootless Podman. Tests require
+native Wayland inventory and absence from the application's X11 display, then
+restart the container and verify preserved configuration. Hermes also stores
+and retrieves an ephemeral libsecret value across that restart on its own
+session bus. These automated checks use no real account credentials; ChatGPT
+login and Hermes remote-server pairing still require an authenticated user
+acceptance check. No second Hermes backend is started.
+
+Run locally with `CONTAINER_ENGINE=docker tests/smoke-chatgpt-desktop.sh` or
+`CONTAINER_ENGINE=docker tests/smoke-hermes-desktop.sh`, setting the corresponding
+`GROTTO_CHATGPT_DESKTOP_IMAGE` or `GROTTO_HERMES_DESKTOP_IMAGE` to the built image.
