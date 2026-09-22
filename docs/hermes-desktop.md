@@ -110,8 +110,3 @@ acceptance check. No second Hermes backend is started.
 Run locally with `CONTAINER_ENGINE=docker tests/smoke-chatgpt-desktop.sh` or
 `CONTAINER_ENGINE=docker tests/smoke-hermes-desktop.sh`, setting the corresponding
 `GROTTO_CHATGPT_DESKTOP_IMAGE` or `GROTTO_HERMES_DESKTOP_IMAGE` to the built image.
-
-The Hermes launcher disables Chromium's `CustomTitlebar` and
-`WaylandWindowDecorations` features, matching the ChatGPT consumer's preference
-for Shell-owned window decoration. It does not install consumer-specific Labwc
-placement rules or change the application's authentication or sandbox settings.
