@@ -49,12 +49,27 @@ test -x /defaults/autostart_wayland
 grep -q 'consumer_hook=/usr/local/bin/pelagian-shell-consumer' /defaults/autostart_wayland
 test -f /defaults/labwc.xml
 
-pelagian-shellctl status | jq -e '
-  .compositor_adapter == "labwc-ipc" and
-  .runtime.layoutd == "healthy" and
-  .runtime.adapter_connected == true and
-  .runtime.reconciliation == "healthy"
-' >/dev/null
+# The live window may still be reconciling immediately after the viewer and
+# native-window check. Require healthy status within a bounded interval.
+shell_status=''
+shell_healthy=false
+for _ in $(seq 1 15); do
+    shell_status="$(pelagian-shellctl status)"
+    if jq -e '
+      .compositor_adapter == "labwc-ipc" and
+      .runtime.layoutd == "healthy" and
+      .runtime.adapter_connected == true and
+      .runtime.reconciliation == "healthy"
+    ' <<<"$shell_status" >/dev/null; then
+        shell_healthy=true
+        break
+    fi
+    sleep 1
+done
+if [[ "$shell_healthy" != true ]]; then
+    printf 'Shell did not settle to healthy status: %s\n' "$shell_status" >&2
+    exit 1
+fi
 pelagian-shellctl config show >/dev/null
 layoutd_status="$(pelagian-layoutd status)"
 if grep -q planner_only <<<"$layoutd_status"; then
