@@ -274,7 +274,7 @@ jobs:
         run: CONTAINER_ENGINE=docker GROTTO_HERMES_DESKTOP_IMAGE="$IMAGE_UNDER_TEST" tests/smoke-hermes-desktop.sh
 
       - name: Smoke desktop with rootless Podman
-        if: matrix.kind == 'desktop'
+        if: ${{ !cancelled() && matrix.kind == 'desktop' && steps.desktop-image.outcome == 'success' }}
         env:
           IMAGE_UNDER_TEST: ${{ steps.desktop-image.outputs.image }}
           DESKTOP: ${{ matrix.name }}

@@ -463,3 +463,12 @@ acceptance check. No second Hermes backend is started.
 Run locally with `CONTAINER_ENGINE=docker tests/smoke-chatgpt-desktop.sh` or
 `CONTAINER_ENGINE=docker tests/smoke-hermes-desktop.sh`, setting the corresponding
 `GROTTO_CHATGPT_DESKTOP_IMAGE` or `GROTTO_HERMES_DESKTOP_IMAGE` to the built image.
+
+Default Docker on the GitHub Ubuntu 24.04 runner currently rejects Chromium's
+namespace sandbox with `No usable sandbox`. A nonzero
+`/proc/sys/user/max_user_namespaces` does not prove that the container policy
+allows creation of that namespace. The desktop launcher retains its existing
+sandbox decision logic; this integration does not add sandbox bypass flags,
+custom seccomp policies, capabilities, or host security-policy changes.
+Rootless Podman qualification runs independently so Docker failure cannot hide
+its result. Docker desktop compatibility is not yet qualified.
