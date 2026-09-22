@@ -261,11 +261,24 @@ jobs:
           docker run --rm --network none "${tag}" --help >/dev/null
           test "$(docker run --rm --network none --entrypoint id "${tag}" -u)" = 10001
 
-      - name: Smoke test ChatGPT desktop runtime
+      - name: Probe ChatGPT Docker compatibility
         if: matrix.name == 'grotto-chatgpt-desktop'
         env:
           IMAGE_UNDER_TEST: ${{ steps.desktop-image.outputs.image }}
-        run: CONTAINER_ENGINE=docker GROTTO_CHATGPT_DESKTOP_IMAGE="$IMAGE_UNDER_TEST" tests/smoke-chatgpt-desktop.sh
+        shell: bash
+        run: |
+          set -euo pipefail
+          log="$(mktemp)"
+          trap 'rm -f "$log"' EXIT
+          if CONTAINER_ENGINE=docker GROTTO_CHATGPT_DESKTOP_IMAGE="$IMAGE_UNDER_TEST" \
+              tests/smoke-chatgpt-desktop.sh 2>&1 | tee "$log"; then
+            echo 'ChatGPT Docker runtime: passed.' >> "$GITHUB_STEP_SUMMARY"
+          elif grep -Eq 'FATAL:content/browser/zygote_host/zygote_host_impl_linux\.cc:[0-9]+\] No usable sandbox!' "$log"; then
+            echo '::warning::ChatGPT is not qualified under default Docker: Chromium cannot create its sandbox. Rootless Podman remains the required runtime gate.'
+            echo 'ChatGPT Docker runtime: unsupported on this runner (Chromium namespace sandbox denied). The rootless Podman runtime check remains required.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            exit 1
+          fi
 
       - name: Smoke test Hermes desktop runtime
         if: matrix.name == 'grotto-hermes-desktop'

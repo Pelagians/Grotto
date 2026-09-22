@@ -49,6 +49,7 @@ def main():
     parser.add_argument("--keyring", choices=("store", "lookup"))
     args = parser.parse_args()
     deadline = time.monotonic() + 180
+    state = None
     while True:
         try:
             state = snapshot()
@@ -57,7 +58,7 @@ def main():
             break
         except (AssertionError, OSError, ValueError, subprocess.SubprocessError) as error:
             if time.monotonic() >= deadline:
-                raise RuntimeError(f"consumer layout did not converge: {error}") from error
+                raise RuntimeError(f"consumer layout did not converge: {error}; observed={state}") from error
             time.sleep(1)
     if args.native or args.keyring:
         # Read only the session coordinates needed for child commands. Never log

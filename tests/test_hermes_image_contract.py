@@ -116,7 +116,7 @@ def main() -> None:
     assert "ghcr.io/pelagians/grotto-hermes-desktop" in workflow
     build_step = workflow_step(workflow, "Build and publish desktop image")
     selector_step = workflow_step(workflow, "Select desktop image under test")
-    chatgpt_step = workflow_step(workflow, "Smoke test ChatGPT desktop runtime")
+    chatgpt_step = workflow_step(workflow, "Probe ChatGPT Docker compatibility")
     hermes_step = workflow_step(workflow, "Smoke test Hermes desktop runtime")
     build_lines = active_lines(build_step)
     selector_lines = active_lines(selector_step)

@@ -40,4 +40,5 @@ printf '[grotto-hermes-desktop] launching Hermes Desktop\n'
 exec /usr/local/bin/hermes-desktop \
     --no-sandbox \
     --enable-features=UseOzonePlatform \
+    --disable-features=CustomTitlebar,WaylandWindowDecorations \
     --ozone-platform=wayland

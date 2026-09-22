@@ -96,7 +96,10 @@ IPC: healthy reconciliation, maximized usable-area geometry, visible titlebar,
 and no fullscreen state. Multiwindow reflow and dialog policy remain owned and
 qualified by the Shell repository.
 
-Both desktops run the same image under Docker and rootless Podman. Tests require
+Rootless Podman is the required runtime gate for both desktops; Hermes also
+requires the Docker runtime gate. ChatGPT probes Docker compatibility and
+reports its known Chromium namespace-sandbox rejection explicitly; any other
+Docker failure still fails CI. Each engine uses the same built image. Tests require
 native Wayland inventory and absence from the application's X11 display, then
 restart the container and verify preserved configuration. Hermes also stores
 and retrieves an ephemeral libsecret value across that restart on its own
@@ -107,3 +110,8 @@ acceptance check. No second Hermes backend is started.
 Run locally with `CONTAINER_ENGINE=docker tests/smoke-chatgpt-desktop.sh` or
 `CONTAINER_ENGINE=docker tests/smoke-hermes-desktop.sh`, setting the corresponding
 `GROTTO_CHATGPT_DESKTOP_IMAGE` or `GROTTO_HERMES_DESKTOP_IMAGE` to the built image.
+
+The Hermes launcher disables Chromium's `CustomTitlebar` and
+`WaylandWindowDecorations` features, matching the ChatGPT consumer's preference
+for Shell-owned window decoration. It does not install consumer-specific Labwc
+placement rules or change the application's authentication or sandbox settings.

@@ -452,7 +452,10 @@ IPC: healthy reconciliation, maximized usable-area geometry, visible titlebar,
 and no fullscreen state. Multiwindow reflow and dialog policy remain owned and
 qualified by the Shell repository.
 
-Both desktops run the same image under Docker and rootless Podman. Tests require
+Rootless Podman is the required runtime gate for both desktops; Hermes also
+requires the Docker runtime gate. ChatGPT probes Docker compatibility and
+reports its known Chromium namespace-sandbox rejection explicitly; any other
+Docker failure still fails CI. Each engine uses the same built image. Tests require
 native Wayland inventory and absence from the application's X11 display, then
 restart the container and verify preserved configuration. Hermes also stores
 and retrieves an ephemeral libsecret value across that restart on its own
@@ -470,5 +473,8 @@ namespace sandbox with `No usable sandbox`. A nonzero
 allows creation of that namespace. The desktop launcher retains its existing
 sandbox decision logic; this integration does not add sandbox bypass flags,
 custom seccomp policies, capabilities, or host security-policy changes.
-Rootless Podman qualification runs independently so Docker failure cannot hide
-its result. Docker desktop compatibility is not yet qualified.
+Rootless Podman qualification runs independently, including real application
+geometry, native Wayland, restart persistence, and installed policy checks.
+Default Docker desktop compatibility is not qualified. Its exact sandbox
+rejection is reported as an unsupported-host result, never bypassed; other
+Docker smoke failures remain errors.
