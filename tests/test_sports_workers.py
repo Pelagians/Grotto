@@ -24,6 +24,97 @@ def load(name: str, relative: str):
 
 
 class WorkerTests(unittest.TestCase):
+    def test_event_index_preserves_provider_identity_fields(self) -> None:
+        module = load(
+            "market_event_index", "runtimes/sports-market-probe/grotto_sports_market_probe.py"
+        )
+        rows = module._event_index(
+            [
+                {
+                    "id": "provider-event",
+                    "home_team": "Dallas Cowboys",
+                    "away_team": "Baltimore Ravens",
+                    "commence_time": "2026-09-27T20:25:00Z",
+                }
+            ]
+        )
+        self.assertEqual(rows[0]["provider_event_id"], "provider-event")
+        self.assertEqual(rows[0]["home_team"], "Dallas Cowboys")
+    def test_event_specific_market_discovery(self) -> None:
+        module = load(
+            "market_discovery", "runtimes/sports-market-probe/grotto_sports_market_probe.py"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            job = root / "job.json"
+            job.write_text(
+                json.dumps(
+                    {
+                        "job_id": "discover-1",
+                        "event_id": "event-1",
+                        "provider": "fixture",
+                        "provider_event_id": "provider-event-1",
+                        "operation": "EVENT_DISCOVERY",
+                        "fixture_path": str(ROOT / "tests/fixtures/sports-event-markets.json"),
+                        "requested_market_keys": ["player_pass_yds", "team_totals", "totals_h1"],
+                        "max_requests": 1,
+                    }
+                )
+            )
+            output = root / "out.json"
+            module.run(str(job), str(output))
+            bundle = json.loads(output.read_text())
+            assert {item["market_key"] for item in bundle["market_availability"]} == {
+                "player_pass_yds",
+                "team_totals",
+                "totals_h1",
+            }
+            assert bundle["request_stats"]["attempted"] == 1
+
+    def test_prop_market_keys_requested_explicitly(self) -> None:
+        module = load(
+            "market_quotes", "runtimes/sports-market-probe/grotto_sports_market_probe.py"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            job = root / "job.json"
+            job.write_text(
+                json.dumps(
+                    {
+                        "job_id": "quotes-1",
+                        "event_id": "event-1",
+                        "provider": "fixture",
+                        "provider_event_id": "provider-event-1",
+                        "operation": "EVENT_QUOTES",
+                        "fixture_path": str(ROOT / "tests/fixtures/sports-event-odds.json"),
+                        "requested_market_keys": ["player_pass_yds"],
+                        "max_requests": 1,
+                    }
+                )
+            )
+            output = root / "out.json"
+            module.run(str(job), str(output))
+            bundle = json.loads(output.read_text())
+            assert {item["market_key"] for item in bundle["quotes"]} == {"player_pass_yds"}
+
+    def test_headline_only_response_does_not_count_as_prop_success(self) -> None:
+        module = load(
+            "headline_only", "runtimes/sports-market-probe/grotto_sports_market_probe.py"
+        )
+        availability, quotes, capabilities = module._quotes(
+            {
+                "job_id": "j",
+                "event_id": "e",
+                "provider": "fixture",
+                "provider_event_id": "p",
+                "requested_market_keys": ["player_pass_yds"],
+            },
+            {"id": "p", "bookmakers": [{"key": "book", "markets": [{"key": "h2h"}]}]},
+            "2026-09-27T15:00:00Z",
+            "raw-0",
+        )
+        assert availability == [] and quotes == []
+        assert capabilities[0]["reason"] == "BOOK_UNSUPPORTED"
     def test_market_fixture_emits_hashed_bundle(self) -> None:
         module = load(
             "market_probe", "runtimes/sports-market-probe/grotto_sports_market_probe.py"

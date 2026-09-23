@@ -231,6 +231,35 @@ jobs:
           docker run --rm --network none "$IMAGE_UNDER_TEST" --help >/dev/null
           test "$(docker run --rm --network none --entrypoint id "$IMAGE_UNDER_TEST" -u)" = 10001
 
+      - name: Validate sports market fixture bundle
+        if: matrix.name == 'grotto-sports-market-probe'
+        shell: bash
+        env:
+          IMAGE_UNDER_TEST: ${{ steps.image.outputs.image }}
+        run: |
+          set -euo pipefail
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+          chmod 777 "$work"
+          printf '%s' '{"job_id":"ci-event-quotes","event_id":"event-1","provider":"fixture","provider_event_id":"provider-event-1","operation":"EVENT_QUOTES","fixture_paths":["/fixtures/sports-event-odds.json"],"requested_market_keys":["player_pass_yds","team_totals","totals_h1"],"max_requests":1}' > "$work/job.json"
+          chmod 644 "$work/job.json"
+          docker run --rm --network none \
+            -v "$PWD/tests/fixtures:/fixtures:ro" \
+            -v "$work:/work/exchange" \
+            "$IMAGE_UNDER_TEST" run \
+            --input /work/exchange/job.json --output /work/exchange/bundle.json
+          python3 - "$work/bundle.json" <<'PY'
+          import hashlib, json, pathlib, sys
+          payload = json.loads(pathlib.Path(sys.argv[1]).read_text())
+          reported = payload.pop("bundle_digest")
+          canonical = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+          assert hashlib.sha256(canonical).hexdigest() == reported
+          assert payload["schema_version"] == "sports-worker-bundle-v1"
+          assert {q["market_key"] for q in payload["quotes"]} == {
+              "player_pass_yds", "team_totals", "totals_h1"
+          }
+          PY
+
       - name: Probe ChatGPT Docker compatibility
         if: matrix.name == 'grotto-chatgpt-desktop'
         env:

@@ -1,0 +1,31 @@
+{
+  "id": "provider-event-1",
+  "bookmakers": [
+    {
+      "key": "reference_book",
+      "last_update": "2026-09-27T15:01:00Z",
+      "markets": [
+        {
+          "key": "player_pass_yds",
+          "last_update": "2026-09-27T15:01:00Z",
+          "outcomes": [
+            {"name": "Over", "description": "Player Test", "point": 244.5, "price": 1.91},
+            {"name": "Under", "description": "Player Test", "point": 244.5, "price": 1.91}
+          ]
+        },
+        {
+          "key": "team_totals",
+          "outcomes": [
+            {"name": "Over", "description": "Home Team", "point": 24.5, "price": 1.9}
+          ]
+        },
+        {
+          "key": "totals_h1",
+          "outcomes": [
+            {"name": "Under", "point": 23.5, "price": 1.95}
+          ]
+        }
+      ]
+    }
+  ]
+}

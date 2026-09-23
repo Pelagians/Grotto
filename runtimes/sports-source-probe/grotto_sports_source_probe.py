@@ -38,7 +38,7 @@ def run(input_path: str, output_path: str) -> None:
                 media = str(source.get("media_type", "text/html"))
                 artifact_url = f"file://{source['fixture_path']}"
             else:
-                raw, media = bounded_get(
+                response = bounded_get(
                     url,
                     allowed_hosts=allowed_hosts,
                     timeout=min(float(job.get("deadline_seconds", 90)), 90),
@@ -46,6 +46,7 @@ def run(input_path: str, output_path: str) -> None:
                         int(job.get("max_bytes_per_source", 2_000_000)), 5_000_000
                     ),
                 )
+                raw, media = response.raw, response.media_type
                 artifact_url = url
             artifact_id = f"raw-{index}"
             artifacts.append(

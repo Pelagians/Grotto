@@ -1,0 +1,14 @@
+{
+  "id": "provider-event-1",
+  "bookmakers": [
+    {
+      "key": "reference_book",
+      "last_update": "2026-09-27T15:00:00Z",
+      "markets": [
+        {"key": "player_pass_yds"},
+        {"key": "team_totals"},
+        {"key": "totals_h1"}
+      ]
+    }
+  ]
+}

@@ -4,13 +4,40 @@ import base64
 import hashlib
 import json
 import os
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 SCHEMA_VERSION = "sports-worker-bundle-v1"
+
+
+@dataclass(frozen=True)
+class HttpResult:
+    raw: bytes
+    media_type: str
+    headers: dict[str, str]
+
+
+class BoundedHttpError(RuntimeError):
+    """Sanitized provider failure which never contains the credentialed URL."""
+
+    def __init__(
+        self,
+        reason: str,
+        *,
+        status_code: int | None = None,
+        provider_code: str | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.status_code = status_code
+        self.provider_code = provider_code
+        self.headers = headers or {}
 
 
 def utc_now() -> str:
@@ -58,7 +85,7 @@ def bounded_get(
     max_bytes: int,
     credential_env: str | None = None,
     credential_query_param: str | None = None,
-) -> tuple[bytes, str]:
+) -> HttpResult:
     parsed = urlparse(url)
     if (
         parsed.scheme != "https"
@@ -80,9 +107,37 @@ def bounded_get(
             url = urlunparse(parsed._replace(query=urlencode(query)))
         else:
             headers["Authorization"] = f"Bearer {secret}"
-    with urlopen(Request(url, headers=headers), timeout=timeout) as response:
-        raw = response.read(max_bytes + 1)
-        if len(raw) > max_bytes:
-            raise ValueError("source response exceeds max_bytes")
-        media_type = response.headers.get_content_type()
-    return raw, media_type
+    try:
+        with urlopen(Request(url, headers=headers), timeout=timeout) as response:
+            raw = response.read(max_bytes + 1)
+            if len(raw) > max_bytes:
+                raise ValueError("source response exceeds max_bytes")
+            media_type = response.headers.get_content_type()
+            response_headers = {
+                key.lower(): value
+                for key, value in response.headers.items()
+                if key.lower().startswith("x-requests-")
+            }
+        return HttpResult(raw=raw, media_type=media_type, headers=response_headers)
+    except HTTPError as error:
+        provider_code = None
+        try:
+            body = error.read(min(max_bytes, 64_000))
+            payload = json.loads(body)
+            if isinstance(payload, dict):
+                provider_code = str(payload.get("error_code") or "") or None
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            pass
+        response_headers = {
+            key.lower(): value
+            for key, value in error.headers.items()
+            if key.lower().startswith("x-requests-")
+        }
+        raise BoundedHttpError(
+            "provider returned an HTTP error",
+            status_code=error.code,
+            provider_code=provider_code,
+            headers=response_headers,
+        ) from None
+    except (URLError, TimeoutError):
+        raise BoundedHttpError("provider request failed") from None
