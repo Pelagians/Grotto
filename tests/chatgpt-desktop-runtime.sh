@@ -48,6 +48,10 @@ test -x /usr/local/bin/pelagian-shell-consumer
 test -x /defaults/autostart_wayland
 grep -q 'consumer_hook=/usr/local/bin/pelagian-shell-consumer' /defaults/autostart_wayland
 test -f /defaults/labwc.xml
+test "$(pelagian-shellctl status | jq -r '.window_chrome_policy')" = server
+test "$(printenv PELAGIAN_SHELL_WINDOW_CHROME)" = server
+! grep -Eq '^[[:space:]]*export[[:space:]]+ELECTRON_USE_SYSTEM_TITLE_BAR=' \
+    /usr/local/bin/grotto-chatgpt-desktop
 
 # The live window may still be reconciling immediately after the viewer and
 # native-window check. Require healthy status within a bounded interval.
@@ -120,10 +124,17 @@ jq -e '
   .schema_version == 2 and
   .source == "installed-vendor-package" and
   .package.name == "chatgpt" and
+  .package.version == "26.820.60940" and
   .node_repl.verified == true and
   .node_repl.auto_approved == false and
   .node_repl.verification_source == "installed-vendor-package" and
-  .browser_use.verified == true
+  .browser_use.verified == true and
+  (.window_chrome.system_titlebar_env_token_present | type) == "boolean" and
+  .window_chrome.linux_hidden_titlebar_option_present == true and
+  .window_chrome.titlebar_overlay_option_present == true and
+  .window_chrome.compatibility_exception_required == true and
+  (.window_chrome.evidence_files.titlebar_style_hidden | type) == "array" and
+  (.window_chrome.evidence_files.titlebar_overlay | type) == "array"
 ' "$security_manifest" >/dev/null
 
 # The recorded policy must describe the package that is actually installed.
@@ -186,3 +197,4 @@ jq -c '{
   browser_use_policy_verified: .browser_use_policy_verified,
   cached_probe_available: (.cached_sandbox_probe.result != null)
 }' "$report"
+jq -c '.window_chrome' "$security_manifest"

@@ -47,7 +47,6 @@ ENV TITLE="ChatGPT Desktop" \
     PELAGIAN_SHELL_PROFILE=browser \
     GROTTO_CHATGPT_WM_CLASS=chatgpt-desktop \
     ELECTRON_OZONE_PLATFORM_HINT=wayland \
-    ELECTRON_USE_SYSTEM_TITLE_BAR=1 \
     CODEX_HOME=/config/.codex \
     CODEX_CLI_PATH=/usr/lib/chatgpt/resources/codex \
     CODEX_MANAGED_NODE_RUNTIME_DIR=/usr/lib/chatgpt/resources/cua_node \

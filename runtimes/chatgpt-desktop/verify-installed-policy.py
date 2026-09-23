@@ -53,6 +53,13 @@ BROWSER_USE_MARKERS = (
     b"browser-client.mjs",
     b"browser_use",
 )
+SYSTEM_TITLEBAR_ENV_MARKER = b"ELECTRON_USE_SYSTEM_TITLE_BAR"
+TITLEBAR_STYLE_HIDDEN_MARKERS = (
+    b"titleBarStyle:`hidden`",
+    b'titleBarStyle:"hidden"',
+    b"titleBarStyle:'hidden'",
+)
+TITLEBAR_OVERLAY_MARKER = b"titleBarOverlay"
 
 
 class VerificationError(RuntimeError):
@@ -82,11 +89,16 @@ def scannable_files(root: pathlib.Path) -> list[pathlib.Path]:
     return files
 
 
-def scan(files: list[pathlib.Path]) -> tuple[list[str], set[bytes], set[bytes]]:
-    """Return auto-approval hits plus the markers each family matched."""
+def scan(files: list[pathlib.Path]) -> tuple[list[str], set[bytes], set[bytes], dict[str, set[str]]]:
+    """Return policy hits and source locations for installed window chrome."""
     auto_approved: list[str] = []
     node_repl: set[bytes] = set()
     browser_use: set[bytes] = set()
+    window_chrome_files: dict[str, set[str]] = {
+        "system_titlebar_env_token": set(),
+        "titlebar_style_hidden": set(),
+        "titlebar_overlay": set(),
+    }
 
     for path in files:
         try:
@@ -105,11 +117,17 @@ def scan(files: list[pathlib.Path]) -> tuple[list[str], set[bytes], set[bytes]]:
                     browser_use.update(
                         marker for marker in BROWSER_USE_MARKERS if marker in window
                     )
+                    if SYSTEM_TITLEBAR_ENV_MARKER in window:
+                        window_chrome_files["system_titlebar_env_token"].add(str(path))
+                    if any(marker in window for marker in TITLEBAR_STYLE_HIDDEN_MARKERS):
+                        window_chrome_files["titlebar_style_hidden"].add(str(path))
+                    if TITLEBAR_OVERLAY_MARKER in window:
+                        window_chrome_files["titlebar_overlay"].add(str(path))
                     carry = window[-SCAN_OVERLAP_BYTES:]
         except OSError as exc:
             raise VerificationError(f"cannot inspect {path}: {exc}") from exc
 
-    return sorted(set(auto_approved)), node_repl, browser_use
+    return sorted(set(auto_approved)), node_repl, browser_use, window_chrome_files
 
 
 def installed_package(expected_version: str) -> dict[str, str]:
@@ -152,7 +170,7 @@ def installed_package(expected_version: str) -> dict[str, str]:
 def build_manifest(root: pathlib.Path, expected_version: str) -> dict[str, object]:
     package = installed_package(expected_version)
     files = scannable_files(root)
-    auto_approved, node_repl, browser_use = scan(files)
+    auto_approved, node_repl, browser_use, window_chrome_files = scan(files)
 
     if auto_approved:
         raise VerificationError(
@@ -177,6 +195,30 @@ def build_manifest(root: pathlib.Path, expected_version: str) -> dict[str, objec
             # grotto-doctor keeps reporting a stable shape across the change.
             "trusted_client_hash_patch": False,
             "verified": True,
+        },
+        "window_chrome": {
+            # These are inventory signals. They make the pinned binary's
+            # compatibility exception visible and require a review if its
+            # window-chrome implementation changes.
+            "system_titlebar_env_token_present": bool(
+                window_chrome_files["system_titlebar_env_token"]
+            ),
+            "linux_hidden_titlebar_option_present": bool(
+                window_chrome_files["titlebar_style_hidden"]
+            ),
+            "titlebar_overlay_option_present": bool(
+                window_chrome_files["titlebar_overlay"]
+            ),
+            "compatibility_exception_required": (
+                bool(window_chrome_files["titlebar_style_hidden"])
+                and bool(window_chrome_files["titlebar_overlay"])
+            ),
+            "evidence_files": {
+                key: sorted(
+                    str(pathlib.Path(path).relative_to(root)) for path in paths
+                )
+                for key, paths in window_chrome_files.items()
+            },
         },
         "files_scanned": len(files),
     }

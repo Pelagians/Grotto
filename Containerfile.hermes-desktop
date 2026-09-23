@@ -6,8 +6,11 @@ ARG PELAGIAN_SHELL_IMAGE=ghcr.io/pelagians/pelagian-shell@sha256:73a5d952d3dd47e
 # inherit this default when no --build-arg is passed.
 ARG HERMES_DESKTOP_COMMIT=5fc308a70719a83cccdbba4c0e39c23f5a8239d5
 
+FROM ${PELAGIAN_SHELL_IMAGE} AS pelagian-shell-contract
+
 FROM ${NODE_IMAGE} AS desktop-build
 ARG HERMES_DESKTOP_COMMIT
+ARG PELAGIAN_SHELL_IMAGE
 ENV CSC_IDENTITY_AUTO_DISCOVERY=false
 RUN apt-get update \
     && apt-get install --no-install-recommends -y ca-certificates git build-essential python3 \
@@ -18,6 +21,18 @@ RUN git init \
     && git fetch --depth 1 origin "${HERMES_DESKTOP_COMMIT}" \
     && git checkout --detach FETCH_HEAD \
     && test "$(git rev-parse HEAD)" = "${HERMES_DESKTOP_COMMIT}"
+COPY patches/hermes-desktop/pelagian-shell-window-chrome.patch /tmp/pelagian-shell-window-chrome.patch
+COPY --from=pelagian-shell-contract \
+    /usr/share/pelagian-shell/integrations/electron/window-chrome.mjs \
+    /src/apps/desktop/electron/pelagian-shell-window-chrome.mjs
+COPY --from=pelagian-shell-contract \
+    /usr/share/pelagian-shell/integrations/electron/window-chrome.d.mts \
+    /src/apps/desktop/electron/pelagian-shell-window-chrome.d.mts
+RUN git apply /tmp/pelagian-shell-window-chrome.patch \
+    && git diff --check \
+    && python3 /usr/share/pelagian-shell/consumer-conformance/check-electron-chrome.py \
+      /src/apps/desktop/electron/main.ts \
+    && rm /tmp/pelagian-shell-window-chrome.patch
 RUN set -eu; \
     for attempt in 1 2 3; do \
         if npm ci; then exit 0; fi; \
