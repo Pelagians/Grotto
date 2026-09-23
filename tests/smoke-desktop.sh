@@ -94,51 +94,77 @@ if len(windows) == 1:
 PY
 }
 
+labwc_has_second_fixture() {
+    "$engine" exec -i --user abc "$name" python3 - <<'PY'
+import json
+import socket
+import sys
+
+with socket.socket(socket.AF_UNIX) as client:
+    client.settimeout(3)
+    client.connect('/run/pelagian-shell/labwc.sock')
+    client.sendall(b'LIST\n')
+    chunks = []
+    while chunk := client.recv(65536):
+        chunks.append(chunk)
+state = json.loads(b''.join(chunks))
+sys.exit(0 if any(view['title'] == 'Pelagian Fixture Two' for view in state['views']) else 1)
+PY
+}
+
 verify_two_window_dialog_and_reflow() {
     "$engine" exec --user abc "$name" /usr/bin/python3 -c \
         'import gi; gi.require_version("Gtk", "3.0")'
 
-    # Use the live compositor window PID for its actual session coordinates.
-    # The consumer hook may be a wrapper process that does not own a surface.
-    window_pid=$(get_main_window_pid)
-    session_wayland_display=$("$engine" exec "$name" python3 -c \
-        'from pathlib import Path; import sys; entries=Path(f"/proc/{sys.argv[1]}/environ").read_bytes().split(b"\0"); print(next((entry.split(b"=",1)[1].decode() for entry in entries if entry.startswith(b"WAYLAND_DISPLAY=")), ""))' \
-        "$window_pid")
-    [[ "$session_wayland_display" == wayland-* ]] || {
-        echo "$kind has an unexpected Wayland display: $session_wayland_display" >&2
-        return 1
-    }
-    printf '%s Wayland display for GTK fixture: %s\n' "$kind" "$session_wayland_display"
+    session_wayland_display=''
+    fixture_pid=''
+    available_displays=$("$engine" exec "$name" sh -c '
+for socket in /run/pelagian-shell/wayland-*; do
+    test -S "$socket" || continue
+    printf "%s\n" "$(basename "$socket")"
+done
+')
+    while IFS= read -r display; do
+        [[ -n "$display" ]] || continue
+        "$engine" exec "$name" rm -f \
+            /tmp/pelagian-layout-second.pid \
+            /tmp/pelagian-layout-second.display \
+            /tmp/pelagian-layout-second.log \
+            /tmp/pelagian-layout-second.command \
+            /tmp/pelagian-layout-second.ack
+        "$engine" exec -d --user abc \
+            --env GDK_BACKEND=wayland \
+            --env XDG_RUNTIME_DIR=/run/pelagian-shell \
+            --env WAYLAND_DISPLAY="$display" \
+            --env DBUS_SESSION_BUS_ADDRESS=unix:path=/run/pelagian-shell/bus \
+            "$name" sh -c \
+            'exec /usr/bin/python3 /tmp/grotto-shell-layout-fixture.py second > /tmp/pelagian-layout-second.log 2>&1'
 
-    "$engine" exec -d --user abc \
-        --env GDK_BACKEND=wayland \
-        --env XDG_RUNTIME_DIR=/run/pelagian-shell \
-        --env WAYLAND_DISPLAY="$session_wayland_display" \
-        --env DBUS_SESSION_BUS_ADDRESS=unix:path=/run/pelagian-shell/bus \
-        "$name" sh -c \
-        'exec /usr/bin/python3 /tmp/grotto-shell-layout-fixture.py second > /tmp/pelagian-layout-second.log 2>&1'
-
-    fixture_started=false
-    for _ in $(seq 1 100); do
-        fixture_pid=$("$engine" exec "$name" cat /tmp/pelagian-layout-second.pid 2>/dev/null || true)
-        if [[ -n "$fixture_pid" ]] \
-            && "$engine" exec "$name" kill -0 "$fixture_pid" >/dev/null 2>&1; then
-                fixture_started=true
-                break
+        for _ in $(seq 1 100); do
+            fixture_pid=$("$engine" exec "$name" cat /tmp/pelagian-layout-second.pid 2>/dev/null || true)
+            if [[ -n "$fixture_pid" ]] \
+                && "$engine" exec "$name" kill -0 "$fixture_pid" >/dev/null 2>&1 \
+                && labwc_has_second_fixture >/dev/null 2>&1; then
+                fixture_display=$("$engine" exec "$name" cat /tmp/pelagian-layout-second.display)
+                if [[ "$fixture_display" == "$display" ]]; then
+                    session_wayland_display=$display
+                    break
+                fi
+            fi
+            sleep 0.1
+        done
+        [[ -n "$session_wayland_display" ]] && break
+        if [[ -n "$fixture_pid" ]]; then
+            "$engine" exec "$name" kill "$fixture_pid" >/dev/null 2>&1 || true
         fi
-        sleep 0.1
-    done
-    if [[ "$fixture_started" != true ]]; then
-        echo 'GTK fixture did not stay alive after launch' >&2
+    done <<< "$available_displays"
+    if [[ -z "$session_wayland_display" ]]; then
+        echo 'GTK fixture did not appear in Labwc on any Shell Wayland socket' >&2
         "$engine" exec "$name" sh -c \
             'test ! -f /tmp/pelagian-layout-second.log || cat /tmp/pelagian-layout-second.log' >&2 || true
         return 1
     fi
-    fixture_display=$("$engine" exec "$name" cat /tmp/pelagian-layout-second.display)
-    [[ "$fixture_display" == "$session_wayland_display" ]] || {
-        echo "GTK fixture display mismatch: actual=$fixture_display expected=$session_wayland_display" >&2
-        return 1
-    }
+    printf 'GTK fixture connected to Labwc on %s\n' "$session_wayland_display"
 
     "$engine" exec --user abc "$name" python3 /tmp/verify-shell-session.py \
         "$kind" --managed-count 2 --floating-count 0
