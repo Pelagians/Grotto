@@ -7,7 +7,7 @@ image=${2:?image required}
 case "$kind" in chatgpt|hermes) ;; *) exit 64 ;; esac
 # Pin the test contract independently from the production Shell image. The
 # checked-out tree supplies the viewer, stream driver, and geometry verifier.
-shell_revision=${PELAGIAN_SHELL_CONFORMANCE_COMMIT:-7feb586b1b1dc3c706afbb16a336c14092ac7d5a}
+shell_revision=${PELAGIAN_SHELL_CONFORMANCE_COMMIT:-dc47006243a10e357a2d646b25cdf05bfff9e00c}
 shell_source=$(mktemp -d)
 git -C "$shell_source" init -q
 git -C "$shell_source" fetch -q --depth 1 https://github.com/Pelagians/pelagian-shell.git "$shell_revision"
