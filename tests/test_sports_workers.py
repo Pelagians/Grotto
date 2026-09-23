@@ -222,6 +222,74 @@ class WorkerTests(unittest.TestCase):
             calls & {"goto", "click", "fill", "press", "type", "close", "reload"}
         )
 
+    def test_playnow_snapshot_contract_is_strict(self) -> None:
+        module = load(
+            "playnow_contract", "runtimes/playnow-observer/grotto_playnow_observer.py"
+        )
+        row = module._market(
+            {
+                "event_id": "event-1",
+                "market_family": "TEAM_TOTAL",
+                "market_key": "team_totals",
+                "subject_id": "team-home",
+                "selection": "Over",
+                "period": "FULL_GAME",
+                "line": 24.5,
+                "price": 1.91,
+                "status": "OBSERVED",
+                "observed_at": "2026-09-23T20:00:00Z",
+            }
+        )
+        self.assertEqual(row["raw_evidence_id"], "raw-0")
+
+    def test_playnow_observed_price_cannot_be_missing(self) -> None:
+        module = load(
+            "playnow_missing_price", "runtimes/playnow-observer/grotto_playnow_observer.py"
+        )
+        with self.assertRaisesRegex(ValueError, "price is required"):
+            module._market(
+                {
+                    "event_id": "event-1",
+                    "market_family": "HEADLINE",
+                    "market_key": "h2h",
+                    "selection": "Home",
+                    "period": "FULL_GAME",
+                    "status": "OBSERVED",
+                    "observed_at": "2026-09-23T20:00:00Z",
+                }
+            )
+
+    def test_playnow_fixture_emits_caller_owned_bundle(self) -> None:
+        module = load(
+            "playnow_fixture", "runtimes/playnow-observer/grotto_playnow_observer.py"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            job = root / "job.json"
+            job.write_text(
+                json.dumps(
+                    {
+                        "job_id": "playnow-1",
+                        "event_id": "event-1",
+                        "session_mode": "caller_owned",
+                        "browser_session_id": "ephemeral-session-1",
+                        "page_url": "https://www.playnow.com/sports",
+                        "allowed_origins": ["https://www.playnow.com"],
+                        "snapshot_path": str(
+                            ROOT / "tests/fixtures/playnow-observation.json"
+                        ),
+                    }
+                )
+            )
+            output = root / "bundle.json"
+            module.run(str(job), str(output))
+            bundle = json.loads(output.read_text())
+            self.assertEqual(bundle["session_mode"], "caller_owned")
+            self.assertEqual(bundle["markets"][0]["status"], "OBSERVED")
+            self.assertEqual(
+                bundle["sgp_observations"][0]["status"], "SGP_PRICE_NOT_OBSERVED"
+            )
+
     def test_images_have_no_secret_values(self) -> None:
         for name in ("sports-market-probe", "sports-source-probe", "playnow-observer"):
             text = (ROOT / f"Containerfile.{name}").read_text()

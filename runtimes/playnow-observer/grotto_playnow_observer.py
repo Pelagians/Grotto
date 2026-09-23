@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -13,6 +14,16 @@ from worker_common import artifact, finish_bundle, read_job, utc_now
 
 RELEASE = os.environ.get("GROTTO_BUILD_REVISION", "grotto-playnow-observer-dev")
 LOOPBACK = {"127.0.0.1", "localhost", "::1"}
+STATUSES = {"OBSERVED", "NOT_FOUND", "SUSPENDED", "REMOVED", "UNRESOLVED"}
+REQUIRED_MARKET_FIELDS = {
+    "event_id",
+    "market_family",
+    "market_key",
+    "selection",
+    "period",
+    "status",
+    "observed_at",
+}
 
 
 def _verify_browser(job: dict[str, Any]) -> str:
@@ -23,18 +34,46 @@ def _verify_browser(job: dict[str, Any]) -> str:
     with urlopen(f"{cdp_url.rstrip('/')}/json/list", timeout=5) as response:
         pages = json.load(response)
     allowed = set(map(str, job.get("allowed_origins", [])))
-    page = next((item for item in pages if item.get("type") == "page"), None)
+    page = next(
+        (
+            item
+            for item in pages
+            if item.get("type") == "page"
+            and f"{urlparse(str(item.get('url', ''))).scheme}://"
+            f"{urlparse(str(item.get('url', ''))).netloc}"
+            in allowed
+        ),
+        None,
+    )
     if not page:
-        raise ValueError("caller-owned browser has no observable page")
+        raise ValueError("PLAYNOW_BROWSER_UNAVAILABLE")
     url = str(page.get("url", ""))
     origin = f"{urlparse(url).scheme}://{urlparse(url).netloc}"
     if origin not in allowed:
         raise ValueError("browser page is outside allowed PlayNow origins")
-    return url
+    parsed_page = urlparse(url)
+    return f"{parsed_page.scheme}://{parsed_page.netloc}{parsed_page.path}"
+
+
+def _market(item: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(item)
+    if "status" not in normalized and "state" in normalized:
+        normalized["status"] = normalized.pop("state")
+    missing = REQUIRED_MARKET_FIELDS - normalized.keys()
+    if missing:
+        raise ValueError(f"PlayNow observation missing fields: {','.join(sorted(missing))}")
+    if normalized["status"] not in STATUSES:
+        raise ValueError("unsupported PlayNow observation status")
+    if normalized["status"] == "OBSERVED" and normalized.get("price") is None:
+        raise ValueError("observed PlayNow price is required")
+    normalized["raw_evidence_id"] = "raw-0"
+    return normalized
 
 
 def run(input_path: str, output_path: str) -> None:
     job = read_job(input_path)
+    if job.get("session_mode") != "caller_owned" or not job.get("browser_session_id"):
+        raise ValueError("PLAYNOW_BROWSER_UNAVAILABLE")
     page_url = (
         _verify_browser(job) if job.get("cdp_url") else str(job.get("page_url", ""))
     )
@@ -42,21 +81,12 @@ def run(input_path: str, output_path: str) -> None:
     parsed = urlparse(page_url)
     if f"{parsed.scheme}://{parsed.netloc}" not in allowed:
         raise ValueError("snapshot origin is outside allowed PlayNow origins")
+    if parsed.query or parsed.fragment:
+        raise ValueError("PlayNow page URL must not contain query or fragment data")
     snapshot_path = Path(str(job["snapshot_path"]))
     raw = snapshot_path.read_bytes()
     snapshot = json.loads(raw)
-    markets: list[dict[str, Any]] = []
-    for item in snapshot.get("markets", []):
-        state = str(item.get("state", "UNRESOLVED"))
-        if state not in {
-            "OBSERVED",
-            "NOT_FOUND",
-            "SUSPENDED",
-            "UNAVAILABLE",
-            "UNRESOLVED",
-        }:
-            raise ValueError("unsupported PlayNow observation state")
-        markets.append({**item, "raw_evidence_id": "raw-0"})
+    markets = [_market(item) for item in snapshot.get("markets", [])]
     sgp = []
     for item in snapshot.get("sgp_observations", []):
         if item.get("price") is None:
@@ -72,6 +102,7 @@ def run(input_path: str, output_path: str) -> None:
             "markets": markets,
             "sgp_observations": sgp,
             "session_mode": "caller_owned",
+            "browser_session_id": job["browser_session_id"],
             "worker_release": RELEASE,
             "page_url": page_url,
             "raw_artifacts": [
@@ -108,7 +139,20 @@ def main() -> None:
             )
         )
     else:
-        run(args.input, args.output)
+        try:
+            run(args.input, args.output)
+        except (OSError, ValueError, json.JSONDecodeError) as error:
+            print(
+                json.dumps(
+                    {
+                        "worker": "grotto-playnow-observer",
+                        "status": "failed",
+                        "reason": str(error),
+                    }
+                ),
+                file=sys.stderr,
+            )
+            raise SystemExit(2) from None
 
 
 if __name__ == "__main__":

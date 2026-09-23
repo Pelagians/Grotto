@@ -260,6 +260,35 @@ jobs:
           }
           PY
 
+      - name: Validate PlayNow observation fixture bundle
+        if: matrix.name == 'grotto-playnow-observer'
+        shell: bash
+        env:
+          IMAGE_UNDER_TEST: ${{ steps.image.outputs.image }}
+        run: |
+          set -euo pipefail
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+          chmod 777 "$work"
+          printf '%s' '{"job_id":"ci-playnow-observation","event_id":"event-1","session_mode":"caller_owned","browser_session_id":"ci-ephemeral-session","page_url":"https://www.playnow.com/sports","allowed_origins":["https://www.playnow.com"],"snapshot_path":"/fixtures/playnow-observation.json"}' > "$work/job.json"
+          chmod 644 "$work/job.json"
+          docker run --rm --network none \
+            -v "$PWD/tests/fixtures:/fixtures:ro" \
+            -v "$work:/work/exchange" \
+            "$IMAGE_UNDER_TEST" run \
+            --input /work/exchange/job.json --output /work/exchange/bundle.json
+          python3 - "$work/bundle.json" <<'PY'
+          import hashlib, json, pathlib, sys
+          payload = json.loads(pathlib.Path(sys.argv[1]).read_text())
+          reported = payload.pop("bundle_digest")
+          canonical = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+          assert hashlib.sha256(canonical).hexdigest() == reported
+          assert payload["schema_version"] == "sports-worker-bundle-v1"
+          assert payload["session_mode"] == "caller_owned"
+          assert payload["markets"][0]["status"] == "OBSERVED"
+          assert payload["sgp_observations"][0]["status"] == "SGP_PRICE_NOT_OBSERVED"
+          PY
+
       - name: Probe ChatGPT Docker compatibility
         if: matrix.name == 'grotto-chatgpt-desktop'
         env:

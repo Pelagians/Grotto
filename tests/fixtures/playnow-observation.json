@@ -1,0 +1,23 @@
+{
+  "markets": [
+    {
+      "event_id": "event-1",
+      "market_family": "TEAM_TOTAL",
+      "market_key": "team_totals",
+      "subject_id": "team-home",
+      "selection": "Over",
+      "period": "FULL_GAME",
+      "line": 24.5,
+      "price": 1.91,
+      "status": "OBSERVED",
+      "observed_at": "2026-09-23T20:00:00Z"
+    }
+  ],
+  "sgp_observations": [
+    {
+      "component_ids": ["component-a", "component-b"],
+      "price": null,
+      "observed_at": "2026-09-23T20:00:00Z"
+    }
+  ]
+}
