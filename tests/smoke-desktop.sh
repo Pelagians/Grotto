@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC2016 # Single-quoted commands expand in the container.
 set -Eeuo pipefail
 engine=${CONTAINER_ENGINE:-docker}
 kind=${1:?chatgpt or hermes required}
