@@ -49,3 +49,12 @@ fi
 if [[ -f /config/.codex/auth.json ]]; then
     chmod 0600 /config/.codex/auth.json
 fi
+
+# Chromium's process-singleton links are session state. A new container gets a
+# new hostname, while its bind-mounted application profile survives. Remove
+# only these links before the desktop service starts; keep the profile itself.
+for profile in /config/.config/ChatGPT /config/.config/chatgpt /config/.config/Codex /config/.config/codex; do
+    if [[ -L "$profile/SingletonLock" ]]; then
+        rm -f -- "$profile/SingletonLock" "$profile/SingletonSocket" "$profile/SingletonCookie"
+    fi
+done

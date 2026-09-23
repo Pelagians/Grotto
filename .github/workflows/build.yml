@@ -272,6 +272,7 @@ jobs:
           docker save "$podman_tag" | podman load
           kind="${DESKTOP#grotto-}"
           CONTAINER_ENGINE=podman tests/smoke-desktop.sh "${kind%-desktop}" "$podman_tag"
+          CONTAINER_ENGINE=podman tests/smoke-desktop-bind-mount.sh "${kind%-desktop}" "$podman_tag"
 
       - name: Promote qualified digest to release tags
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'

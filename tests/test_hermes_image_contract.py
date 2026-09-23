@@ -22,7 +22,7 @@ DESKTOP_DOCS = ROOT / "docs/hermes-desktop.md"
 WORKFLOW = ROOT / ".github/workflows/build.yml"
 SHELL_IMAGE = (
     "ghcr.io/pelagians/pelagian-shell@sha256:"
-    "73a5d952d3dd47eb2467d656ca4665cb2bde18fe811a320deaeeaf9f4459fd92"
+    "5ad8e46d11bac94a5f7202c0f4cee5872f2f731b8602bac42329d42717d65122"
 )
 
 
@@ -70,6 +70,11 @@ def main() -> None:
     desktop_docs = DESKTOP_DOCS.read_text()
     workflow = WORKFLOW.read_text()
     chatgpt_image = (ROOT / "Containerfile.chatgpt-desktop").read_text()
+    chatgpt_launcher = (
+        ROOT / "runtimes/chatgpt-desktop/root/usr/local/bin/grotto-chatgpt-desktop"
+    ).read_text()
+    chatgpt_policy = (ROOT / "runtimes/chatgpt-desktop/verify-installed-policy.py").read_text()
+    bind_smoke = (ROOT / "tests/smoke-desktop-bind-mount.sh").read_text()
     assert not (
         ROOT
         / "runtimes/chatgpt-desktop/root/usr/local/libexec/grotto-configure-openbox"
@@ -80,6 +85,22 @@ def main() -> None:
             SHELL_IMAGE
         ]
     assert "5fc308a70719a83cccdbba4c0e39c23f5a8239d5" in desktop_image
+    shell_adapter_patch = (ROOT / "patches/hermes-desktop/pelagian-shell-window-chrome.patch").read_text()
+    assert "applyPelagianShellWindowChrome" in shell_adapter_patch
+    assert "hermes:window-chrome-policy" in shell_adapter_patch
+    assert "windowChromePolicy === 'server'" in shell_adapter_patch
+    assert shell_adapter_patch.count("role: 'dialog'") == 3
+    assert shell_adapter_patch.count(
+        "parent: mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined"
+    ) == 3
+    assert "HERMES_DESKTOP_WINDOW_CHROME_REPORT" in shell_adapter_patch
+    assert "data-hermes-custom-titlebar" in shell_adapter_patch
+    assert "data-hermes-window-chrome-control-cluster" in shell_adapter_patch
+    assert "verify_hermes_window_chrome" in (ROOT / "tests/smoke-desktop.sh").read_text()
+    assert "pelagian-shell-contract" in desktop_image
+    assert "/usr/share/pelagian-shell/integrations/electron/window-chrome.mjs" in desktop_image
+    assert "check-electron-chrome.py" in desktop_image
+    assert "smoke-desktop-bind-mount.sh" in (ROOT / ".github/workflows/build.yml").read_text()
     assert "node:22-bookworm@sha256:8a34c4ab3ea2c5cd194f07e317b2a8f09461d3c8b05c4e34c8ccd56d56024c4d" in desktop_image
     assert "npm run builder -- --linux deb --publish never" in desktop_image
     assert "for attempt in 1 2 3" in desktop_image
@@ -105,10 +126,11 @@ def main() -> None:
     assert "--no-sandbox" in desktop_session
     assert "--enable-features=UseOzonePlatform" in desktop_session
     assert "--ozone-platform=wayland" in desktop_session
-    assert "a9c6100aabc0cb79deb43910e92639f9b92b4a3d" in desktop_smoke
+    assert "dc47006243a10e357a2d646b25cdf05bfff9e00c" in desktop_smoke
     assert "conformance/verify-shell-session.py" in desktop_smoke
     assert "conformance/start-shell-stream.sh" in desktop_smoke
     assert "--native" in desktop_smoke
+    assert "--opaque-binary-env" in desktop_smoke
     assert "GROTTO_CHATGPT_AUTH_MODE=off" in desktop_smoke
     assert "--keyring" in desktop_smoke
     assert '"$engine" restart "$name"' in desktop_smoke
@@ -139,11 +161,27 @@ def main() -> None:
     assert "consumer-volume-sentinel" in desktop_smoke
     assert "x11-utils" in chatgpt_image
     assert "Smoke desktop with rootless Podman" in workflow
+    assert "PELAGIAN_SHELL_CONFORMANCE_COMMIT:-dc47006243a10e357a2d646b25cdf05bfff9e00c" in desktop_smoke
+    assert "--managed-count 2 --floating-count 1" in desktop_smoke
+    assert "dialog-close" in desktop_smoke
+    assert '"${GROTTO_CONFIG_BIND}:/config:Z"' in desktop_smoke
+    assert "GROTTO_DESKTOP_PHASES" in desktop_smoke
+    assert "podman info --format '{{.Host.Security.Rootless}}'" in bind_smoke
+    assert "GROTTO_EXPECT_CONFIG_PERSISTENCE=true" in bind_smoke
+    assert "ELECTRON_USE_SYSTEM_TITLE_BAR=1" not in chatgpt_image
+    assert not re.search(r"(?m)^export ELECTRON_USE_SYSTEM_TITLE_BAR=", chatgpt_launcher)
+    assert "--disable-features=CustomTitlebar,WaylandWindowDecorations" not in chatgpt_launcher
+    assert "PELAGIAN_SHELL_WINDOW_CHROME" not in chatgpt_launcher
+    assert "ELECTRON_USE_SYSTEM_TITLE_BAR" in chatgpt_policy
+    assert "compatibility_exception_required" in chatgpt_policy
+    assert "titleBarStyle:`hidden`" in chatgpt_policy
+    assert "titleBarOverlay" in chatgpt_policy
+    assert '"window_chrome"' in chatgpt_policy
     assert "/usr/local/bin/pelagian-shell-consumer" in desktop_docs
     assert "--enable-features=UseOzonePlatform" in desktop_docs
     assert "--ozone-platform=wayland" in desktop_docs
     assert "planner-only" not in desktop_docs
-    assert "live automatic tiling" in desktop_docs
+    assert "owns placement and automatic tiling" in desktop_docs
     assert "GROTTO_HERMES_DESKTOP_KEYRING_PASSWORD" in desktop_docs
     assert "type=env,target=GROTTO_HERMES_DESKTOP_KEYRING_PASSWORD" in desktop_docs
 

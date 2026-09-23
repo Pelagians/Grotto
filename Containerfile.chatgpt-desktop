@@ -7,7 +7,7 @@ ARG CHATGPT_PACKAGE_VERSION=26.820.60940
 ARG CHATGPT_PACKAGE_SHA256_AMD64=31d956a8c6c515f8d87e0b7acd9ec919f7e685ba59331b4b97aa45f853afdfd7
 ARG CHATGPT_PACKAGE_SHA256_ARM64=8f4dacbff5f054a4f69c2a021f1396c57976972829a61041febac1b423f27c86
 ARG CHATGPT_PACKAGE_BASE_URL=https://persistent.oaistatic.com/codex-app-prod/linux/deb
-ARG PELAGIAN_SHELL_IMAGE=ghcr.io/pelagians/pelagian-shell@sha256:73a5d952d3dd47eb2467d656ca4665cb2bde18fe811a320deaeeaf9f4459fd92
+ARG PELAGIAN_SHELL_IMAGE=ghcr.io/pelagians/pelagian-shell@sha256:5ad8e46d11bac94a5f7202c0f4cee5872f2f731b8602bac42329d42717d65122
 ARG PELAGIAN_SHELL_SELKIES_IMAGE=ghcr.io/linuxserver/baseimage-selkies:debiantrixie@sha256:ac7fd6d182238b4a99e66554c5e75be48a714e2a0c9da81bd18e171ff9ba3dd5
 ARG GROTTO_BUILD_REVISION=unknown
 
@@ -47,7 +47,6 @@ ENV TITLE="ChatGPT Desktop" \
     PELAGIAN_SHELL_PROFILE=browser \
     GROTTO_CHATGPT_WM_CLASS=chatgpt-desktop \
     ELECTRON_OZONE_PLATFORM_HINT=wayland \
-    ELECTRON_USE_SYSTEM_TITLE_BAR=1 \
     CODEX_HOME=/config/.codex \
     CODEX_CLI_PATH=/usr/lib/chatgpt/resources/codex \
     CODEX_MANAGED_NODE_RUNTIME_DIR=/usr/lib/chatgpt/resources/cua_node \

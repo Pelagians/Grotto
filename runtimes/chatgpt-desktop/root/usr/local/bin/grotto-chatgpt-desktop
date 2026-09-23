@@ -10,10 +10,16 @@ set -Eeuo pipefail
 
 CHATGPT_WM_CLASS="${GROTTO_CHATGPT_WM_CLASS:-chatgpt-desktop}"
 
+# Keep the vendor process on Shell's private session bus even if its wrapper
+# starts with a reduced environment. The bus socket belongs to Shell.
+if [[ "${XDG_RUNTIME_DIR:-}" == /run/pelagian-shell ]]; then
+    test -S "$XDG_RUNTIME_DIR/bus"
+    export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+fi
+
 # Prefer the native/system frame where this vendor build supports it. Shell does
 # not patch or crop application-drawn chrome.
 export ELECTRON_OZONE_PLATFORM_HINT="${ELECTRON_OZONE_PLATFORM_HINT:-wayland}"
-export ELECTRON_USE_SYSTEM_TITLE_BAR="${ELECTRON_USE_SYSTEM_TITLE_BAR:-1}"
 
 # The class is Grotto's choice, not a vendor default; the Labwc and Openbox
 # rules match the value passed here. Chromium uses it for both the X11 WM_CLASS
@@ -31,8 +37,6 @@ case "${CODEX_OZONE_PLATFORM:-wayland}" in
         chatgpt_args+=(--ozone-platform=wayland)
         ;;
 esac
-
-chatgpt_args+=("--disable-features=CustomTitlebar,WaylandWindowDecorations")
 
 # Chromium's namespace sandbox needs unprivileged user namespaces, and the
 # package ships no setuid chrome-sandbox helper to fall back to. Keep the
