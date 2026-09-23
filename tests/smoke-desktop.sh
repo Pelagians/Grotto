@@ -296,7 +296,7 @@ for label, pid in (('consumer', consumer_file.read_text().strip()),
         print(f'{label} process: no PID', flush=True)
         continue
     selected = {}
-    for entry in pathlib.Path(f'/proc/{pid}/environ').read_bytes().split(b'\\0'):
+    for entry in pathlib.Path(f'/proc/{pid}/environ').read_bytes().split(bytes([0])):
         key, sep, value = entry.partition(b'=')
         if sep and key in {b'XDG_RUNTIME_DIR', b'WAYLAND_DISPLAY',
                            b'DISPLAY', b'DBUS_SESSION_BUS_ADDRESS'}:
