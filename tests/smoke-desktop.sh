@@ -7,7 +7,7 @@ image=${2:?image required}
 case "$kind" in chatgpt|hermes) ;; *) exit 64 ;; esac
 # Pin the test contract independently from the production Shell image. The
 # checked-out tree supplies the viewer, stream driver, and geometry verifier.
-shell_revision=${PELAGIAN_SHELL_CONFORMANCE_COMMIT:-0ceaa7c012367e0999c14f7f715726213f138723}
+shell_revision=${PELAGIAN_SHELL_CONFORMANCE_COMMIT:-8b36c276549a89fc04de4accd84672add9d77ac3}
 shell_source=$(mktemp -d)
 git -C "$shell_source" init -q
 git -C "$shell_source" fetch -q --depth 1 https://github.com/Pelagians/pelagian-shell.git "$shell_revision"
@@ -280,6 +280,7 @@ for phase in "${phases[@]}"; do
         '! grep -Eiq "<windowRule[^>]*(identifier|app_id|appId|class|title)=|hermes|chatgpt" /config/.config/labwc/rc.xml'
     options=(--native)
     if [[ "$kind" == hermes ]]; then options+=(--keyring "$phase"); fi
+    if [[ "$kind" == chatgpt ]]; then options+=(--binary-bus-exception); fi
     "$engine" exec --user abc "$name" python3 /tmp/verify-shell-session.py "$kind" "${options[@]}"
     verify_hermes_window_chrome
     if [[ "$restart_qualified" != true ]]; then
