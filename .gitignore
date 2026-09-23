@@ -6,3 +6,10 @@ __pycache__/
 *.py[cod]
 .venv/
 .pytest_cache/
+
+# Caller-owned browser/session material and live exchange evidence stay local.
+.browser-profile/
+browser-profile/
+playnow-live/
+work/exchange/
+*.har

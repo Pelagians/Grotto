@@ -8,6 +8,11 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[1]
 ROWS = json.loads((ROOT / ".github/image-matrix.json").read_text())
 ALL = {row["name"] for row in ROWS}
+SPORTS = {
+    "grotto-sports-market-probe",
+    "grotto-sports-source-probe",
+    "grotto-playnow-observer",
+}
 
 
 def select(paths):
@@ -56,8 +61,11 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", default="")
     parser.add_argument("--head", default="HEAD")
+    parser.add_argument("--sports-only", action="store_true")
     args = parser.parse_args()
-    if args.base and set(args.base) != {"0"}:
+    if args.sports_only:
+        selected = SPORTS
+    elif args.base and set(args.base) != {"0"}:
         changed = subprocess.check_output(
             ["git", "diff", "--name-only", f"{args.base}...{args.head}"],
             text=True,

@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 COMMON = ROOT / "runtimes" / "sports-workers"
@@ -289,6 +290,78 @@ class WorkerTests(unittest.TestCase):
             self.assertEqual(
                 bundle["sgp_observations"][0]["status"], "SGP_PRICE_NOT_OBSERVED"
             )
+
+    def test_playnow_rejects_non_loopback_browser_runtime(self) -> None:
+        module = load(
+            "playnow_remote_browser", "runtimes/playnow-observer/grotto_playnow_observer.py"
+        )
+        with self.assertRaisesRegex(ValueError, "^BROWSER_RUNTIME_UNSUPPORTED$"):
+            module._verify_browser(
+                {
+                    "cdp_url": "http://browser.example:9222",
+                    "allowed_origins": ["https://www.playnow.com"],
+                }
+            )
+
+    def test_playnow_rejects_unapproved_origin(self) -> None:
+        module = load(
+            "playnow_origin", "runtimes/playnow-observer/grotto_playnow_observer.py"
+        )
+        with self.assertRaisesRegex(ValueError, "^ORIGIN_NOT_ALLOWED$"):
+            module._validate_page_url(
+                "https://example.com/sports", {"https://www.playnow.com"}
+            )
+        with self.assertRaisesRegex(ValueError, "^ORIGIN_NOT_ALLOWED$"):
+            module._validate_page_url(
+                "https://example.com/sports", {"https://example.com"}
+            )
+
+    def test_playnow_reports_missing_caller_owned_browser(self) -> None:
+        module = load(
+            "playnow_missing_browser", "runtimes/playnow-observer/grotto_playnow_observer.py"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            job = root / "job.json"
+            job.write_text(json.dumps({"job_id": "missing-browser"}))
+            with self.assertRaisesRegex(ValueError, "^BROWSER_NOT_RUNNING$"):
+                module.run(str(job), str(root / "bundle.json"))
+
+    def test_playnow_reports_unauthenticated_session(self) -> None:
+        module = load(
+            "playnow_unauthenticated", "runtimes/playnow-observer/grotto_playnow_observer.py"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            job = root / "job.json"
+            job.write_text(
+                json.dumps(
+                    {
+                        "job_id": "unauthenticated",
+                        "session_mode": "caller_owned",
+                        "browser_session_id": "ephemeral",
+                        "session_authenticated": False,
+                    }
+                )
+            )
+            with self.assertRaisesRegex(ValueError, "^SESSION_UNAUTHENTICATED$"):
+                module.run(str(job), str(root / "bundle.json"))
+
+    def test_playnow_bounded_reattach_recovers(self) -> None:
+        module = load(
+            "playnow_reattach", "runtimes/playnow-observer/grotto_playnow_observer.py"
+        )
+        transient = module.ObserverFailure("ATTACH_ENDPOINT_UNAVAILABLE")
+        with patch.object(
+            module,
+            "_verify_browser",
+            side_effect=[transient, "https://www.playnow.com/sports"],
+        ) as verify, patch.object(module.time, "sleep"):
+            page = module._verify_browser_with_wait(
+                {"attach_wait_seconds": 5, "attach_poll_seconds": 0.5}
+            )
+        self.assertEqual(page, "https://www.playnow.com/sports")
+        self.assertEqual(verify.call_count, 2)
 
     def test_images_have_no_secret_values(self) -> None:
         for name in ("sports-market-probe", "sports-source-probe", "playnow-observer"):

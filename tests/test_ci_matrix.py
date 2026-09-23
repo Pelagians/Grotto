@@ -1,6 +1,6 @@
 import unittest
 
-from ci_matrix import ALL, select
+from ci_matrix import ALL, SPORTS, ROWS, select
 
 
 class SelectionTests(unittest.TestCase):
@@ -16,6 +16,17 @@ class SelectionTests(unittest.TestCase):
 
     def test_brewfile_selects_users(self):
         self.assertEqual(select(["Brewfile"]), {"grotto-openclaw", "grotto-hermes", "grotto-hermes-desktop"})
+
+    def test_sports_release_scope_names_three_images(self):
+        self.assertEqual(
+            SPORTS,
+            {
+                "grotto-sports-market-probe",
+                "grotto-sports-source-probe",
+                "grotto-playnow-observer",
+            },
+        )
+        self.assertEqual({row["name"] for row in ROWS if row["name"] in SPORTS}, SPORTS)
 
 
 if __name__ == "__main__":

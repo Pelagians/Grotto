@@ -16,6 +16,15 @@ on:
       - main
 
   workflow_dispatch:
+    inputs:
+      image_scope:
+        description: Images to build and validate
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - sports
 
 permissions:
   contents: read
@@ -29,6 +38,19 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
+  secret-scan:
+    name: Gitleaks secret scan
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Scan repository history and working tree
+        uses: gitleaks/gitleaks-action@v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   checks:
     name: Static policy checks
     runs-on: ubuntu-24.04
@@ -83,6 +105,7 @@ jobs:
         id: matrix
         env:
           EVENT: ${{ github.event_name }}
+          IMAGE_SCOPE: ${{ inputs.image_scope || 'all' }}
           REF_TYPE: ${{ github.ref_type }}
           PR_BASE: ${{ github.event.pull_request.base.sha }}
           PUSH_BASE: ${{ github.event.before }}
@@ -94,7 +117,11 @@ jobs:
           elif [[ "$EVENT" == push && "$REF_TYPE" == branch ]]; then
             base="$PUSH_BASE"
           fi
-          matrix="$(python3 tests/ci_matrix.py --base "$base")"
+          if [[ "$EVENT" == workflow_dispatch && "$IMAGE_SCOPE" == sports ]]; then
+            matrix="$(python3 tests/ci_matrix.py --sports-only)"
+          else
+            matrix="$(python3 tests/ci_matrix.py --base "$base")"
+          fi
           printf 'matrix=%s\n' "$matrix" >> "$GITHUB_OUTPUT"
           if [[ "$matrix" == '{"include":[]}' ]]; then
             echo 'any=false' >> "$GITHUB_OUTPUT"
@@ -104,7 +131,7 @@ jobs:
 
   image:
     name: Build ${{ matrix.name }}
-    needs: [checks, select]
+    needs: [secret-scan, checks, select]
     if: needs.select.outputs.any == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 120
@@ -230,6 +257,35 @@ jobs:
           docker run --rm --network none "$IMAGE_UNDER_TEST" canary
           docker run --rm --network none "$IMAGE_UNDER_TEST" --help >/dev/null
           test "$(docker run --rm --network none --entrypoint id "$IMAGE_UNDER_TEST" -u)" = 10001
+          docker run --rm --network none --entrypoint sh "$IMAGE_UNDER_TEST" -c \
+            'test -w /work/input && test -w /work/raw && test -w /work/output && test -w /work/logs && test ! -w /usr/local/bin'
+
+      - name: Validate sports source fixture bundle
+        if: matrix.name == 'grotto-sports-source-probe'
+        shell: bash
+        env:
+          IMAGE_UNDER_TEST: ${{ steps.image.outputs.image }}
+        run: |
+          set -euo pipefail
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+          chmod 777 "$work"
+          printf '%s' '{"job_id":"ci-source-watch","team_id":"DET","event_id":"event-1","allowed_source_classes":["team_official"],"allowed_hosts":[],"max_requests":1,"sources":[{"source_watch_id":"watch-1","source_class":"team_official","url":"https://example.invalid","fixture_path":"/fixtures/sports-source.html"}]}' > "$work/job.json"
+          chmod 644 "$work/job.json"
+          docker run --rm --network none \
+            -v "$PWD/tests/fixtures:/fixtures:ro" \
+            -v "$work:/work/exchange" \
+            "$IMAGE_UNDER_TEST" run \
+            --input /work/exchange/job.json --output /work/exchange/bundle.json
+          python3 - "$work/bundle.json" <<'PY'
+          import hashlib, json, pathlib, sys
+          payload = json.loads(pathlib.Path(sys.argv[1]).read_text())
+          reported = payload.pop("bundle_digest")
+          canonical = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+          assert hashlib.sha256(canonical).hexdigest() == reported
+          assert payload["candidate_claim_material"][0]["requires_nyra_normalization"] is True
+          assert payload["sources_attempted"][0]["result"] == "WATCHED_UPDATE_FOUND"
+          PY
 
       - name: Validate sports market fixture bundle
         if: matrix.name == 'grotto-sports-market-probe'
