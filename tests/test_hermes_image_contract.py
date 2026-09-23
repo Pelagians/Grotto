@@ -126,7 +126,7 @@ def main() -> None:
     assert "--no-sandbox" in desktop_session
     assert "--enable-features=UseOzonePlatform" in desktop_session
     assert "--ozone-platform=wayland" in desktop_session
-    assert "a9c6100aabc0cb79deb43910e92639f9b92b4a3d" in desktop_smoke
+    assert "0ceaa7c012367e0999c14f7f715726213f138723" in desktop_smoke
     assert "conformance/verify-shell-session.py" in desktop_smoke
     assert "conformance/start-shell-stream.sh" in desktop_smoke
     assert "--native" in desktop_smoke
@@ -160,7 +160,7 @@ def main() -> None:
     assert "consumer-volume-sentinel" in desktop_smoke
     assert "x11-utils" in chatgpt_image
     assert "Smoke desktop with rootless Podman" in workflow
-    assert "PELAGIAN_SHELL_CONFORMANCE_COMMIT:-a9c6100aabc0cb79deb43910e92639f9b92b4a3d" in desktop_smoke
+    assert "PELAGIAN_SHELL_CONFORMANCE_COMMIT:-0ceaa7c012367e0999c14f7f715726213f138723" in desktop_smoke
     assert "--managed-count 2 --floating-count 1" in desktop_smoke
     assert "dialog-close" in desktop_smoke
     assert '"${GROTTO_CONFIG_BIND}:/config:Z"' in desktop_smoke
