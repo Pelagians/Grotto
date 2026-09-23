@@ -12,6 +12,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import urlopen
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "sports-workers"))
+
 from worker_common import artifact, finish_bundle, read_job, utc_now
 
 RELEASE = os.environ.get("GROTTO_BUILD_REVISION", "grotto-playnow-observer-dev")
@@ -58,6 +60,19 @@ def _validate_page_url(page_url: str, allowed: set[str]) -> str:
     return f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
 
 
+def _page_matches(item: dict[str, Any], allowed: set[str], requested_page: str) -> bool:
+    if item.get("type") != "page":
+        return False
+    url = str(item.get("url", ""))
+    if _origin(url) not in allowed:
+        return False
+    try:
+        page_url = _validate_page_url(url, allowed)
+    except ObserverFailure:
+        return False
+    return not requested_page or page_url == requested_page
+
+
 def _verify_browser(job: dict[str, Any]) -> str:
     cdp_url = str(job.get("cdp_url", ""))
     parsed = urlparse(cdp_url)
@@ -76,14 +91,14 @@ def _verify_browser(job: dict[str, Any]) -> str:
         raise ObserverFailure("ATTACHMENT_FAILED")
     allowed = set(map(str, job.get("allowed_origins", [])))
     requested_page = str(job.get("page_url", ""))
-    if requested_page:
-        _validate_page_url(requested_page, allowed)
+    requested_page = (
+        _validate_page_url(requested_page, allowed) if requested_page else ""
+    )
     page = next(
         (
             item
             for item in pages
-            if item.get("type") == "page"
-            and _origin(str(item.get("url", ""))) in allowed
+            if _page_matches(item, allowed, requested_page)
         ),
         None,
     )

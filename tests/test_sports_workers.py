@@ -316,6 +316,29 @@ class WorkerTests(unittest.TestCase):
                 "https://example.com/sports", {"https://example.com"}
             )
 
+    def test_playnow_attachment_requires_exact_requested_page(self) -> None:
+        module = load(
+            "playnow_exact_page", "runtimes/playnow-observer/grotto_playnow_observer.py"
+        )
+        allowed = {"https://www.playnow.com"}
+        requested = "https://www.playnow.com/sports/sports/event/1/game-a"
+        assert module._page_matches(
+            {"type": "page", "url": requested}, allowed, requested
+        )
+        assert not module._page_matches(
+            {
+                "type": "page",
+                "url": "https://www.playnow.com/sports/sports/event/2/game-b",
+            },
+            allowed,
+            requested,
+        )
+        assert not module._page_matches(
+            {"type": "page", "url": f"{requested}?session=private"},
+            allowed,
+            requested,
+        )
+
     def test_playnow_reports_missing_caller_owned_browser(self) -> None:
         module = load(
             "playnow_missing_browser", "runtimes/playnow-observer/grotto_playnow_observer.py"

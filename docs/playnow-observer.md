@@ -1,6 +1,6 @@
 # PlayNow Observer
 
-`grotto-playnow-observer` is a passive evidence observer for an operator-owned PlayNow browser/session. It accepts only a loopback CDP endpoint, selects a page whose origin is explicitly caller-approved, and consumes a caller-exported structured snapshot. It never navigates, clicks, stores passwords or cookies, bypasses geolocation or anti-bot controls, or places a wager. Query strings and fragments are rejected so session material cannot enter evidence.
+`grotto-playnow-observer` is a passive evidence observer for an operator-owned PlayNow browser/session. It accepts only a loopback CDP endpoint, requires the exact caller-requested PlayNow page to be open, and consumes a caller-exported structured snapshot. It never navigates, clicks, stores passwords or cookies, bypasses geolocation or anti-bot controls, or places a wager. Query strings and fragments are rejected so session material cannot enter evidence.
 
 Each market must carry canonical event/market/subject fields, selection, period, actual observation time, and one of `OBSERVED`, `NOT_FOUND`, `SUSPENDED`, `REMOVED`, or `UNRESOLVED`. The caller supplies an opaque browser-session ID; the bundle preserves it together with worker job/release and the bundle digest. Authenticated HTML and browser profiles are never accepted as artifacts.
 
@@ -19,6 +19,15 @@ $edge = "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe"
 ```
 
 In that dedicated window, the operator manually signs in if required, confirms the site is showing the correct British Columbia offering, opens the selected NFL event, and leaves the window running. The worker never enters credentials, changes location, adjusts account settings, handles funds, sets stakes, or submits wagers.
+
+For a bounded local research capture, `scripts/playnow_cdp_capture.mjs` is the caller-side
+bridge. It accepts one exact PlayNow event URL and an ignored output path, waits for the
+event market surface, and visits only the named market-category tabs. It extracts only
+the market containers inside the page's `main` region. It does not access cookies,
+storage, the account header, browser profiles, or unrelated tabs, and it never clicks
+an odds selection or bet-slip control. The resulting raw bridge artifact is not a
+Grotto bundle; the observer must still validate the live attachment and emit the hashed
+evidence bundle.
 
 The caller-owned bridge exports only the normalized market snapshot to a local ignored exchange path. The live job identifies the opaque session, limits attachment to loopback, and permits only the exact PlayNow origin:
 
