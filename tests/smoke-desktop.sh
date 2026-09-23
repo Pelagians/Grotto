@@ -7,7 +7,7 @@ image=${2:?image required}
 case "$kind" in chatgpt|hermes) ;; *) exit 64 ;; esac
 # Pin the test contract independently from the production Shell image. The
 # checked-out tree supplies the viewer, stream driver, and geometry verifier.
-shell_revision=${PELAGIAN_SHELL_CONFORMANCE_COMMIT:-8b36c276549a89fc04de4accd84672add9d77ac3}
+shell_revision=${PELAGIAN_SHELL_CONFORMANCE_COMMIT:-7feb586b1b1dc3c706afbb16a336c14092ac7d5a}
 shell_source=$(mktemp -d)
 git -C "$shell_source" init -q
 git -C "$shell_source" fetch -q --depth 1 https://github.com/Pelagians/pelagian-shell.git "$shell_revision"
@@ -278,40 +278,9 @@ for phase in "${phases[@]}"; do
     CONTAINER_ENGINE="$engine" "$conformance/start-shell-stream.sh" "$name" "$shell_source/tests/selkies-smoke-client.py"
     "$engine" exec "$name" sh -c \
         '! grep -Eiq "<windowRule[^>]*(identifier|app_id|appId|class|title)=|hermes|chatgpt" /config/.config/labwc/rc.xml'
-    if [[ "$kind" == chatgpt ]]; then
-        window_pid=''
-        for _ in $(seq 1 60); do
-            window_pid=$(get_main_window_pid || true)
-            [[ -z "$window_pid" ]] || break
-            sleep 1
-        done
-        "$engine" exec -i --user abc "$name" python3 - "$window_pid" <<'PY'
-import pathlib
-import sys
-
-consumer_file = pathlib.Path('/config/.local/state/pelagian-shell/consumer.pid')
-for label, pid in (('consumer', consumer_file.read_text().strip()),
-                   ('window', sys.argv[1])):
-    if not pid.isdecimal():
-        print(f'{label} process: no PID', flush=True)
-        continue
-    selected = {}
-    try:
-        entries = pathlib.Path(f'/proc/{pid}/environ').read_bytes().split(bytes([0]))
-    except OSError as error:
-        print(f'{label} process: selected environment unavailable ({error.__class__.__name__})', flush=True)
-        continue
-    for entry in entries:
-        key, sep, value = entry.partition(b'=')
-        if sep and key in {b'XDG_RUNTIME_DIR', b'WAYLAND_DISPLAY',
-                           b'DISPLAY', b'DBUS_SESSION_BUS_ADDRESS'}:
-            selected[key.decode()] = value.decode(errors='replace')
-    print(f'{label} process coordinates: {selected}', flush=True)
-PY
-    fi
     options=(--native)
     if [[ "$kind" == hermes ]]; then options+=(--keyring "$phase"); fi
-    if [[ "$kind" == chatgpt ]]; then options+=(--binary-bus-exception); fi
+    if [[ "$kind" == chatgpt ]]; then options+=(--opaque-binary-env); fi
     "$engine" exec --user abc "$name" python3 /tmp/verify-shell-session.py "$kind" "${options[@]}"
     verify_hermes_window_chrome
     if [[ "$restart_qualified" != true ]]; then
