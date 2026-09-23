@@ -30,7 +30,7 @@ cleanup() {
         "$engine" logs "$name" >&2 || true
         # The container shell expands diagnostic paths.
         # shellcheck disable=SC2016
-        "$engine" exec "$name" sh -c 'for f in /config/.local/state/pelagian-shell/*.log /config/hermes-desktop/session.log /config/hermes-desktop/hermes-home/logs/desktop.log; do test ! -f "$f" || tail -n 80 "$f"; done; for f in /tmp/pelagian-layout-second.pid /tmp/pelagian-layout-second.display /tmp/pelagian-layout-second.log; do test ! -f "$f" || { echo "--- $f"; cat "$f"; }; done; echo "--- runtime sockets"; ls -la /run/pelagian-shell 2>&1 || true; echo "--- layoutd status"; pelagian-layoutd status 2>&1 || true; echo "--- Wayland toplevels"; wlrctl toplevel list 2>&1 || true' >&2 || true
+        "$engine" exec "$name" sh -c 'for f in /config/.local/state/pelagian-shell/*.log /config/hermes-desktop/session.log /config/hermes-desktop/hermes-home/logs/desktop.log /tmp/hermes-window-chrome.json; do test ! -f "$f" || { echo "--- $f"; tail -n 80 "$f"; }; done; for f in /tmp/pelagian-layout-second.pid /tmp/pelagian-layout-second.display /tmp/pelagian-layout-second.log; do test ! -f "$f" || { echo "--- $f"; cat "$f"; }; done; echo "--- runtime sockets"; ls -la /run/pelagian-shell 2>&1 || true; echo "--- layoutd status"; pelagian-layoutd status 2>&1 || true; echo "--- Wayland toplevels"; wlrctl toplevel list 2>&1 || true' >&2 || true
     fi
     "$engine" rm -f "$name" >/dev/null 2>&1 || true
     for volume in "${volumes[@]}"; do
@@ -52,11 +52,16 @@ else
         'mkdir -p /config/.codex; printf preserved > /config/consumer-volume-sentinel'
 fi
 # Exercise the real /init entrypoint. Login uses no real accounts in CI.
+consumer_env=()
+if [[ "$kind" == hermes ]]; then
+    consumer_env+=(--env HERMES_DESKTOP_WINDOW_CHROME_REPORT=/tmp/hermes-window-chrome.json)
+fi
 "$engine" run -d --name "$name" --shm-size=2g \
     --env "PUID=$(id -u)" --env "PGID=$(id -g)" \
     --env GROTTO_CHATGPT_AUTH_MODE=off \
     --env GROTTO_HERMES_DESKTOP_KEYRING_PASSWORD=ci-ephemeral-keyring \
     --env SELKIES_MANUAL_WIDTH=1920 --env SELKIES_MANUAL_HEIGHT=1080 \
+    "${consumer_env[@]}" \
     --volume "$config_mount" --volume "${name}-workspace:/workspace" \
     --volume "${name}-tools:/tools" --volume "${name}-homebrew:/home/linuxbrew/.linuxbrew" \
     --volume "${name}-cache:/cache" "$image" >/dev/null
@@ -64,22 +69,46 @@ fi
 "$engine" cp "$shell_source/tests/layout-fixture.py" "$name:/tmp/grotto-shell-layout-fixture.py"
 "$engine" exec "$name" chmod 0644 /tmp/verify-shell-session.py /tmp/grotto-shell-layout-fixture.py
 
+get_main_window_pid() {
+    "$engine" exec -i "$name" python3 - "$kind" <<'PY'
+import json
+import socket
+import sys
+
+pattern = sys.argv[1]
+with socket.socket(socket.AF_UNIX) as client:
+    client.settimeout(3)
+    client.connect('/run/pelagian-shell/labwc.sock')
+    client.sendall(b'LIST\n')
+    chunks = []
+    while chunk := client.recv(65536):
+        chunks.append(chunk)
+state = json.loads(b''.join(chunks))
+windows = [
+    view for view in state['views']
+    if view['type'] == 'normal' and view['parent_id'] is None
+    and pattern in (view['app_id'] + ' ' + view['title']).lower()
+]
+if len(windows) == 1:
+    print(windows[0]['pid'])
+PY
+}
+
 verify_two_window_dialog_and_reflow() {
     "$engine" exec --user abc "$name" /usr/bin/python3 -c \
         'import gi; gi.require_version("Gtk", "3.0")'
 
-    # Start the GTK fixture with the live consumer's session coordinates. This
-    # avoids accidentally connecting a test window to a stale/default display
-    # when the app launcher and container exec environments differ.
-    session_wayland_display=$("$engine" exec "$name" sh -c '
-pid=$(cat /config/.local/state/pelagian-shell/consumer.pid)
-tr "\000" "\n" < "/proc/$pid/environ" | sed -n "s/^WAYLAND_DISPLAY=//p"
-')
+    # Use the live compositor window PID for its actual session coordinates.
+    # The consumer hook may be a wrapper process that does not own a surface.
+    window_pid=$(get_main_window_pid)
+    session_wayland_display=$("$engine" exec "$name" python3 -c \
+        'from pathlib import Path; import sys; entries=Path(f"/proc/{sys.argv[1]}/environ").read_bytes().split(b"\0"); print(next((entry.split(b"=",1)[1].decode() for entry in entries if entry.startswith(b"WAYLAND_DISPLAY=")), ""))' \
+        "$window_pid")
     [[ "$session_wayland_display" == wayland-* ]] || {
-        echo "Hermes has an unexpected Wayland display: $session_wayland_display" >&2
+        echo "$kind has an unexpected Wayland display: $session_wayland_display" >&2
         return 1
     }
-    printf 'Hermes Wayland display for GTK fixture: %s\n' "$session_wayland_display"
+    printf '%s Wayland display for GTK fixture: %s\n' "$kind" "$session_wayland_display"
 
     "$engine" exec -d --user abc \
         --env GDK_BACKEND=wayland \
@@ -147,12 +176,38 @@ tr "\000" "\n" < "/proc/$pid/environ" | sed -n "s/^WAYLAND_DISPLAY=//p"
         "$kind" --managed-count 1
 }
 
+verify_hermes_window_chrome() {
+    [[ "$kind" == hermes ]] || return 0
+
+    for _ in $(seq 1 100); do
+        report=$("$engine" exec "$name" cat /tmp/hermes-window-chrome.json 2>/dev/null || true)
+        if [[ -n "$report" ]]; then
+            window_pid=$(get_main_window_pid)
+            if [[ -n "$window_pid" ]] && printf '%s' "$report" | python3 -c \
+                'import json,sys; state=json.load(sys.stdin); assert state.get("process_pid") == int(sys.argv[1]), state; assert state.get("policy") == "server", state; assert state.get("mainContentRendered") is True, state; assert state.get("customTitlebarPresent") is False, state; assert state.get("customControlClusters") == 0, state' \
+                "$window_pid"; then
+                printf 'Hermes runtime window chrome: server policy, no app titlebar or controls (pid=%s)\n' "$window_pid"
+                return 0
+            fi
+        fi
+        sleep 0.2
+    done
+
+    echo 'Hermes renderer did not report conforming Shell-owned window chrome' >&2
+    "$engine" exec "$name" sh -c \
+        'test ! -f /tmp/hermes-window-chrome.json || cat /tmp/hermes-window-chrome.json' >&2 || true
+    return 1
+}
+
 verify_consumer_restart() {
     "$engine" exec "$name" sh -c 'test "$RESTART_APP" = true'
     old_consumer_pid=$("$engine" exec "$name" cat /config/.local/state/pelagian-shell/consumer.pid)
     old_layoutd_pid=$("$engine" exec "$name" cat /config/.local/state/pelagian-shell/layoutd.pid)
     old_supervisor_pid=$("$engine" exec "$name" cat /config/.local/state/pelagian-shell/layoutd-supervisor.pid)
 
+    if [[ "$kind" == hermes ]]; then
+        "$engine" exec "$name" rm -f /tmp/hermes-window-chrome.json
+    fi
     "$engine" exec "$name" kill "$old_consumer_pid"
 
     new_consumer_pid=''
@@ -174,6 +229,7 @@ verify_consumer_restart() {
     # verifier requires healthy layout and bounded geometry convergence.
     "$engine" exec --user abc "$name" python3 /tmp/verify-shell-session.py \
         "$kind" --managed-count 1
+    verify_hermes_window_chrome
     sleep 3
     [[ "$("$engine" exec "$name" cat /config/.local/state/pelagian-shell/consumer.pid)" == "$new_consumer_pid" ]]
     [[ "$("$engine" exec "$name" cat /config/.local/state/pelagian-shell/layoutd.pid)" == "$old_layoutd_pid" ]]
@@ -187,6 +243,9 @@ test "${#phases[@]}" -gt 0
 restart_qualified=false
 for phase in "${phases[@]}"; do
     if [[ "$phase" == lookup ]]; then
+        if [[ "$kind" == hermes ]]; then
+            "$engine" exec "$name" rm -f /tmp/hermes-window-chrome.json
+        fi
         "$engine" restart "$name" >/dev/null
     fi
     CONTAINER_ENGINE="$engine" "$conformance/start-shell-stream.sh" "$name" "$shell_source/tests/selkies-smoke-client.py"
@@ -195,6 +254,7 @@ for phase in "${phases[@]}"; do
     options=(--native)
     if [[ "$kind" == hermes ]]; then options+=(--keyring "$phase"); fi
     "$engine" exec --user abc "$name" python3 /tmp/verify-shell-session.py "$kind" "${options[@]}"
+    verify_hermes_window_chrome
     if [[ "$restart_qualified" != true ]]; then
         verify_consumer_restart
         restart_qualified=true
