@@ -500,3 +500,11 @@ until OpenAI provides a supported system-frame option.
 This image retains `RESTART_APP=true`. The real `/init` smoke terminates the
 consumer process and requires the watchdog to relaunch it into one healthy
 Shell-managed window without replacing layoutd.
+
+The pinned vendor binary also discards `DBUS_SESSION_BUS_ADDRESS` from its
+window-process environment even when Grotto exports Shell's bus at launch.
+The ChatGPT conformance smoke therefore uses Shell's explicit binary-client
+bus exception. It still checks the private `/run` directory, a live session bus
+socket, native Wayland, and healthy Shell layout. It does not claim that this
+vendor binary uses D-Bus or that ChatGPT persists a keyring; Hermes remains
+subject to the strict application-bus and keyring checks.
