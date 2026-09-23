@@ -93,6 +93,10 @@ def main() -> None:
     assert shell_adapter_patch.count(
         "parent: mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined"
     ) == 3
+    assert "HERMES_DESKTOP_WINDOW_CHROME_REPORT" in shell_adapter_patch
+    assert "data-hermes-custom-titlebar" in shell_adapter_patch
+    assert "data-hermes-window-chrome-control-cluster" in shell_adapter_patch
+    assert "verify_hermes_window_chrome" in (ROOT / "tests/smoke-desktop.sh").read_text()
     assert "pelagian-shell-contract" in desktop_image
     assert "/usr/share/pelagian-shell/integrations/electron/window-chrome.mjs" in desktop_image
     assert "check-electron-chrome.py" in desktop_image
