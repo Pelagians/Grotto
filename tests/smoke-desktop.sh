@@ -278,6 +278,32 @@ for phase in "${phases[@]}"; do
     CONTAINER_ENGINE="$engine" "$conformance/start-shell-stream.sh" "$name" "$shell_source/tests/selkies-smoke-client.py"
     "$engine" exec "$name" sh -c \
         '! grep -Eiq "<windowRule[^>]*(identifier|app_id|appId|class|title)=|hermes|chatgpt" /config/.config/labwc/rc.xml'
+    if [[ "$kind" == chatgpt ]]; then
+        window_pid=''
+        for _ in $(seq 1 60); do
+            window_pid=$(get_main_window_pid || true)
+            [[ -z "$window_pid" ]] || break
+            sleep 1
+        done
+        "$engine" exec -i "$name" python3 - "$window_pid" <<'PY'
+import pathlib
+import sys
+
+consumer_file = pathlib.Path('/config/.local/state/pelagian-shell/consumer.pid')
+for label, pid in (('consumer', consumer_file.read_text().strip()),
+                   ('window', sys.argv[1])):
+    if not pid.isdecimal():
+        print(f'{label} process: no PID', flush=True)
+        continue
+    selected = {}
+    for entry in pathlib.Path(f'/proc/{pid}/environ').read_bytes().split(b'\\0'):
+        key, sep, value = entry.partition(b'=')
+        if sep and key in {b'XDG_RUNTIME_DIR', b'WAYLAND_DISPLAY',
+                           b'DISPLAY', b'DBUS_SESSION_BUS_ADDRESS'}:
+            selected[key.decode()] = value.decode(errors='replace')
+    print(f'{label} process coordinates: {selected}', flush=True)
+PY
+    fi
     options=(--native)
     if [[ "$kind" == hermes ]]; then options+=(--keyring "$phase"); fi
     if [[ "$kind" == chatgpt ]]; then options+=(--binary-bus-exception); fi
