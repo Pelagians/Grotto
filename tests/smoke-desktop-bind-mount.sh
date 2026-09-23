@@ -10,7 +10,18 @@ if [[ "$(podman info --format '{{.Host.Security.Rootless}}')" != true ]]; then
 fi
 
 host_config=$(mktemp -d)
-trap 'rm -rf "$host_config"' EXIT
+cleanup() {
+    result=$?
+    trap - EXIT
+    # LinuxServer may chown /config to the mapped abc UID inside rootless
+    # Podman. Return the temp bind mount to the runner before removing it.
+    if command -v sudo >/dev/null 2>&1; then
+        sudo chown -R "$(id -u):$(id -g)" "$host_config" >/dev/null 2>&1 || true
+    fi
+    rm -rf "$host_config" >/dev/null 2>&1 || true
+    exit "$result"
+}
+trap cleanup EXIT
 mkdir -p "$host_config/.XDG" "$host_config/.local/share/keyrings"
 printf '%s\n' obsolete-runtime-state > "$host_config/.XDG/legacy-sentinel"
 
