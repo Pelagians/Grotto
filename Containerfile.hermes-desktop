@@ -28,9 +28,12 @@ COPY --from=pelagian-shell-contract \
 COPY --from=pelagian-shell-contract \
     /usr/share/pelagian-shell/integrations/electron/window-chrome.d.mts \
     /src/apps/desktop/electron/pelagian-shell-window-chrome.d.mts
+COPY --from=pelagian-shell-contract \
+    /usr/share/pelagian-shell/consumer-conformance/check-electron-chrome.py \
+    /usr/local/bin/check-electron-chrome.py
 RUN git apply /tmp/pelagian-shell-window-chrome.patch \
     && git diff --check \
-    && python3 /usr/share/pelagian-shell/consumer-conformance/check-electron-chrome.py \
+    && python3 /usr/local/bin/check-electron-chrome.py \
       /src/apps/desktop/electron/main.ts \
     && rm /tmp/pelagian-shell-window-chrome.patch
 RUN set -eu; \
