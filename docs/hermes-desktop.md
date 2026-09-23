@@ -60,8 +60,23 @@ are written to `/config/hermes-desktop/session.log` without logging the secret.
 
 Hermes Desktop is multi-window software: the main window, session and browser pop-outs, authentication windows, HUD, and Quick Entry retain upstream semantics. Grotto adds no global fullscreen rule. The launcher selects native Wayland explicitly with `--enable-features=UseOzonePlatform` and `--ozone-platform=wayland`; `ELECTRON_OZONE_PLATFORM_HINT=wayland` alone is insufficient for this Hermes build. The real `/init` smoke prints the observed `wlrctl toplevel list` inventory and requires a Hermes toplevel before publication.
 
-Pelagian Shell's daemonized Labwc adapter provides live automatic tiling, so
-Grotto adds no Hermes-specific maximize/fullscreen workaround.
+Pelagian Shell owns ordinary window chrome and exports
+`PELAGIAN_SHELL_WINDOW_CHROME=server`. The Hermes build applies a small patch to
+the pinned open-source desktop source. Main, session, browser, and peer windows
+use the Shell-owned Electron reference adapter; the renderer removes its
+top-level custom strip and clears Window Controls Overlay spacing when the
+preload bridge reports the Shell policy. Dialogs remain normally decorated.
+HUD, pet overlay, wake indicator, and Quick Entry windows keep their deliberate
+frameless behavior. The patch is in
+`patches/hermes-desktop/pelagian-shell-window-chrome.patch` and is checked
+against the pinned upstream source during image build.
+
+The daemonized Labwc adapter still owns placement and automatic tiling. Grotto
+adds no Hermes-specific Labwc rule or maximize/fullscreen workaround. The image
+keeps `RESTART_APP=true`. Runtime qualification kills the active consumer
+process and requires the base-image watchdog to relaunch Hermes, while keeping
+the same healthy layoutd process. It then restarts the container and verifies
+Hermes comes back on the same persistent configuration and keyring.
 
 ## Qualification
 
@@ -94,17 +109,20 @@ The consumer pins the Shell image published from
 SHA-256 before execution. CI starts the inherited `/init`, decodes
 1920x1080 streamed frames, and checks the real application window through Labwc
 IPC: healthy reconciliation, maximized usable-area geometry, visible titlebar,
-and no fullscreen state. Multiwindow reflow and dialog policy remain owned and
-qualified by the Shell repository.
+and no fullscreen state. A second native Wayland fixture verifies the 50/50
+layout, transient dialog floating count, and solo reflow after the fixture
+closes.
 
 Rootless Podman is the required runtime gate for both desktops; Hermes also
 requires the Docker runtime gate. ChatGPT probes Docker compatibility and
 reports its known Chromium namespace-sandbox rejection explicitly; any other
 Docker failure still fails CI. Each engine uses the same built image. Tests require
 native Wayland inventory and absence from the application's X11 display, then
-restart the container and verify preserved configuration. Hermes also stores
-and retrieves an ephemeral libsecret value across that restart on its own
-session bus. These automated checks use no real account credentials; ChatGPT
+restart the container and verify preserved configuration. Rootless Podman also
+bind-mounts a temporary host directory as `/config:Z`, recreates the container,
+and checks that persistent files and Hermes' libsecret value survive. Hermes
+uses its Shell-owned session bus and the real desktop image defaults. These
+automated checks use no real account credentials; ChatGPT
 login and Hermes remote-server pairing still require an authenticated user
 acceptance check. No second Hermes backend is started.
 

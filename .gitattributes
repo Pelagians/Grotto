@@ -1,0 +1,2 @@
+# Unified diff patches use a required leading space on empty context lines.
+patches/hermes-desktop/pelagian-shell-window-chrome.patch whitespace=-blank-at-eol

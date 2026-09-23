@@ -88,6 +88,51 @@ class InstalledPolicyVerifierTest(unittest.TestCase):
         self.assertTrue(manifest["browser_use"]["present"])
         self.assertFalse(manifest["browser_use"]["trusted_client_hash_patch"])
         self.assertTrue(manifest["browser_use"]["verified"])
+        self.assertFalse(manifest["window_chrome"]["system_titlebar_env_token_present"])
+        self.assertFalse(manifest["window_chrome"]["linux_hidden_titlebar_option_present"])
+        self.assertFalse(manifest["window_chrome"]["titlebar_overlay_option_present"])
+        self.assertFalse(manifest["window_chrome"]["compatibility_exception_required"])
+        self.assertEqual(
+            {
+                "system_titlebar_env_token": [],
+                "titlebar_style_hidden": [],
+                "titlebar_overlay": [],
+            },
+            manifest["window_chrome"]["evidence_files"],
+        )
+
+    def test_legacy_titlebar_setting_is_reported_without_claiming_it_works(self) -> None:
+        temporary, root = self.fixture(
+            self.vendor_sources("const ignored = 'ELECTRON_USE_SYSTEM_TITLE_BAR';")
+        )
+        with temporary, self.installed():
+            manifest = policy.build_manifest(root, PACKAGE_VERSION)
+
+        self.assertTrue(manifest["window_chrome"]["system_titlebar_env_token_present"])
+        self.assertEqual(
+            ["resources/app.asar"],
+            manifest["window_chrome"]["evidence_files"]["system_titlebar_env_token"],
+        )
+
+    def test_hidden_titlebar_overlay_requires_compatibility_exception(self) -> None:
+        temporary, root = self.fixture(
+            self.vendor_sources(
+                "function main(){return {titleBarStyle:`hidden`,titleBarOverlay:E9()}}"
+            )
+        )
+        with temporary, self.installed():
+            manifest = policy.build_manifest(root, PACKAGE_VERSION)
+
+        chrome = manifest["window_chrome"]
+        self.assertTrue(chrome["linux_hidden_titlebar_option_present"])
+        self.assertTrue(chrome["titlebar_overlay_option_present"])
+        self.assertTrue(chrome["compatibility_exception_required"])
+        self.assertEqual(
+            ["resources/app.asar"], chrome["evidence_files"]["titlebar_style_hidden"]
+        )
+        self.assertEqual(
+            ["resources/app.asar"], chrome["evidence_files"]["titlebar_overlay"]
+        )
 
     def test_normalized_auto_approval_variants_fail(self) -> None:
         variants = (

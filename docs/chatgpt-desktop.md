@@ -479,3 +479,24 @@ geometry, native Wayland, restart persistence, and installed policy checks.
 Default Docker desktop compatibility is not qualified. Its exact sandbox
 rejection is reported as an unsupported-host result, never bypassed; other
 Docker smoke failures remain errors.
+
+Window chrome policy belongs to Pelagian Shell and is exported to this
+container's session as `PELAGIAN_SHELL_WINDOW_CHROME=server`. The pinned
+ChatGPT package is binary-only. Inspection of its installed `26.820.60940`
+bundle found the Linux primary-window path setting `titleBarStyle: hidden` and
+`titleBarOverlay`, with no supported system-titlebar preference or verified
+override. The old `ELECTRON_USE_SYSTEM_TITLE_BAR` token is absent, and passing
+unverified Chromium feature switches would not change Electron's
+`BrowserWindow` options.
+
+Grotto records this package version as a documented window-chrome compatibility
+exception in `/usr/share/grotto/chatgpt-desktop-security.json`. Runtime checks
+require that exception to stay visible so a vendor package change triggers a
+review. Grotto does not patch the proprietary bundle or add ChatGPT-specific
+Labwc rules. Shell still owns the visible server-side frame, workspace, and
+layout; the vendor's overlay controls remain an application-owned exception
+until OpenAI provides a supported system-frame option.
+
+This image retains `RESTART_APP=true`. The real `/init` smoke terminates the
+consumer process and requires the watchdog to relaunch it into one healthy
+Shell-managed window without replacing layoutd.

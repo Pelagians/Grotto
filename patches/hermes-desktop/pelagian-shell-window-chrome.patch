@@ -1,0 +1,596 @@
+diff --git a/apps/desktop/electron/main.ts b/apps/desktop/electron/main.ts
+index 4b339db9b2..d5ddea1b8b 100644
+--- a/apps/desktop/electron/main.ts
++++ b/apps/desktop/electron/main.ts
+@@ -343,16 +343,20 @@ import {
+ } from './session-windows'
+ import { ensureLoginShellPath } from './shell-path'
+ import { createBootstrapCoordinator, sshConfigFingerprint } from './ssh-bootstrap-coordinator'
+ import { collectSshConfigHosts, parseSshGOutput } from './ssh-config'
+ import { createSshProbeConnection, pickLocalPort, redactSecrets, SshConnection } from './ssh-connection'
+ import { createStreamThrottle } from './stream-throttle'
+ import { registerTerminalIpc } from './terminal-ipc'
+ import { nativeOverlayWidth as computeNativeOverlayWidth, macTitleBarOverlayHeight } from './titlebar-overlay-width'
++import {
++  applyPelagianShellWindowChrome,
++  pelagianShellWindowChromePolicy
++} from './pelagian-shell-window-chrome.mjs'
+ import {
+   backgroundMaterialFor,
+   defaultTranslucencyState,
+   glassActive,
+   glassSupportedOn,
+   normalizeState as normalizeTranslucency,
+   opacityNeedsSetting,
+   translucencySupportedOn,
+@@ -1154,16 +1158,20 @@ function getTitleBarOverlayOptions() {
+   }
+ }
+ 
+ // Push refreshed overlay options to a live window after a theme/appearance
+ // change. No-op only on plain (non-WSL) Linux, where getTitleBarOverlayOptions()
+ // returns false; the try/catch additionally guards builds where
+ // setTitleBarOverlay isn't supported.
+ function applyTitleBarOverlay(win) {
++  if (pelagianShellWindowChromePolicy() === 'server') {
++    return
++  }
++
+   const options = getTitleBarOverlayOptions()
+ 
+   if (!options || typeof options !== 'object') {
+     return
+   }
+ 
+   try {
+     win?.setTitleBarOverlay?.(options)
+@@ -6185,30 +6193,38 @@ async function waitForHermes(baseUrl, token, signal?, authMode?, headers = {}) {
+       ? (url, _token, options = {}) => probeHealth(url, requestOptionsWithHeaders(options, headers))
+       : fetchJson,
+     probeHealth: (url, options = {}) => probeHealth(url, requestOptionsWithHeaders(options, headers)),
+     probeIsCredentialed
+   })
+ }
+ 
+ function getWindowButtonPosition(win = mainWindow) {
++  if (pelagianShellWindowChromePolicy() === 'server') {
++    return null
++  }
++
+   if (!IS_MAC) {
+     return null
+   }
+ 
+   // Fullscreen hides the traffic lights — treat as no left-side controls so the
+   // renderer drops the traffic-light dodge inset and Y nudge.
+   if (win?.isFullScreen?.()) {
+     return null
+   }
+ 
+   return win?.getWindowButtonPosition?.() || WINDOW_BUTTON_POSITION
+ }
+ 
+ function getNativeOverlayWidth() {
++  if (pelagianShellWindowChromePolicy() === 'server') {
++    return 0
++  }
++
+   return computeNativeOverlayWidth({ isWindows: IS_WINDOWS, isWsl: IS_WSL, isMac: IS_MAC })
+ }
+ 
+ function getWindowState(win = mainWindow) {
+   return {
+     isFullscreen: Boolean(win?.isFullScreen?.()),
+     isMinimized: Boolean(win?.isMinimized?.()),
+     isVisible: Boolean(win?.isVisible?.()),
+@@ -7262,35 +7278,36 @@ function openOauthLoginWindow(baseUrl, { silent = false } = {}) {
+       }
+ 
+       if (await hasOauthSessionCookie(baseUrl)) {
+         finish(null)
+       }
+     }
+ 
+     try {
+-      win = new BrowserWindow({
++      win = new BrowserWindow(applyPelagianShellWindowChrome({
+         width: 520,
+         height: 720,
++        parent: mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined,
+         title: silent ? 'Connecting to Hermes Cloud agent…' : 'Sign in to Hermes gateway',
+         autoHideMenuBar: true,
+         // Silent cascade: start HIDDEN. The auto-SSO 302 chain completes in
+         // well under a second, so the window normally never needs to show. We
+         // only reveal it as a fallback if the cascade DOESN'T complete quickly
+         // (e.g. the portal session lapsed and the gate fell through to the
+         // interactive chooser) — see the reveal timer below.
+         show: !silent,
+         webPreferences: {
+           contextIsolation: true,
+           nodeIntegration: false,
+           sandbox: true,
+           session: sess,
+           webSecurity: true
+         }
+-      })
++      }, { role: 'dialog' }))
+     } catch (error) {
+       finish(error instanceof Error ? error : new Error(String(error)))
+ 
+       return
+     }
+ 
+     // Re-check the cookie jar on every successful navigation (the callback
+     // redirect is the moment cookies get set) plus a low-frequency poll as a
+@@ -8138,30 +8155,31 @@ function renewPortalAccessSilently() {
+         }
+ 
+         if (await hasPortalAccessToken()) {
+           finish(true)
+         }
+       }
+ 
+       try {
+-        win = new BrowserWindow({
++        win = new BrowserWindow(applyPelagianShellWindowChrome({
+           width: 520,
+           height: 720,
++          parent: mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined,
+           show: false,
+           title: 'Renewing Hermes Cloud session…',
+           autoHideMenuBar: true,
+           webPreferences: {
+             contextIsolation: true,
+             nodeIntegration: false,
+             sandbox: true,
+             session: sess,
+             webSecurity: true
+           }
+-        })
++        }, { role: 'dialog' }))
+       } catch {
+         finish(false)
+ 
+         return
+       }
+ 
+       win.webContents.on('did-navigate', () => void checkCookie())
+       win.webContents.on('did-redirect-navigation', () => void checkCookie())
+@@ -8244,29 +8262,30 @@ function openPortalLoginWindow() {
+ 
+       // A live portal (Privy) session cookie means sign-in completed.
+       if (await hasLivePortalSession()) {
+         finish(null)
+       }
+     }
+ 
+     try {
+-      win = new BrowserWindow({
++      win = new BrowserWindow(applyPelagianShellWindowChrome({
+         width: 520,
+         height: 720,
++        parent: mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined,
+         title: 'Sign in to Hermes Cloud',
+         autoHideMenuBar: true,
+         webPreferences: {
+           contextIsolation: true,
+           nodeIntegration: false,
+           sandbox: true,
+           session: sess,
+           webSecurity: true
+         }
+-      })
++      }, { role: 'dialog' }))
+     } catch (error) {
+       finish(error instanceof Error ? error : new Error(String(error)))
+ 
+       return
+     }
+ 
+     win.webContents.on('did-navigate', () => void checkCookie())
+     win.webContents.on('did-redirect-navigation', () => void checkCookie())
+@@ -12786,17 +12805,17 @@ function focusWindow(win) {
+   }
+ 
+   win.focus()
+ }
+ 
+ function spawnSecondaryWindow({ sessionId, watch }: { sessionId?: string; watch?: boolean } = {}) {
+   const icon = getAppIconPath()
+ 
+-  const win = new BrowserWindow({
++  const win = new BrowserWindow(applyPelagianShellWindowChrome({
+     width: SESSION_WINDOW_MIN_WIDTH,
+     height: SESSION_WINDOW_MIN_HEIGHT,
+     minWidth: SESSION_WINDOW_MIN_WIDTH,
+     minHeight: SESSION_WINDOW_MIN_HEIGHT,
+     title: 'Hermes',
+     titleBarStyle: 'hidden',
+     titleBarOverlay: getTitleBarOverlayOptions(),
+     trafficLightPosition: IS_MAC ? WINDOW_BUTTON_POSITION : undefined,
+@@ -12805,17 +12824,17 @@ function spawnSecondaryWindow({ sessionId, watch }: { sessionId?: string; watch?
+     // Don't show until the renderer's first themed paint is ready. macOS
+     // `vibrancy` ignores `backgroundColor` and paints a translucent OS
+     // material (which follows the OS appearance, not the app theme), so a
+     // dark-themed app on a light-mode Mac flashes white until the renderer
+     // covers it. ready-to-show fires after the boot-time paint in
+     // themes/context.tsx, so the window appears already themed.
+     show: false,
+     webPreferences: chatWindowWebPreferences(PRELOAD_PATH)
+-  })
++  }, { role: 'ordinary' }))
+ 
+   // Chat-surface registration: applyWindowTranslucency swaps this window's
+   // backing between opaque-themed and alpha-0 when glass toggles.
+   translucencyBackedWindows.add(win)
+ 
+   if (IS_MAC) {
+     win.setWindowButtonPosition?.(WINDOW_BUTTON_POSITION)
+   }
+@@ -12879,30 +12898,30 @@ function notifyBrowserPopoutClosed(tabId) {
+       other.webContents.send('hermes:browser-popout:closed', tabId)
+     }
+   }
+ }
+ 
+ function spawnBrowserWindow(tabId) {
+   const icon = getAppIconPath()
+ 
+-  const win = new BrowserWindow({
++  const win = new BrowserWindow(applyPelagianShellWindowChrome({
+     width: BROWSER_WINDOW_WIDTH,
+     height: BROWSER_WINDOW_HEIGHT,
+     minWidth: BROWSER_WINDOW_MIN_WIDTH,
+     minHeight: BROWSER_WINDOW_MIN_HEIGHT,
+     title: 'Hermes',
+     titleBarStyle: 'hidden',
+     titleBarOverlay: getTitleBarOverlayOptions(),
+     trafficLightPosition: IS_MAC ? WINDOW_BUTTON_POSITION : undefined,
+     ...chatWindowSurfaceOptions(),
+     icon,
+     show: false,
+     webPreferences: chatWindowWebPreferences(PRELOAD_PATH)
+-  })
++  }, { role: 'ordinary' }))
+ 
+   translucencyBackedWindows.add(win)
+ 
+   if (IS_MAC) {
+     win.setWindowButtonPosition?.(WINDOW_BUTTON_POSITION)
+   }
+ 
+   wireWindowReveal(win)
+@@ -12972,29 +12991,29 @@ function nextInstanceBounds() {
+ // options (shared chatWindowWebPreferences + streamThrottle registration so a
+ // streamed answer never stalls in the background) but is a peer, not the
+ // primary: it never overwrites the mainWindow global, doesn't start the backend
+ // (the renderer's getConnection() joins the already-running one), and loads the
+ // plain renderer URL so the full app renders.
+ function createInstanceWindow() {
+   const icon = getAppIconPath()
+ 
+-  const win = new BrowserWindow({
++  const win = new BrowserWindow(applyPelagianShellWindowChrome({
+     ...nextInstanceBounds(),
+     minWidth: WINDOW_MIN_WIDTH,
+     minHeight: WINDOW_MIN_HEIGHT,
+     title: 'Hermes',
+     titleBarStyle: 'hidden',
+     titleBarOverlay: getTitleBarOverlayOptions(),
+     trafficLightPosition: IS_MAC ? WINDOW_BUTTON_POSITION : undefined,
+     ...chatWindowSurfaceOptions(),
+     icon,
+     show: false,
+     webPreferences: chatWindowWebPreferences(PRELOAD_PATH)
+-  })
++  }, { role: 'ordinary' }))
+ 
+   instanceWindows.add(win)
+ 
+   // Chat-surface registration: see applyWindowTranslucency.
+   translucencyBackedWindows.add(win)
+ 
+   if (IS_MAC) {
+     win.setWindowButtonPosition?.(WINDOW_BUTTON_POSITION)
+@@ -13068,16 +13087,17 @@ function petOverlayUrl() {
+   if (DEV_SERVER) {
+     return `${DEV_SERVER.endsWith('/') ? DEV_SERVER.slice(0, -1) : DEV_SERVER}/?win=overlay#/`
+   }
+ 
+   return `${pathToFileURL(resolveRendererIndex()).toString()}?win=overlay#/`
+ }
+ 
+ function spawnPetOverlayWindow(bounds) {
++  // pelagian-shell-chrome-exception: overlay -- transparent mascot surface outside the ordinary app window
+   const win = new BrowserWindow({
+     width: Math.max(80, Math.round(bounds?.width || 220)),
+     height: Math.max(80, Math.round(bounds?.height || 220)),
+     x: Number.isFinite(bounds?.x) ? Math.round(bounds.x) : undefined,
+     y: Number.isFinite(bounds?.y) ? Math.round(bounds.y) : undefined,
+     frame: false,
+     transparent: true,
+     resizable: false,
+@@ -13512,16 +13532,17 @@ function broadcastHudState(open) {
+   for (const win of BrowserWindow.getAllWindows()) {
+     if (!win.isDestroyed()) {
+       win.webContents.send('hermes:hud:changed', payload)
+     }
+   }
+ }
+ 
+ function spawnHudWindow(sessionId, profile) {
++  // pelagian-shell-chrome-exception: hud -- compact floating composer surface
+   const win = new BrowserWindow({
+     ...hudBounds(),
+     minWidth: 380,
+     minHeight: 160,
+     title: HUD_WINDOW_TITLE,
+     frame: false,
+     transparent: true,
+     // NOT resizable. A transparent frameless window on Windows keeps a
+@@ -13751,16 +13772,17 @@ function quickEntryUrl() {
+   return `${pathToFileURL(resolveRendererIndex()).toString()}?win=quick#/`
+ }
+ 
+ function spawnQuickEntryWindow() {
+   const cursor = screen.getCursorScreenPoint()
+   const display = screen.getDisplayNearestPoint(cursor)
+   const bounds = quickEntryWindowBounds(display?.workArea)
+ 
++  // pelagian-shell-chrome-exception: utility -- global hotkey capture surface
+   const win = new BrowserWindow({
+     ...bounds,
+     frame: false,
+     transparent: true,
+     resizable: false,
+     movable: true,
+     minimizable: false,
+     maximizable: false,
+@@ -13917,17 +13939,17 @@ function closeQuickEntryWindow() {
+   }
+ 
+   quickEntryWindow = null
+ }
+ 
+ function createWindow() {
+   const icon = getAppIconPath()
+   const savedWindowState = readWindowState()
+-  mainWindow = new BrowserWindow({
++  mainWindow = new BrowserWindow(applyPelagianShellWindowChrome({
+     ...computeWindowOptions(savedWindowState, screen.getAllDisplays()),
+     minWidth: WINDOW_MIN_WIDTH,
+     minHeight: WINDOW_MIN_HEIGHT,
+     title: 'Hermes',
+     // Frameless title bar on every platform so the renderer can paint the
+     // "hide sidebar" button (and other left-side titlebar tools) flush with
+     // the top edge — matching the macOS layout where the traffic lights sit
+     // inside the same band. On Windows/Linux, titleBarOverlay tells Electron
+@@ -13943,17 +13965,17 @@ function createWindow() {
+     // material before the renderer paints the app theme. See createSessionWindow.
+     show: false,
+     // Shared with the secondary session windows (chatWindowWebPreferences);
+     // stream-aware throttling is applied per-window via streamThrottle so a
+     // live answer keeps painting while the window is blurred or minimized,
+     // without pinning visibilityState to 'visible' at idle. See
+     // session-windows.ts and stream-throttle.ts.
+     webPreferences: chatWindowWebPreferences(PRELOAD_PATH)
+-  })
++  }, { role: 'ordinary' }))
+ 
+   const createdMainWindow = mainWindow
+ 
+   // Chat-surface registration: see applyWindowTranslucency.
+   translucencyBackedWindows.add(mainWindow)
+ 
+   if (IS_MAC) {
+     mainWindow.setWindowButtonPosition?.(WINDOW_BUTTON_POSITION)
+@@ -16507,16 +16529,20 @@ app.on('will-quit', () => {
+ 
+ // Answered synchronously so preload can publish the verdict before the
+ // renderer's first script — see the note there on why it cannot decide this
+ // itself. Registered at module scope, which runs long before any window.
+ ipcMain.on('hermes:translucency:support', event => {
+   event.returnValue = { glass: GLASS_SUPPORTED, translucency: TRANSLUCENCY_SUPPORTED }
+ })
+ 
++ipcMain.on('hermes:window-chrome-policy', event => {
++  event.returnValue = pelagianShellWindowChromePolicy()
++})
++
+ ipcMain.on('hermes:translucency', (_event, payload) => {
+   const next = normalizeTranslucency(payload, GLASS_SUPPORTED)
+   const previous = translucencyState
+ 
+   if (
+     next.intensity === previous.intensity &&
+     next.fade === previous.fade &&
+     next.mode === previous.mode &&
+diff --git a/apps/desktop/electron/preload.ts b/apps/desktop/electron/preload.ts
+index a6b48e1218..2be69f7c6c 100644
+--- a/apps/desktop/electron/preload.ts
++++ b/apps/desktop/electron/preload.ts
+@@ -4,19 +4,21 @@ import { contextBridge, ipcRenderer, webFrame, webUtils } from 'electron'
+ // needs it before its first paint, and answered by main because deciding it
+ // needs `os.release()` — a sandboxed preload may only require electron, events,
+ // timers and url, so importing node:os here throws before contextBridge runs
+ // and takes the ENTIRE bridge down with it (window.hermesDesktop undefined =>
+ // "Desktop IPC bridge is unavailable"). No reply means no glass, which degrades
+ // to an ordinary opaque window rather than a page thinned over nothing.
+ const translucencySupport = ipcRenderer.sendSync('hermes:translucency:support')
+ const hudWindowing = ipcRenderer.sendSync('hermes:hud:windowing')
++const windowChromePolicy = ipcRenderer.sendSync('hermes:window-chrome-policy')
+ const hudNativeDrag = hudWindowing?.nativeDrag === true
+ 
+ contextBridge.exposeInMainWorld('hermesDesktop', {
++  windowChromePolicy: windowChromePolicy === 'server' ? 'server' : 'application',
+   glassSupported: translucencySupport?.glass === true,
+   translucencySupported: translucencySupport?.translucency === true,
+   getConnection: profile => ipcRenderer.invoke('hermes:connection', profile),
+   // Registry-scoped backend resolution: { connectionId, profile } → descriptor.
+   getConnectionFor: payload => ipcRenderer.invoke('hermes:connection:for', payload),
+   getProfileRoutes: profiles => ipcRenderer.invoke('hermes:plugin-profile-routes', profiles),
+   revalidateConnection: () => ipcRenderer.invoke('hermes:connection:revalidate'),
+   touchBackend: profile => ipcRenderer.invoke('hermes:backend:touch', profile),
+diff --git a/apps/desktop/src/app/contrib/controller.tsx b/apps/desktop/src/app/contrib/controller.tsx
+index 30fd949c5e..892bf787c6 100644
+--- a/apps/desktop/src/app/contrib/controller.tsx
++++ b/apps/desktop/src/app/contrib/controller.tsx
+@@ -808,16 +808,17 @@ function TitlebarSlot({ area, className, style }: TitlebarSlotProps) {
+       <Slot area={area} />
+     </div>
+   )
+ }
+ 
+ export function ContribController() {
+   const sidebarOpen = useStore($sidebarOpen)
+   const statusbarVisible = useStore($statusbarVisible)
++  const shellOwnsWindowChrome = window.hermesDesktop?.windowChromePolicy === 'server'
+ 
+   // HUD mode is the SAME app with its frame removed: the wiring (gateway,
+   // sessions, streams, submit) mounts identically, and only the shell around
+   // the chat surface differs. Branching here rather than at the window entry
+   // is what keeps the HUD's composer the real composer.
+   if (isHudWindow()) {
+     return (
+       <ContribWiring>
+@@ -859,17 +860,17 @@ export function ContribController() {
+                   AppShell's drag strips) — everywhere without content drags
+                   the window;
+                 - each slot region is width-fit, no-drag, pointer-events-auto,
+                   so every contribution is clickable by construction;
+                 - LEFT/RIGHT slots align to the MAIN PANE's geometry via the
+                   tree-published --workspace-left/right vars (pure CSS, no rect
+                   threading), clamped to clear the REAL TitlebarControls
+                   clusters (fixed, z-70); center is truly window-centered. */}
+-          <div className="relative flex h-[34px] shrink-0 items-center bg-(--ui-sidebar-surface-background) text-xs">
++          {!shellOwnsWindowChrome && <div className="relative flex h-[34px] shrink-0 items-center bg-(--ui-sidebar-surface-background) text-xs">
+             {/* Drag strips, AppShell-style: cut to AVOID the fixed control
+                 clusters instead of overlapping them — Electron's no-drag
+                 carve-out of fixed/transformed elements is unreliable, so a
+                 full-bar drag base kills their clicks. In-flow slot content
+                 still carves via its own no-drag wrapper (the same pattern as
+                 the app's session-title button). */}
+             <div
+               aria-hidden="true"
+@@ -896,17 +897,17 @@ export function ContribController() {
+               style={{
+                 right:
+                   // Five static cluster buttons: four systemTools plus the
+                   // always-present right-sidebar toggle (titlebar-controls.tsx).
+                   // Keep in sync with wiring.tsx's SYSTEM_TOOL_COUNT.
+                   'max(calc(var(--workspace-right, 0px) + 0.5rem), calc(var(--titlebar-tools-right, 0.75rem) + 5 * var(--titlebar-control-size, 24px) + 0.5rem))'
+               }}
+             />
+-          </div>
++          </div>}
+ 
+           <LayoutTreeRoot />
+ 
+           {/* "Close running tab?" — the busy/input-blocked tile close gate. */}
+           <SessionTileCloseConfirm />
+ 
+           {/* The REAL statusbar (model pill, command center, agents, …) with
+               statusBar.left/right contributions merged in. Unmounted — not
+diff --git a/apps/desktop/src/app/contrib/wiring.tsx b/apps/desktop/src/app/contrib/wiring.tsx
+index 723fabe899..a545d7da97 100644
+--- a/apps/desktop/src/app/contrib/wiring.tsx
++++ b/apps/desktop/src/app/contrib/wiring.tsx
+@@ -1079,44 +1079,52 @@ export function ContribWiring({ children }: { children: ReactNode }) {
+   )
+ 
+   // The REAL titlebar tool clusters (sidebar/flip toggles, haptics, keybinds,
+   // settings gear) — fixed chrome positioned via the same CSS vars AppShell
+   // sets, computed here from the live connection. Page-registered tools
+   // (preview's monitor/devtools cluster, …) arrive as registry contributions.
+   const leftTitlebarTools = useTitlebarToolContributions('left')
+   const rightTitlebarTools = useTitlebarToolContributions('right')
++  const shellOwnsWindowChrome = window.hermesDesktop?.windowChromePolicy === 'server'
+   const connection = useStore($connection)
+-  const controlsPos = titlebarControlsPosition(connection?.windowButtonPosition, Boolean(connection?.isFullscreen))
++  const controlsPos = shellOwnsWindowChrome
++    ? { left: 0, top: 0 }
++    : titlebarControlsPosition(connection?.windowButtonPosition, Boolean(connection?.isFullscreen))
+   // Windows/WSLg reserve native min/max/close on the right (AppShell parity:
+   // prefer the live WCO measurement, fall back to the static reservation).
+   const measuredOverlayWidth = useWindowControlsOverlayWidth()
+   const nativeOverlayWidth = measuredOverlayWidth ?? connection?.nativeOverlayWidth ?? 0
+ 
+   const titlebarChrome = {
+     darwinMajor: connection?.darwinMajor ?? 0,
+     isFullscreen: Boolean(connection?.isFullscreen),
+     windowButtonPosition: connection?.windowButtonPosition
+   }
+ 
+-  const titlebarToolsRight = titlebarToolsRightCss(nativeOverlayWidth, titlebarChrome)
++  const titlebarToolsRight = shellOwnsWindowChrome
++    ? '0px'
++    : titlebarToolsRightCss(nativeOverlayWidth, titlebarChrome)
+   // Pane-registered tools (preview's monitor/devtools cluster) anchor flush
+   // against the static system cluster — in the tree layout the titlebar band
+   // sits ABOVE the grid, so AppShell's pane-width anchoring doesn't apply.
+   // Count every button the static cluster actually renders: four systemTools
+   // (layout, haptics, keybinds, settings) PLUS the always-present
+   // right-sidebar toggle (see titlebar-controls.tsx). A shared width that
+   // under-counts leaves the find bar, the titlebar header padding, and the
+   // pane-cluster anchor overlapping the fifth button.
+   const SYSTEM_TOOL_COUNT = 5
+   const paneToolCount = rightTitlebarTools.filter(tool => !tool.hidden).length
+   const systemToolsWidth = titlebarToolsWidthCss(SYSTEM_TOOL_COUNT)
+ 
+-  const titlebarToolsWidth =
+-    paneToolCount > 0 ? `calc(${systemToolsWidth} + ${titlebarToolsWidthCss(paneToolCount)})` : systemToolsWidth
++  const titlebarToolsWidth = shellOwnsWindowChrome
++    ? '0px'
++    : paneToolCount > 0
++      ? `calc(${systemToolsWidth} + ${titlebarToolsWidthCss(paneToolCount)})`
++      : systemToolsWidth
+ 
+   return (
+     <ContribWiringContext.Provider value={api}>
+       <div
+         className="contents"
+         style={
+           {
+             '--titlebar-controls-left': `${controlsPos.left}px`,
+@@ -1126,17 +1134,17 @@ export function ContribWiring({ children }: { children: ReactNode }) {
+             '--titlebar-tools-width': titlebarToolsWidth,
+             '--shell-preview-toolbar-gap': systemToolsWidth
+           } as CSSProperties
+         }
+       >
+         {/* HUD and the popped-out Browser have no titlebar to hang these off —
+             the clusters are `fixed`, so without this they'd float over the
+             surface as orphaned buttons. */}
+-        {!isHudWindow() && !isBrowserWindow() && (
++        {!shellOwnsWindowChrome && !isHudWindow() && !isBrowserWindow() && (
+           <TitlebarControls
+             leftTools={leftTitlebarTools}
+             onOpenSettings={() => navigate(SETTINGS_ROUTE)}
+             tools={rightTitlebarTools}
+           />
+         )}
+         {children}
+       </div>
+diff --git a/apps/desktop/src/global.d.ts b/apps/desktop/src/global.d.ts
+index 795d517333..8d78748120 100644
+--- a/apps/desktop/src/global.d.ts
++++ b/apps/desktop/src/global.d.ts
+@@ -10,16 +10,18 @@ import type {
+ } from './store/pet-overlay'
+ import type { QuickEntryStatePush, QuickEntryStatus, QuickEntrySubmitPayload } from './store/quick-entry'
+ 
+ export {}
+ 
+ declare global {
+   interface Window {
+     hermesDesktop: {
++      /** The compositor owns ordinary top-level chrome when this is `server`. */
++      windowChromePolicy?: 'application' | 'server'
+       // Resolve a backend connection. Omit `profile` (or pass the primary) for
+       // the window's backend; pass a named profile to lazily spawn/reuse that
+       // profile's backend from the pool.
+       getConnection: (profile?: string | null) => Promise<HermesConnection>
+       // Registry-scoped backend resolution: dial (connectionId, profile). An
+       // empty/local connectionId delegates to the legacy getConnection path.
+       getConnectionFor?: (payload: {
+         connectionId?: null | string
