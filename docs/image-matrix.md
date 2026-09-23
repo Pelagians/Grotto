@@ -7,6 +7,9 @@ Grotto publishes application, agent, desktop, and bounded worker images.
 | `ghcr.io/pelagians/grotto-openclaw:latest` | Agent application | General OpenClaw gateway with curated baseline tools and a persistent user toolchain | `/config`, `/workspace`, `/tools`, `/cache` | `18789` |
 | `ghcr.io/pelagians/grotto-chatgpt-desktop:latest` | Interactive workbench | Selkies-streamed ChatGPT Desktop and Codex workspace | `/config`, `/workspace`, `/tools`, `/cache` | `3001` |
 | `ghcr.io/pelagians/grotto-openadapt-teach:latest` | Ephemeral worker | Attach upstream OpenAdapt Flow to a `web-apps` browser for governed Teach recording and compilation | None; `/work` is ephemeral staging | None |
+| `ghcr.io/pelagians/grotto-sports-market-probe:latest` | Ephemeral worker | Bounded sportsbook market and prop evidence collection | None; `/work` is ephemeral staging | None |
+| `ghcr.io/pelagians/grotto-sports-source-probe:latest` | Ephemeral worker | Bounded official/public sports-source evidence collection | None; `/work` is ephemeral staging | None |
+| `ghcr.io/pelagians/grotto-playnow-observer:latest` | Ephemeral worker | Passive PlayNow observation through a caller-owned browser session | None; `/work` is ephemeral staging | None |
 | `ghcr.io/pelagians/grotto-hermes:latest` | Agent application | Official Hermes Agent backend with persistent Grotto tool environments | `/opt/data`, `/workspace`, `/tools`, `/home/linuxbrew/.linuxbrew`, `/cache` | `8642`, `9119` |
 | `ghcr.io/pelagians/grotto-hermes-desktop:latest` | Interactive workbench | Official Hermes Desktop client connected to a separate Hermes backend | `/config`, `/workspace`, `/tools`, `/home/linuxbrew/.linuxbrew`, `/cache` | `3001` |
 
@@ -19,6 +22,10 @@ The image provides the pinned OpenAdapt Flow browser engine and a thin
 context-scoped loopback-CDP attachment adapter. It intentionally provides no browser, hosted
 control plane, MCP server, connector credential, replay authority, or durable
 artifact store. See [`openadapt-teach.md`](openadapt-teach.md).
+
+## Sports collection workers
+
+These are disposable sensory processes. They emit untrusted evidence bundles and hold no scheduler, canonical state, qualification, grading, or wagering authority. See [`sports-market-probe.md`](sports-market-probe.md), [`sports-source-probe.md`](sports-source-probe.md), and [`playnow-observer.md`](playnow-observer.md).
 
 ## Grotto OpenClaw
 

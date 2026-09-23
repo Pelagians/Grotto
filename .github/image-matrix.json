@@ -40,5 +40,26 @@
     "title": "Grotto OpenAdapt Teach worker",
     "description": "UI-only OpenAdapt recording and compilation worker for caller-owned browser runtimes",
     "file": "./Containerfile.openadapt-teach"
+  },
+  {
+    "name": "grotto-sports-market-probe", "kind": "worker",
+    "image": "ghcr.io/pelagians/grotto-sports-market-probe",
+    "title": "Grotto sports market probe",
+    "description": "Bounded sportsbook market and prop evidence collector",
+    "file": "./Containerfile.sports-market-probe"
+  },
+  {
+    "name": "grotto-sports-source-probe", "kind": "worker",
+    "image": "ghcr.io/pelagians/grotto-sports-source-probe",
+    "title": "Grotto sports source probe",
+    "description": "Bounded official and public sports-source evidence collector",
+    "file": "./Containerfile.sports-source-probe"
+  },
+  {
+    "name": "grotto-playnow-observer", "kind": "worker",
+    "image": "ghcr.io/pelagians/grotto-playnow-observer",
+    "title": "Grotto PlayNow observer",
+    "description": "Passive caller-owned-browser PlayNow market observer",
+    "file": "./Containerfile.playnow-observer"
   }
 ]

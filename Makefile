@@ -1,4 +1,4 @@
-.PHONY: check check-container-engine image-openclaw image-chatgpt-desktop image-openadapt-teach image-hermes image-hermes-desktop image-all smoke-hermes smoke-hermes-desktop
+.PHONY: check check-container-engine image-openclaw image-chatgpt-desktop image-openadapt-teach image-sports-market-probe image-sports-source-probe image-playnow-observer image-hermes image-hermes-desktop image-all smoke-hermes smoke-hermes-desktop
 
 DETECTED_CONTAINER_ENGINE := $(shell if command -v podman >/dev/null 2>&1 && podman info >/dev/null 2>&1; then printf 'podman'; elif command -v sudo >/dev/null 2>&1 && sudo -n podman info >/dev/null 2>&1; then printf 'sudo podman'; elif command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then printf 'docker'; fi)
 CONTAINER_ENGINE ?= $(DETECTED_CONTAINER_ENGINE)
@@ -11,6 +11,9 @@ GROTTO_CHATGPT_DESKTOP_IMAGE ?= grotto-chatgpt-desktop:dev
 GROTTO_HERMES_IMAGE ?= grotto-hermes:dev
 GROTTO_HERMES_DESKTOP_IMAGE ?= grotto-hermes-desktop:dev
 GROTTO_OPENADAPT_TEACH_IMAGE ?= grotto-openadapt-teach:dev
+GROTTO_SPORTS_MARKET_PROBE_IMAGE ?= grotto-sports-market-probe:dev
+GROTTO_SPORTS_SOURCE_PROBE_IMAGE ?= grotto-sports-source-probe:dev
+GROTTO_PLAYNOW_OBSERVER_IMAGE ?= grotto-playnow-observer:dev
 CHATGPT_PACKAGE_VERSION ?= 26.820.60940
 
 check:
@@ -33,6 +36,7 @@ check:
 	python3 tests/test_openadapt_teach_adapter.py
 	python3 tests/test_openadapt_teach_policy.py
 	python3 tests/test_openadapt_compat_canary.py
+	python3 tests/test_sports_workers.py
 	python3 tests/test_ci_matrix.py
 
 check-container-engine:
@@ -61,6 +65,15 @@ image-openadapt-teach: check-container-engine
 		-t $(GROTTO_OPENADAPT_TEACH_IMAGE) \
 		.
 
+image-sports-market-probe: check-container-engine
+	$(CONTAINER_ENGINE) build -f Containerfile.sports-market-probe -t $(GROTTO_SPORTS_MARKET_PROBE_IMAGE) .
+
+image-sports-source-probe: check-container-engine
+	$(CONTAINER_ENGINE) build -f Containerfile.sports-source-probe -t $(GROTTO_SPORTS_SOURCE_PROBE_IMAGE) .
+
+image-playnow-observer: check-container-engine
+	$(CONTAINER_ENGINE) build -f Containerfile.playnow-observer -t $(GROTTO_PLAYNOW_OBSERVER_IMAGE) .
+
 image-hermes: check-container-engine
 	$(CONTAINER_ENGINE) build -f Containerfile.hermes -t $(GROTTO_HERMES_IMAGE) .
 
@@ -73,4 +86,4 @@ smoke-hermes: check-container-engine
 smoke-hermes-desktop: check-container-engine
 	CONTAINER_ENGINE="$(CONTAINER_ENGINE)" GROTTO_HERMES_DESKTOP_IMAGE="$(GROTTO_HERMES_DESKTOP_IMAGE)" tests/smoke-hermes-desktop.sh
 
-image-all: image-openclaw image-chatgpt-desktop image-openadapt-teach image-hermes image-hermes-desktop
+image-all: image-openclaw image-chatgpt-desktop image-openadapt-teach image-sports-market-probe image-sports-source-probe image-playnow-observer image-hermes image-hermes-desktop

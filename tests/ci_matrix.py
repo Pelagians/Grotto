@@ -31,6 +31,14 @@ def select(paths):
             selected.add("grotto-hermes-desktop")
         elif path.startswith("runtimes/openadapt-teach/"):
             selected.add("grotto-openadapt-teach")
+        elif path.startswith("runtimes/sports-workers/"):
+            selected.update({"grotto-sports-market-probe", "grotto-sports-source-probe", "grotto-playnow-observer"})
+        elif path.startswith("runtimes/sports-market-probe/"):
+            selected.add("grotto-sports-market-probe")
+        elif path.startswith("runtimes/sports-source-probe/"):
+            selected.add("grotto-sports-source-probe")
+        elif path.startswith("runtimes/playnow-observer/"):
+            selected.add("grotto-playnow-observer")
         elif path.startswith("runtimes/"):
             return ALL
         elif path == "Brewfile" or path.startswith("files/"):

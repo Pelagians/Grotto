@@ -1,5 +1,7 @@
 # Grotto
 
+Grotto's bounded sports workers provide market, public-source, and passive PlayNow observation to callers such as Sports Edge Lab. They return evidence only; orchestration, admission, canonical state, policy, replay, qualification, grading, and wagering authority remain outside Grotto.
+
 Grotto builds and maintains standardized OCI images for AI applications, agents, and workbenches.
 
 It packages upstream applications with reproducible builds, practical dependencies, documented storage boundaries, and deployment examples. Grotto does not provide workflow orchestration, tenant policy, approvals, or a shared agent protocol.
