@@ -368,6 +368,9 @@ class WorkerTests(unittest.TestCase):
             text = (ROOT / f"Containerfile.{name}").read_text()
             self.assertNotIn("API_KEY=", text)
             self.assertIn("USER 10001:10001", text)
+            self.assertIn(
+                "/usr/local/lib/python3.12/site-packages/worker_common.py", text
+            )
 
 
 if __name__ == "__main__":
