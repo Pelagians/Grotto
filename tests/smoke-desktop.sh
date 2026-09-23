@@ -30,7 +30,7 @@ cleanup() {
         "$engine" logs "$name" >&2 || true
         # The container shell expands diagnostic paths.
         # shellcheck disable=SC2016
-        "$engine" exec "$name" sh -c 'for f in /config/.local/state/pelagian-shell/*.log /config/hermes-desktop/session.log /config/hermes-desktop/hermes-home/logs/desktop.log; do test ! -f "$f" || tail -n 80 "$f"; done' >&2 || true
+        "$engine" exec "$name" sh -c 'for f in /config/.local/state/pelagian-shell/*.log /config/hermes-desktop/session.log /config/hermes-desktop/hermes-home/logs/desktop.log; do test ! -f "$f" || tail -n 80 "$f"; done; for f in /tmp/pelagian-layout-second.log; do test ! -f "$f" || tail -n 80 "$f"; done' >&2 || true
     fi
     "$engine" rm -f "$name" >/dev/null 2>&1 || true
     for volume in "${volumes[@]}"; do
@@ -65,11 +65,14 @@ fi
 "$engine" exec "$name" chmod 0644 /tmp/verify-shell-session.py /tmp/grotto-shell-layout-fixture.py
 
 verify_two_window_dialog_and_reflow() {
+    "$engine" exec --user abc "$name" /usr/bin/python3 -c \
+        'import gi; gi.require_version("Gtk", "3.0")'
     "$engine" exec -d --user abc \
         --env GDK_BACKEND=wayland \
         --env XDG_RUNTIME_DIR=/run/pelagian-shell \
         --env WAYLAND_DISPLAY=wayland-1 \
-        "$name" python3 /tmp/grotto-shell-layout-fixture.py second
+        "$name" sh -c \
+        'exec /usr/bin/python3 /tmp/grotto-shell-layout-fixture.py second > /tmp/pelagian-layout-second.log 2>&1'
     "$engine" exec --user abc "$name" python3 /tmp/verify-shell-session.py \
         "$kind" --managed-count 2 --floating-count 0
 
