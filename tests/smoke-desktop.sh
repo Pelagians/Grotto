@@ -71,45 +71,45 @@ verify_two_window_dialog_and_reflow() {
     # Start the GTK fixture with the live consumer's session coordinates. This
     # avoids accidentally connecting a test window to a stale/default display
     # when the app launcher and container exec environments differ.
-    mapfile -t session_coordinates < <("$engine" exec --user abc "$name" /usr/bin/python3 -c '
-import os
-from pathlib import Path
-
-pid = Path("/config/.local/state/pelagian-shell/consumer.pid").read_text().strip()
-entries = Path(f"/proc/{pid}/environ").read_bytes().split(b"\0")
-env = dict(entry.split(b"=", 1) for entry in entries if b"=" in entry)
-for key in ("XDG_RUNTIME_DIR", "WAYLAND_DISPLAY", "DBUS_SESSION_BUS_ADDRESS", "DISPLAY"):
-    print(env.get(key.encode(), b"").decode())
+    session_wayland_display=$("$engine" exec "$name" sh -c '
+pid=$(cat /config/.local/state/pelagian-shell/consumer.pid)
+tr "\000" "\n" < "/proc/$pid/environ" | sed -n "s/^WAYLAND_DISPLAY=//p"
 ')
-    session_runtime_dir=${session_coordinates[0]:-}
-    session_wayland_display=${session_coordinates[1]:-}
-    session_bus_address=${session_coordinates[2]:-}
-    session_display=${session_coordinates[3]:-}
-    [[ "$session_runtime_dir" == /run/pelagian-shell ]]
-    [[ "$session_wayland_display" == wayland-* ]]
-    [[ "$session_bus_address" == "unix:path=$session_runtime_dir/bus" ]]
-    [[ -n "$session_display" ]]
+    [[ "$session_wayland_display" == wayland-* ]] || {
+        echo "Hermes has an unexpected Wayland display: $session_wayland_display" >&2
+        return 1
+    }
+    printf 'Hermes Wayland display for GTK fixture: %s\n' "$session_wayland_display"
 
     "$engine" exec -d --user abc \
         --env GDK_BACKEND=wayland \
-        --env XDG_RUNTIME_DIR="$session_runtime_dir" \
+        --env XDG_RUNTIME_DIR=/run/pelagian-shell \
         --env WAYLAND_DISPLAY="$session_wayland_display" \
-        --env DBUS_SESSION_BUS_ADDRESS="$session_bus_address" \
-        --env DISPLAY="$session_display" \
+        --env DBUS_SESSION_BUS_ADDRESS=unix:path=/run/pelagian-shell/bus \
         "$name" sh -c \
-        'exec /usr/bin/with-contenv /usr/bin/python3 /tmp/grotto-shell-layout-fixture.py second > /tmp/pelagian-layout-second.log 2>&1'
+        'exec /usr/bin/python3 /tmp/grotto-shell-layout-fixture.py second > /tmp/pelagian-layout-second.log 2>&1'
 
     fixture_started=false
     for _ in $(seq 1 100); do
-        if "$engine" exec "$name" test -s /tmp/pelagian-layout-second.pid \
-            && "$engine" exec "$name" kill -0 "$("$engine" exec "$name" cat /tmp/pelagian-layout-second.pid)" >/dev/null 2>&1; then
-            fixture_started=true
-            break
+        fixture_pid=$("$engine" exec "$name" cat /tmp/pelagian-layout-second.pid 2>/dev/null || true)
+        if [[ -n "$fixture_pid" ]] \
+            && "$engine" exec "$name" kill -0 "$fixture_pid" >/dev/null 2>&1; then
+                fixture_started=true
+                break
         fi
         sleep 0.1
     done
-    [[ "$fixture_started" == true ]]
-    test "$("$engine" exec "$name" cat /tmp/pelagian-layout-second.display)" = "$session_wayland_display"
+    if [[ "$fixture_started" != true ]]; then
+        echo 'GTK fixture did not stay alive after launch' >&2
+        "$engine" exec "$name" sh -c \
+            'test ! -f /tmp/pelagian-layout-second.log || cat /tmp/pelagian-layout-second.log' >&2 || true
+        return 1
+    fi
+    fixture_display=$("$engine" exec "$name" cat /tmp/pelagian-layout-second.display)
+    [[ "$fixture_display" == "$session_wayland_display" ]] || {
+        echo "GTK fixture display mismatch: actual=$fixture_display expected=$session_wayland_display" >&2
+        return 1
+    }
 
     "$engine" exec --user abc "$name" python3 /tmp/verify-shell-session.py \
         "$kind" --managed-count 2 --floating-count 0
