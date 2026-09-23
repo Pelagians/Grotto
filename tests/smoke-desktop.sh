@@ -285,7 +285,7 @@ for phase in "${phases[@]}"; do
             [[ -z "$window_pid" ]] || break
             sleep 1
         done
-        "$engine" exec -i "$name" python3 - "$window_pid" <<'PY'
+        "$engine" exec -i --user abc "$name" python3 - "$window_pid" <<'PY'
 import pathlib
 import sys
 
@@ -296,7 +296,12 @@ for label, pid in (('consumer', consumer_file.read_text().strip()),
         print(f'{label} process: no PID', flush=True)
         continue
     selected = {}
-    for entry in pathlib.Path(f'/proc/{pid}/environ').read_bytes().split(bytes([0])):
+    try:
+        entries = pathlib.Path(f'/proc/{pid}/environ').read_bytes().split(bytes([0]))
+    except OSError as error:
+        print(f'{label} process: selected environment unavailable ({error.__class__.__name__})', flush=True)
+        continue
+    for entry in entries:
         key, sep, value = entry.partition(b'=')
         if sep and key in {b'XDG_RUNTIME_DIR', b'WAYLAND_DISPLAY',
                            b'DISPLAY', b'DBUS_SESSION_BUS_ADDRESS'}:
