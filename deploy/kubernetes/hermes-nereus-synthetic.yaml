@@ -1,0 +1,81 @@
+# Reference only: replace every REPLACE_* value before applying.
+# The digest must be the qualified Grotto Hermes image digest, not a mutable tag.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hermes-nereus-synthetic
+  namespace: pelagian-staging
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: {app: hermes-nereus-synthetic}
+  template:
+    metadata:
+      labels: {app: hermes-nereus-synthetic}
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: hermes
+          image: ghcr.io/pelagians/grotto-hermes@sha256:REPLACE_IMAGE_DIGEST
+          imagePullPolicy: IfNotPresent
+          env:
+            - {name: PELAGIAN_TENANT_ID, value: REPLACE_TENANT_ID}
+            - {name: PELAGIAN_NEREUS_URL, value: "https://REPLACE_NEREUS_TLS_ORIGIN"}
+            - {name: PELAGIAN_OAUTH_TOKEN_URL, value: "https://REPLACE_IDENTITY_PROVIDER/token"}
+            - {name: PELAGIAN_OAUTH_CLIENT_ID, value: REPLACE_CLIENT_ID}
+            - {name: PELAGIAN_OAUTH_CLIENT_SECRET_FILE, value: /run/secrets/nereus/client-secret}
+          volumeMounts:
+            - {name: hermes-data, mountPath: /opt/data}
+            - {name: hermes-workspace, mountPath: /workspace}
+            - {name: hermes-tools, mountPath: /tools}
+            - {name: hermes-homebrew, mountPath: /home/linuxbrew/.linuxbrew}
+            - {name: hermes-cache, mountPath: /cache}
+            - {name: nereus-client-secret, mountPath: /run/secrets/nereus, readOnly: true}
+      volumes:
+        - name: hermes-data
+          persistentVolumeClaim: {claimName: REPLACE_HERMES_DATA_PVC}
+        - name: hermes-workspace
+          persistentVolumeClaim: {claimName: REPLACE_HERMES_WORKSPACE_PVC}
+        - name: hermes-tools
+          persistentVolumeClaim: {claimName: REPLACE_HERMES_TOOLS_PVC}
+        - name: hermes-homebrew
+          persistentVolumeClaim: {claimName: REPLACE_HERMES_HOMEBREW_PVC}
+        - name: hermes-cache
+          persistentVolumeClaim: {claimName: REPLACE_HERMES_CACHE_PVC}
+        - name: nereus-client-secret
+          secret:
+            secretName: REPLACE_CLIENT_CREDENTIAL_SECRET
+            items:
+              - {key: client-secret, path: client-secret}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: hermes-nereus-synthetic
+  namespace: pelagian-staging
+spec:
+  podSelector:
+    matchLabels: {app: hermes-nereus-synthetic}
+  policyTypes: [Ingress, Egress]
+  egress:
+    # Reviewed TLS gateway for Nereus. The Helm Service itself is plain HTTP.
+    - to:
+        - ipBlock: {cidr: REPLACE_NEREUS_TLS_GATEWAY_CIDR}
+      ports: [{protocol: TCP, port: 443}]
+    # Cluster DNS.
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    # Replace with narrow, reviewed egress ranges for the identity provider
+    # and model provider. Use cluster FQDN egress policy if their IPs change.
+    - to:
+        - ipBlock: {cidr: REPLACE_IDENTITY_PROVIDER_CIDR}
+        - ipBlock: {cidr: REPLACE_MODEL_PROVIDER_CIDR}
+      ports: [{protocol: TCP, port: 443}]

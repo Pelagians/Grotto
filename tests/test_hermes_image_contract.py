@@ -50,6 +50,14 @@ def main() -> None:
     assert "EXPOSE 8642 9119" in image
     assert "USER hermes" in image and "USER root" in image
     assert "/etc/cont-init.d/10-grotto-agent-environment" in image
+    assert "COPY runtimes/hermes/nereus_mcp.py /usr/local/libexec/pelagian-nereus-mcp.py" in image
+    assert "pelagian_nereus:" not in image
+    assert "pelagian_nereus:" in (ROOT / "docs/nereus-agent-apps.md").read_text()
+    staging = (ROOT / "deploy/kubernetes/hermes-nereus-synthetic.yaml").read_text()
+    assert "sha256:REPLACE_IMAGE_DIGEST" in staging
+    assert "automountServiceAccountToken: false" in staging
+    assert "readOnly: true" in staging
+    assert "policyTypes: [Ingress, Egress]" in staging
     assert "supervisord" not in image and "hermes-webui" not in image
     assert "brew bundle --file=/usr/share/grotto/Brewfile" in image
     assert "chown -R hermes:hermes" not in hook
