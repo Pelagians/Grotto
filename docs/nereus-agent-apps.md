@@ -8,12 +8,15 @@ does not hold provider credentials or implement a second policy engine.
 ## Prerequisites
 
 - Apply Nereus migration `0028_agent_apps`, deploy its agent-app API, and set
-  `NEREUS_SYNTHETIC_APPS_ENABLED=true` only for the qualification tenant.
-- Explicitly import the reviewed `pelagian.synthetic` catalog manifest, install
-  it for the tenant, and mount a policy allowing reads and requiring separate
-  approval for writes.
-- Provision one known OIDC service subject with the Nereus
-  `app.cli.provision_app_agent` CLI. The CLI refuses role mismatches.
+  `NEREUS_SYNTHETIC_APPS_ENABLED=true` only in the qualification deployment.
+- Explicitly import the reviewed `pelagian.synthetic` catalog manifest with
+  `python -m app.cli.import_capability_package ../capability-catalog/examples/synthetic-package.json`,
+  install it for the tenant, and mount a tenant policy allowing reads and
+  requiring separate approval for writes. Do not enable the adapter in shared
+  production.
+- Provision one known OIDC service subject with
+  `python -m app.cli.provision_app_agent --tenant-id TENANT_ID --issuer ISSUER --subject HERMES_SUBJECT --display-name "Hermes Staging"`.
+  The CLI refuses role mismatches.
 - Configure the identity provider to issue a short-lived bearer token for that
   subject (local) or a client-credentials token (staging). The Nereus API must
   validate the issuer, audience, and service subject normally.
@@ -28,6 +31,8 @@ mcp_servers:
     command: /opt/hermes/.venv/bin/python
     args: [/usr/local/libexec/pelagian-nereus-mcp.py]
 ```
+
+The checked-in [example config](../runtimes/hermes/nereus-mcp.example.yaml) carries this entry without credentials. Merge it into the operator-owned config; do not replace unrelated Hermes settings.
 
 Keep this entry absent to preserve current Hermes behavior. Restart or reload
 Hermes MCP after changing it. Do not place tokens, client secrets, tenant IDs, or
@@ -79,7 +84,10 @@ egress controls when those endpoints have dynamic IPs. Do not apply the
 template with placeholder values.
 
 Use one replica and one writer per Hermes `/opt/data` PVC. Keep the secret
-volume read-only. Qualify the image with `hermes doctor`, then run the
+volume read-only. For a fast SDK check, build
+`podman build -f tests/Containerfile.nereus-bridge-smoke -t localhost/grotto-hermes-nereus-smoke:dev .`.
+After the full image build, run
+`GROTTO_HERMES_IMAGE=<local-image> bash tests/smoke-hermes-nereus.sh`. This checks default-disabled and opt-in Hermes configuration, including doctor, but does not connect to Nereus. Then run the
 synthetic read → approval → user confirmation → resume → audit → revoke flow.
 Inspect Nereus persistence/logs for absence of prompts, arguments, tokens, and
 full results. No real provider adapter is in scope.

@@ -1,0 +1,8 @@
+# Opt-in only. Copy this MCP entry into the operator-owned Hermes config.yaml.
+# Tenant, URLs, and credentials belong in deployment environment/secret files.
+mcp_servers:
+  pelagian_nereus:
+    command: /opt/hermes/.venv/bin/python
+    args:
+      - /usr/local/libexec/pelagian-nereus-mcp.py
+    enabled: true

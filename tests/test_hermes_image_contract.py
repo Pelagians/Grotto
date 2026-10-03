@@ -58,6 +58,10 @@ def main() -> None:
     assert "automountServiceAccountToken: false" in staging
     assert "readOnly: true" in staging
     assert "policyTypes: [Ingress, Egress]" in staging
+    assert (ROOT / "runtimes/hermes/nereus-mcp.example.yaml").exists()
+    nereus_smoke = (ROOT / "tests/smoke-hermes-nereus.sh").read_text()
+    assert "mcp list" in nereus_smoke and "hermes" in nereus_smoke
+    assert "No suspicious MCP stdio commands" in nereus_smoke
     assert "supervisord" not in image and "hermes-webui" not in image
     assert "brew bundle --file=/usr/share/grotto/Brewfile" in image
     assert "chown -R hermes:hermes" not in hook
