@@ -15,7 +15,8 @@
 | `/cache` | Homebrew, npm, uv, pip, and XDG caches | Disposable |
 
 The image does not contain Nyra, Nereus, Pontus, workflow, tenant, policy, or
-approval logic.
+approval logic. Its optional [Nereus agent-app MCP bridge](nereus-agent-apps.md)
+is dormant until an operator registers it for a synthetic-data qualification.
 
 ## Ports
 
