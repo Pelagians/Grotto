@@ -210,6 +210,12 @@ jobs:
           GROTTO_HERMES_IMAGE: ${{ steps.image.outputs.image }}
         run: CONTAINER_ENGINE=docker make smoke-hermes
 
+      - name: Smoke opt-in Nereus MCP bridge
+        if: matrix.name == 'grotto-hermes'
+        env:
+          GROTTO_HERMES_IMAGE: ${{ steps.image.outputs.image }}
+        run: CONTAINER_ENGINE=docker tests/smoke-hermes-nereus.sh
+
       - name: Smoke OpenClaw image
         if: matrix.name == 'grotto-openclaw'
         env:

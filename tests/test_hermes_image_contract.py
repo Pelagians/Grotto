@@ -69,6 +69,7 @@ def main() -> None:
     nereus_smoke = (ROOT / "tests/smoke-hermes-nereus.sh").read_text()
     assert "mcp list" in nereus_smoke and "hermes" in nereus_smoke
     assert "No suspicious MCP stdio commands" in nereus_smoke
+    assert "CONTAINER_ENGINE=docker tests/smoke-hermes-nereus.sh" in WORKFLOW.read_text()
     assert "supervisord" not in image and "hermes-webui" not in image
     assert "brew bundle --file=/usr/share/grotto/Brewfile" in image
     assert "chown -R hermes:hermes" not in hook

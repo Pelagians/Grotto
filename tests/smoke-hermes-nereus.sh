@@ -5,6 +5,10 @@ image="${GROTTO_HERMES_IMAGE:-localhost/grotto-hermes:dev}"
 engine="${CONTAINER_ENGINE:-podman}"
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 config="$root/runtimes/hermes/nereus-mcp.example.yaml"
+security_args=()
+if [[ "$engine" == *podman* ]]; then
+  security_args=(--security-opt label=disable)
+fi
 
 "$engine" run --rm --entrypoint test "$image" -f /usr/local/libexec/pelagian-nereus-mcp.py
 disabled="$("$engine" run --rm --entrypoint /opt/hermes/.venv/bin/hermes "$image" mcp list)"
@@ -13,7 +17,7 @@ if [[ "$disabled" == *pelagian_nereus* ]]; then
   exit 1
 fi
 
-enabled="$("$engine" run --rm --security-opt label=disable \
+enabled="$("$engine" run --rm "${security_args[@]}" \
   -v "$config:/opt/data/config.yaml:ro" \
   --entrypoint /opt/hermes/.venv/bin/hermes "$image" mcp list)"
 if [[ "$enabled" != *pelagian_nereus* || "$enabled" != *enabled* ]]; then
@@ -21,7 +25,7 @@ if [[ "$enabled" != *pelagian_nereus* || "$enabled" != *enabled* ]]; then
   exit 1
 fi
 
-tool_summary="$("$engine" run --rm -t --security-opt label=disable \
+tool_summary="$("$engine" run --rm -t "${security_args[@]}" \
   -v "$config:/opt/data/config.yaml:ro" \
   --entrypoint /opt/hermes/.venv/bin/hermes "$image" tools --summary)"
 if [[ "$tool_summary" != *pelagian_nereus* ||
@@ -30,7 +34,7 @@ if [[ "$tool_summary" != *pelagian_nereus* ||
   exit 1
 fi
 
-doctor="$("$engine" run --rm --security-opt label=disable \
+doctor="$("$engine" run --rm "${security_args[@]}" \
   -v "$config:/opt/data/config.yaml:ro" \
   --entrypoint /opt/hermes/.venv/bin/hermes "$image" doctor)"
 if [[ "$doctor" != *"No suspicious MCP stdio commands"* ]]; then
