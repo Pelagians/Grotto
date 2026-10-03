@@ -1,5 +1,22 @@
 # Reference only: replace every REPLACE_* value before applying.
 # The digest must be the qualified Grotto Hermes image digest, not a mutable tag.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hermes-nereus-synthetic-config
+  namespace: pelagian-staging
+data:
+  config.yaml: |
+    # Dedicated synthetic profile; keep terminal and file tools unavailable.
+    _config_version: 39
+    platform_toolsets:
+      cli: [todo]
+    mcp_servers:
+      pelagian_nereus:
+        command: /opt/hermes/.venv/bin/python
+        args: [/usr/local/libexec/pelagian-nereus-mcp.py]
+        enabled: true
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -28,6 +45,7 @@ spec:
             - {name: PELAGIAN_OAUTH_CLIENT_SECRET_FILE, value: /run/secrets/nereus/client-secret}
           volumeMounts:
             - {name: hermes-data, mountPath: /opt/data}
+            - {name: hermes-config, mountPath: /opt/data/config.yaml, subPath: config.yaml, readOnly: true}
             - {name: hermes-workspace, mountPath: /workspace}
             - {name: hermes-tools, mountPath: /tools}
             - {name: hermes-homebrew, mountPath: /home/linuxbrew/.linuxbrew}
@@ -36,6 +54,10 @@ spec:
       volumes:
         - name: hermes-data
           persistentVolumeClaim: {claimName: REPLACE_HERMES_DATA_PVC}
+        - name: hermes-config
+          configMap:
+            name: hermes-nereus-synthetic-config
+            defaultMode: 0444
         - name: hermes-workspace
           persistentVolumeClaim: {claimName: REPLACE_HERMES_WORKSPACE_PVC}
         - name: hermes-tools

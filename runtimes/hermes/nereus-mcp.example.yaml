@@ -1,3 +1,10 @@
+# Opt-in synthetic qualification profile. No provider/customer data.
+# CLI built-ins are narrowed so the model cannot use terminal/file tools to
+# read the mounted token or client-secret file. Do not enable other platforms.
+_config_version: 39
+platform_toolsets:
+  cli: [todo]
+
 # Opt-in only. Copy this MCP entry into the operator-owned Hermes config.yaml.
 # Tenant, URLs, and credentials belong in deployment environment/secret files.
 mcp_servers:

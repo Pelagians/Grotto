@@ -32,7 +32,7 @@ mcp_servers:
     args: [/usr/local/libexec/pelagian-nereus-mcp.py]
 ```
 
-The checked-in [example config](../runtimes/hermes/nereus-mcp.example.yaml) carries this entry without credentials. Merge it into the operator-owned config; do not replace unrelated Hermes settings.
+The checked-in [example config](../runtimes/hermes/nereus-mcp.example.yaml) carries this entry without credentials. Use a dedicated synthetic profile, keep only its narrow CLI toolset, and do not enable messaging platforms, terminal, file, or code-execution tools. Do not replace unrelated settings in an existing profile without review. This reduces model access to mounted secrets but is not a process-isolation boundary: the bridge and Hermes still share a container. Scope and rotate the staging client credential; real provider credentials require a separate isolation review.
 
 Keep this entry absent to preserve current Hermes behavior. Restart or reload
 Hermes MCP after changing it. Do not place tokens, client secrets, tenant IDs, or
@@ -76,6 +76,12 @@ an old conversation until that refresh; stale invocations still fail at Nereus.
 `deploy/kubernetes/hermes-nereus-synthetic.yaml` is a reference, not a
 production-ready cluster-specific release. Replace its image digest, PVC names,
 tenant/URL values, and all three egress CIDRs with reviewed staging values.
+The reference includes a dedicated ConfigMap mounted as Hermes's read-only
+`/opt/data/config.yaml`; this opts the bridge in and narrows the CLI tools.
+Use a dedicated synthetic profile and review any additional Hermes settings
+needed before applying it. `_config_version: 39` matches the pinned Hermes
+base and avoids an on-start migration attempt against the read-only file.
+A `subPath` ConfigMap mount needs a pod restart to pick up changes.
 Nereus's Helm Service is plain HTTP, so use a TLS gateway for the bridge; never
 point its staging HTTPS URL at port 80 of the Service. The CIDRs must cover
 only the approved Nereus TLS gateway, identity-provider, and model-provider

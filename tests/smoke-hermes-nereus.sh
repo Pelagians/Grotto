@@ -21,6 +21,15 @@ if [[ "$enabled" != *pelagian_nereus* || "$enabled" != *enabled* ]]; then
   exit 1
 fi
 
+tool_summary="$("$engine" run --rm -t --security-opt label=disable \
+  -v "$config:/opt/data/config.yaml:ro" \
+  --entrypoint /opt/hermes/.venv/bin/hermes "$image" tools --summary)"
+if [[ "$tool_summary" != *pelagian_nereus* ||
+      "$tool_summary" == *terminal* || "$tool_summary" == *"File Operations"* ]]; then
+  echo "Synthetic Hermes profile exposed an unexpected built-in tool" >&2
+  exit 1
+fi
+
 doctor="$("$engine" run --rm --security-opt label=disable \
   -v "$config:/opt/data/config.yaml:ro" \
   --entrypoint /opt/hermes/.venv/bin/hermes "$image" doctor)"

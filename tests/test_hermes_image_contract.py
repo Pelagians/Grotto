@@ -57,6 +57,13 @@ def main() -> None:
     assert "sha256:REPLACE_IMAGE_DIGEST" in staging
     assert "automountServiceAccountToken: false" in staging
     assert "readOnly: true" in staging
+    assert "name: hermes-nereus-synthetic-config" in staging
+    assert "mountPath: /opt/data/config.yaml, subPath: config.yaml, readOnly: true" in staging
+    assert "cli: [todo]" in staging and "pelagian_nereus:" in staging
+    assert "_config_version: 39" in staging
+    assert "_config_version: 39" in (
+        ROOT / "runtimes/hermes/nereus-mcp.example.yaml"
+    ).read_text()
     assert "policyTypes: [Ingress, Egress]" in staging
     assert (ROOT / "runtimes/hermes/nereus-mcp.example.yaml").exists()
     nereus_smoke = (ROOT / "tests/smoke-hermes-nereus.sh").read_text()
