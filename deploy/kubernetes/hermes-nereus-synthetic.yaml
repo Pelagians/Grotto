@@ -16,6 +16,13 @@ data:
         command: /opt/hermes/.venv/bin/python
         args: [/usr/local/libexec/pelagian-nereus-mcp.py]
         enabled: true
+        env:
+          PELAGIAN_TENANT_ID: "${PELAGIAN_TENANT_ID}"
+          PELAGIAN_NEREUS_URL: "${PELAGIAN_NEREUS_URL}"
+          PELAGIAN_OAUTH_TOKEN_URL: "${PELAGIAN_OAUTH_TOKEN_URL}"
+          PELAGIAN_OAUTH_CLIENT_ID: "${PELAGIAN_OAUTH_CLIENT_ID}"
+          PELAGIAN_OAUTH_CLIENT_SECRET_FILE: "${PELAGIAN_OAUTH_CLIENT_SECRET_FILE}"
+          PELAGIAN_OAUTH_AUDIENCE: "${PELAGIAN_OAUTH_AUDIENCE}"
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -43,6 +50,7 @@ spec:
             - {name: PELAGIAN_OAUTH_TOKEN_URL, value: "https://REPLACE_IDENTITY_PROVIDER/token"}
             - {name: PELAGIAN_OAUTH_CLIENT_ID, value: REPLACE_CLIENT_ID}
             - {name: PELAGIAN_OAUTH_CLIENT_SECRET_FILE, value: /run/secrets/nereus/client-secret}
+            - {name: PELAGIAN_OAUTH_AUDIENCE, value: REPLACE_NEREUS_AUDIENCE}
           volumeMounts:
             - {name: hermes-data, mountPath: /opt/data}
             - {name: hermes-config, mountPath: /opt/data/config.yaml, subPath: config.yaml, readOnly: true}
