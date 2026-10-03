@@ -30,6 +30,10 @@ mcp_servers:
   pelagian_nereus:
     command: /opt/hermes/.venv/bin/python
     args: [/usr/local/libexec/pelagian-nereus-mcp.py]
+    env:
+      PELAGIAN_TENANT_ID: "${PELAGIAN_TENANT_ID}"
+      PELAGIAN_NEREUS_URL: "${PELAGIAN_NEREUS_URL}"
+      PELAGIAN_LOCAL_TOKEN_FILE: "${PELAGIAN_LOCAL_TOKEN_FILE}"
 ```
 
 The checked-in [example config](../runtimes/hermes/nereus-mcp.example.yaml) carries this entry without credentials. Use a dedicated synthetic profile, keep only its narrow CLI toolset, and do not enable messaging platforms, terminal, file, or code-execution tools. Do not replace unrelated settings in an existing profile without review. This reduces model access to mounted secrets but is not a process-isolation boundary: the bridge and Hermes still share a container. Scope and rotate the staging client credential; real provider credentials require a separate isolation review.
@@ -37,7 +41,11 @@ The checked-in [example config](../runtimes/hermes/nereus-mcp.example.yaml) carr
 Keep this entry absent to preserve current Hermes behavior. Restart or reload
 Hermes MCP after changing it. Do not place tokens, client secrets, tenant IDs, or
 Nereus URLs in the model-editable MCP entry; set them in the deployment
-environment and read-only secret mounts.
+environment and read-only secret mounts. Hermes filters inherited environment
+variables for MCP subprocesses, so explicitly map the reviewed variable names
+under the MCP entry using `${VARIABLE}` placeholders. The local example maps
+the mounted token-file path; the Kubernetes reference maps the staging OAuth
+client settings.
 
 ## Authentication
 
@@ -49,8 +57,9 @@ rotation can replace it without rebuilding the image.
 For staging, omit the local token setting and set
 `PELAGIAN_OAUTH_TOKEN_URL`, `PELAGIAN_OAUTH_CLIENT_ID`,
 `PELAGIAN_OAUTH_CLIENT_SECRET_FILE`, `PELAGIAN_NEREUS_URL`, and
-`PELAGIAN_TENANT_ID`. `PELAGIAN_OAUTH_AUDIENCE` is optional if the identity
-provider requires it. The secret is read from a mounted file and access tokens
+`PELAGIAN_TENANT_ID`. The Kubernetes reference sets
+`PELAGIAN_OAUTH_AUDIENCE`; replace its placeholder with the registered Nereus
+API audience. The secret is read from a mounted file and access tokens
 are cached in memory until shortly before expiry. HTTPS is mandatory outside
 loopback local qualification. The bridge never prints credentials, arguments,
 results, or HTTP error bodies.

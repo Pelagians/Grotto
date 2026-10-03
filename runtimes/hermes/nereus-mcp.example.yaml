@@ -13,3 +13,10 @@ mcp_servers:
     args:
       - /usr/local/libexec/pelagian-nereus-mcp.py
     enabled: true
+    # Hermes filters inherited environment variables for MCP subprocesses.
+    # These placeholders are resolved from the deployment environment and do
+    # not place tokens or secrets in the model-editable config.
+    env:
+      PELAGIAN_TENANT_ID: "${PELAGIAN_TENANT_ID}"
+      PELAGIAN_NEREUS_URL: "${PELAGIAN_NEREUS_URL}"
+      PELAGIAN_LOCAL_TOKEN_FILE: "${PELAGIAN_LOCAL_TOKEN_FILE}"
