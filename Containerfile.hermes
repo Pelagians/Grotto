@@ -58,6 +58,7 @@ COPY files/profile.d/linuxbrew.sh /etc/profile.d/linuxbrew.sh
 COPY files/grotto-agent-entrypoint /etc/cont-init.d/10-grotto-agent-environment
 # Dormant until the operator registers it in Hermes MCP configuration.
 COPY runtimes/hermes/nereus_mcp.py /usr/local/libexec/pelagian-nereus-mcp.py
+COPY runtimes/hermes/qualification_probe.py /usr/local/libexec/pelagian-qualification-probe.py
 
 # Install the reproducible image baseline as the non-root runtime user, then
 # keep it as an image-owned seed archive. Runtime writes go to the mounted
