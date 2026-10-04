@@ -11,6 +11,14 @@ if [[ "$engine" == *podman* ]]; then
 fi
 
 "$engine" run --rm --entrypoint test "$image" -f /usr/local/libexec/pelagian-nereus-mcp.py
+"$engine" run --rm --entrypoint test "$image" -f /usr/local/libexec/pelagian-qualification-probe.py
+"$engine" run --rm --entrypoint /opt/hermes/.venv/bin/python "$image" \
+  /usr/local/libexec/pelagian-qualification-probe.py --help >/dev/null
+"$engine" run --rm "${security_args[@]}" --read-only --user 10000:10000 \
+  -v "$root/deploy/kubernetes/hermes-nereus-synthetic.yaml:/tmp/hermes-staging.yaml:ro" \
+  -v "$root/tests/staging-profile-smoke.py:/tmp/staging-profile-smoke.py:ro" \
+  --entrypoint /opt/hermes/.venv/bin/python "$image" \
+  /tmp/staging-profile-smoke.py
 disabled="$("$engine" run --rm --entrypoint /opt/hermes/.venv/bin/hermes "$image" mcp list)"
 if [[ "$disabled" == *pelagian_nereus* ]]; then
   echo "Pelagian MCP must be absent from default Hermes configuration" >&2

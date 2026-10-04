@@ -51,6 +51,7 @@ def main() -> None:
     assert "USER hermes" in image and "USER root" in image
     assert "/etc/cont-init.d/10-grotto-agent-environment" in image
     assert "COPY runtimes/hermes/nereus_mcp.py /usr/local/libexec/pelagian-nereus-mcp.py" in image
+    assert "COPY runtimes/hermes/qualification_probe.py /usr/local/libexec/pelagian-qualification-probe.py" in image
     assert "pelagian_nereus:" not in image
     assert "pelagian_nereus:" in (ROOT / "docs/nereus-agent-apps.md").read_text()
     staging = (ROOT / "deploy/kubernetes/hermes-nereus-synthetic.yaml").read_text()
@@ -65,6 +66,9 @@ def main() -> None:
         ROOT / "runtimes/hermes/nereus-mcp.example.yaml"
     ).read_text()
     assert "policyTypes: [Ingress, Egress]" in staging
+    assert "runAsUser: 10000" in staging
+    assert "storageClassName: REPLACE_ENCRYPTED_STORAGE_CLASS" in staging
+    assert "readOnlyRootFilesystem: true" in staging
     assert (ROOT / "runtimes/hermes/nereus-mcp.example.yaml").exists()
     nereus_smoke = (ROOT / "tests/smoke-hermes-nereus.sh").read_text()
     assert "mcp list" in nereus_smoke and "hermes" in nereus_smoke
