@@ -34,6 +34,20 @@ common=(-v "$tmp/data:/opt/data" -v "$tmp/workspace:/workspace" -v "$tmp/tools:/
 "$engine" run --name "$run_name-recreated" "${common[@]}" "$image" sh -ceu '
   test -x "$(brew --prefix hello)/bin/hello"
   test "$(brew --prefix hello)" != ""
-  hermes doctor
+  # Hermes >=0.22 returns status 1 when doctor identifies missing setup.
+  # This disposable smoke environment intentionally has no provider auth or
+  # running host gateway. Accept only those two expected findings; any other
+  # diagnostic failure must still fail the image qualification.
+  report="$(mktemp)"
+  status=0
+  hermes doctor >"$report" 2>&1 || status=$?
+  cat "$report"
+  if [ "$status" -ne 0 ]; then
+    test "$status" -eq 1
+    grep -Fq "Found 2 issue(s) to address:" "$report"
+    grep -Fq "No host gateway owns the gateway role" "$report"
+    grep -Fq "Run '\''hermes setup'\'' to configure missing API keys" "$report"
+  fi
+  rm -f "$report"
 '
 printf '%s\n' 'grotto Hermes smoke passed'
