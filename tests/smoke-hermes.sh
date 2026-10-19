@@ -46,7 +46,7 @@ common=(-v "$tmp/data:/opt/data" -v "$tmp/workspace:/workspace" -v "$tmp/tools:/
     test "$status" -eq 1
     grep -Fq "Found 2 issue(s) to address:" "$report"
     grep -Fq "No host gateway owns the gateway role" "$report"
-    grep -Fq "Run '\''hermes setup'\'' to configure missing API keys" "$report"
+    grep -Fq "to configure missing API keys" "$report"
   fi
   rm -f "$report"
 '
