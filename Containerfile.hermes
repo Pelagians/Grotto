@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
-# Official Hermes image: v2026.8.27 / Hermes 0.20.6.
+# Official Hermes image: v0.22.2 / Hermes 0.22.2.
 # The digest is the Docker Hub multi-architecture index digest.
-FROM docker.io/nousresearch/hermes-agent:v2026.8.27@sha256:e0df6adebddf29b91112aefc999d4aaf6846c9eb544faca5672a16a13590ff79
+FROM docker.io/nousresearch/hermes-agent:v0.22.2@sha256:36099926da316742423544e055d4734777105ffe6341873af5459b957d0c2919
 
 USER root
 ARG HOMEBREW_VERSION=5.1.6
@@ -81,10 +81,10 @@ LABEL org.opencontainers.image.title="Grotto Hermes" \
       org.opencontainers.image.description="Official Hermes Agent with Grotto persistent tool environments" \
       org.opencontainers.image.source="https://github.com/pelagians/Grotto" \
       org.opencontainers.image.revision="${GROTTO_BUILD_REVISION}" \
-      grotto.base.image="docker.io/nousresearch/hermes-agent:v2026.8.27@sha256:e0df6adebddf29b91112aefc999d4aaf6846c9eb544faca5672a16a13590ff79" \
+      grotto.base.image="docker.io/nousresearch/hermes-agent:v0.22.2@sha256:36099926da316742423544e055d4734777105ffe6341873af5459b957d0c2919" \
       org.opencontainers.image.vendor="Pelagian" \
       grotto.runtime="hermes" \
-      grotto.hermes.version="v2026.8.27"
+      grotto.hermes.version="v0.22.2"
 
 VOLUME ["/opt/data", "/workspace", "/tools", "/home/linuxbrew/.linuxbrew", "/cache"]
 EXPOSE 8642 9119
