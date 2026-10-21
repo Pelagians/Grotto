@@ -34,19 +34,39 @@ common=(-v "$tmp/data:/opt/data" -v "$tmp/workspace:/workspace" -v "$tmp/tools:/
 "$engine" run --name "$run_name-recreated" "${common[@]}" "$image" sh -ceu '
   test -x "$(brew --prefix hello)/bin/hello"
   test "$(brew --prefix hello)" != ""
-  # Hermes >=0.22 returns status 1 when doctor identifies missing setup.
-  # This disposable smoke environment intentionally has no provider auth or
-  # running host gateway. Accept only those two expected findings; any other
-  # diagnostic failure must still fail the image qualification.
+  # A disposable smoke image deliberately lacks API credentials and a running
+  # gateway. Hermes doctor exits 1 for those setup findings. Its npm audit
+  # also queries a changing advisory database: new upstream noncritical
+  # workspace vulnerabilities must be reported, not misread as image failure.
   report="$(mktemp)"
   status=0
   hermes doctor >"$report" 2>&1 || status=$?
   cat "$report"
+  test "$status" -eq 0 || test "$status" -eq 1
+
+  # Keep important, stable runtime and security checks mandatory.
+  grep -Fq "No suspicious MCP stdio commands" "$report"
+  grep -Fq "Runtime venv staged" "$report"
+  grep -Fq "Dashboard web surface (imports cleanly)" "$report"
+  if grep -Eq "workspace deps \\([1-9][0-9]* critical" "$report"; then
+    echo "Critical upstream npm audit findings in Hermes image" >&2
+    exit 1
+  fi
+
+  # Do not broadly ignore doctor failures. Only the expected lack of
+  # configuration and noncritical npm workspace advisories may be present.
   if [ "$status" -ne 0 ]; then
-    test "$status" -eq 1
-    grep -Fq "Found 2 issue(s) to address:" "$report"
-    grep -Fq "No host gateway owns the gateway role" "$report"
-    grep -Fq "to configure missing API keys" "$report"
+    grep -Eq "^  Found [0-9]+ issue\\(s\\) to address:" "$report"
+    grep -E "^  [0-9]+[.] " "$report" | while IFS= read -r finding; do
+      case "$finding" in
+        *"No host gateway owns the gateway role"*|*"configure missing API keys"*|*"web workspace has "*"npm vulnerabilities"*|*"ui-tui workspace has "*"npm vulnerabilities"*)
+          ;;
+        *)
+          echo "Unexpected Hermes doctor issue: $finding" >&2
+          exit 1
+          ;;
+      esac
+    done
   fi
   rm -f "$report"
 '
