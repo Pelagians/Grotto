@@ -34,11 +34,15 @@ if [[ "$tool_summary" != *pelagian_nereus* ||
   exit 1
 fi
 
+# Exercise the focused MCP security check. Full "hermes doctor" exits 1
+# in a deliberately unconfigured smoke image (no API credentials or gateway),
+# which is unrelated to this test's security contract.
 doctor="$("$engine" run --rm "${security_args[@]}" \
   -v "$config:/opt/data/config.yaml:ro" \
-  --entrypoint /opt/hermes/.venv/bin/hermes "$image" doctor)"
+  --entrypoint /opt/hermes/.venv/bin/python3 "$image" \
+  -c 'from hermes_cli.doctor_config import _check_mcp_security; result = _check_mcp_security(False); assert not result.issues and not result.manual_issues')"
 if [[ "$doctor" != *"No suspicious MCP stdio commands"* ]]; then
-  echo "Hermes doctor did not accept the Pelagian MCP command" >&2
+  echo "Hermes MCP security check did not accept the Pelagian MCP command" >&2
   exit 1
 fi
 echo "Hermes Nereus MCP image smoke passed"

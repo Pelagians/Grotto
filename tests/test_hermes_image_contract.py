@@ -45,7 +45,8 @@ def main() -> None:
     image = CONTAINERFILE.read_text()
     hook = HOOK.read_text()
     smoke = SMOKE.read_text()
-    assert "docker.io/nousresearch/hermes-agent:v2026.8.27@sha256:" in image
+    assert "docker.io/nousresearch/hermes-agent:v0.22.2@sha256:36099926da316742423544e055d4734777105ffe6341873af5459b957d0c2919" in image
+    assert 'grotto.hermes.version="v0.22.2"' in image
     assert 'VOLUME ["/opt/data", "/workspace", "/tools", "/home/linuxbrew/.linuxbrew", "/cache"]' in image
     assert "EXPOSE 8642 9119" in image
     assert "USER hermes" in image and "USER root" in image

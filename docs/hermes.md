@@ -1,7 +1,7 @@
 # Grotto Hermes
 
 `ghcr.io/pelagians/grotto-hermes` packages the official Hermes Agent image
-(`v2026.8.27`, Hermes `0.20.6`) with Grotto's agentic tool environment.
+(`v0.22.2`, Hermes `0.22.2`) with Grotto's agentic tool environment.
 
 ## Runtime contract
 
