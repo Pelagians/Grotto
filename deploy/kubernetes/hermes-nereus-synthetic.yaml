@@ -1,14 +1,26 @@
 # Reference only: replace every REPLACE_* value before applying.
-# The digest must be the qualified Grotto Hermes image digest, not a mutable tag.
+# Run in the dedicated qualification namespace, with a reviewed encrypted
+# StorageClass and immutable, CI-qualified Grotto Hermes image digest.
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: hermes-nereus-synthetic-config
-  namespace: pelagian-staging
+  namespace: pelagian-agent-app-qualification
 data:
   config.yaml: |
     # Dedicated synthetic profile; keep terminal and file tools unavailable.
     _config_version: 39
+    model:
+      default: REPLACE_MODEL_ID
+      provider: custom:qualification
+    providers:
+      qualification:
+        base_url: https://REPLACE_MODEL_PROVIDER_ORIGIN/v1
+        key_env: PELAGIAN_MODEL_API_KEY
+        model: REPLACE_MODEL_ID
+    agent:
+      run_budget_seconds: 180
+      max_turns: 8
     platform_toolsets:
       cli: [todo]
     mcp_servers:
@@ -24,11 +36,23 @@ data:
           PELAGIAN_OAUTH_CLIENT_SECRET_FILE: "${PELAGIAN_OAUTH_CLIENT_SECRET_FILE}"
           PELAGIAN_OAUTH_AUDIENCE: "${PELAGIAN_OAUTH_AUDIENCE}"
 ---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hermes-nereus-synthetic-data
+  namespace: pelagian-agent-app-qualification
+  labels: {app: hermes-nereus-synthetic}
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: REPLACE_ENCRYPTED_STORAGE_CLASS
+  resources:
+    requests: {storage: 8Gi}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: hermes-nereus-synthetic
-  namespace: pelagian-staging
+  namespace: pelagian-agent-app-qualification
 spec:
   replicas: 1
   strategy:
@@ -40,10 +64,27 @@ spec:
       labels: {app: hermes-nereus-synthetic}
     spec:
       automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10000
+        runAsGroup: 10000
+        fsGroup: 10000
+        seccompProfile: {type: RuntimeDefault}
       containers:
         - name: hermes
           image: ghcr.io/pelagians/grotto-hermes@sha256:REPLACE_IMAGE_DIGEST
           imagePullPolicy: IfNotPresent
+          # Qualification is an operator-driven, interactive CLI session.
+          # The native s6 supervisor is not needed for this isolated pod.
+          command: [/bin/sleep, infinity]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 100m, memory: 512Mi}
+            limits: {cpu: "2", memory: 2Gi}
           env:
             - {name: PELAGIAN_TENANT_ID, value: REPLACE_TENANT_ID}
             - {name: PELAGIAN_NEREUS_URL, value: "https://REPLACE_NEREUS_TLS_ORIGIN"}
@@ -51,6 +92,11 @@ spec:
             - {name: PELAGIAN_OAUTH_CLIENT_ID, value: REPLACE_CLIENT_ID}
             - {name: PELAGIAN_OAUTH_CLIENT_SECRET_FILE, value: /run/secrets/nereus/client-secret}
             - {name: PELAGIAN_OAUTH_AUDIENCE, value: REPLACE_NEREUS_AUDIENCE}
+            - name: PELAGIAN_MODEL_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: REPLACE_MODEL_CREDENTIAL_SECRET
+                  key: api-key
           volumeMounts:
             - {name: hermes-data, mountPath: /opt/data}
             - {name: hermes-config, mountPath: /opt/data/config.yaml, subPath: config.yaml, readOnly: true}
@@ -58,22 +104,25 @@ spec:
             - {name: hermes-tools, mountPath: /tools}
             - {name: hermes-homebrew, mountPath: /home/linuxbrew/.linuxbrew}
             - {name: hermes-cache, mountPath: /cache}
+            - {name: tmp, mountPath: /tmp}
             - {name: nereus-client-secret, mountPath: /run/secrets/nereus, readOnly: true}
       volumes:
         - name: hermes-data
-          persistentVolumeClaim: {claimName: REPLACE_HERMES_DATA_PVC}
+          persistentVolumeClaim: {claimName: hermes-nereus-synthetic-data}
         - name: hermes-config
           configMap:
             name: hermes-nereus-synthetic-config
             defaultMode: 0444
         - name: hermes-workspace
-          persistentVolumeClaim: {claimName: REPLACE_HERMES_WORKSPACE_PVC}
+          emptyDir: {}
         - name: hermes-tools
-          persistentVolumeClaim: {claimName: REPLACE_HERMES_TOOLS_PVC}
+          emptyDir: {}
         - name: hermes-homebrew
-          persistentVolumeClaim: {claimName: REPLACE_HERMES_HOMEBREW_PVC}
+          emptyDir: {}
         - name: hermes-cache
-          persistentVolumeClaim: {claimName: REPLACE_HERMES_CACHE_PVC}
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
         - name: nereus-client-secret
           secret:
             secretName: REPLACE_CLIENT_CREDENTIAL_SECRET
@@ -84,7 +133,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: hermes-nereus-synthetic
-  namespace: pelagian-staging
+  namespace: pelagian-agent-app-qualification
 spec:
   podSelector:
     matchLabels: {app: hermes-nereus-synthetic}

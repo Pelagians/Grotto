@@ -83,14 +83,25 @@ an old conversation until that refresh; stale invocations still fail at Nereus.
 ## Staging deployment
 
 `deploy/kubernetes/hermes-nereus-synthetic.yaml` is a reference, not a
-production-ready cluster-specific release. Replace its image digest, PVC names,
-tenant/URL values, and all three egress CIDRs with reviewed staging values.
-The reference includes a dedicated ConfigMap mounted as Hermes's read-only
-`/opt/data/config.yaml`; this opts the bridge in and narrows the CLI tools.
-Use a dedicated synthetic profile and review any additional Hermes settings
-needed before applying it. `_config_version: 39` matches the pinned Hermes
-base and avoids an on-start migration attempt against the read-only file.
-A `subPath` ConfigMap mount needs a pod restart to pick up changes.
+cluster-specific release. Render it in the dedicated qualification namespace
+using the platform repository's deployment process. Replace its image digest,
+encrypted StorageClass, model/provider settings, tenant/OIDC/TLS values,
+pre-created Secret names, and all three egress CIDRs with reviewed staging
+values. Reject any rendered `REPLACE_*` token before applying it. The model
+provider API key is read from a staging-only Kubernetes Secret via
+`PELAGIAN_MODEL_API_KEY`; the custom provider configuration names that variable
+through `key_env`. It is not forwarded into the MCP subprocess.
+
+The reference mounts only `/opt/data` on a dedicated encrypted PVC. Workspace,
+tool, Homebrew, cache, and temporary paths use disposable volumes. Its
+ConfigMap is mounted as read-only `/opt/data/config.yaml`, opts the bridge in,
+limits the CLI toolset, and bounds each model turn to 180 seconds and eight
+agent iterations. `_config_version: 39` matches the pinned Hermes base and
+avoids a startup migration against the read-only file. A `subPath` ConfigMap
+mount needs a pod restart to pick up changes. The pod runs as the image's
+non-root `hermes` UID 10000 with a read-only root filesystem. It sleeps until
+an operator opens an interactive Hermes CLI in the pod; the native s6
+supervisor is not used for this qualification profile.
 Nereus's Helm Service is plain HTTP, so use a TLS gateway for the bridge; never
 point its staging HTTPS URL at port 80 of the Service. The CIDRs must cover
 only the approved Nereus TLS gateway, identity-provider, and model-provider
@@ -98,8 +109,11 @@ endpoints; Kubernetes NetworkPolicy cannot enforce DNS names. Use cluster
 egress controls when those endpoints have dynamic IPs. Do not apply the
 template with placeholder values.
 
-Use one replica and one writer per Hermes `/opt/data` PVC. Keep the secret
-volume read-only. For a fast SDK check, build
+Use one replica and one writer per Hermes `/opt/data` PVC. Keep the OIDC client
+secret volume read-only and do not expose a Service or ingress for Hermes.
+The qualification operator starts Hermes with `kubectl exec -it` and
+`/opt/hermes/.venv/bin/hermes --cli`; enter prompts interactively so they do
+not appear in Kubernetes command arguments. For a fast SDK check, build
 `podman build -f tests/Containerfile.nereus-bridge-smoke -t localhost/grotto-hermes-nereus-smoke:dev .`.
 After the full image build, run
 `GROTTO_HERMES_IMAGE=<local-image> bash tests/smoke-hermes-nereus.sh`. This checks default-disabled and opt-in Hermes configuration, including doctor, but does not connect to Nereus. Then run the
