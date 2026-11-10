@@ -1,105 +1,47 @@
 # Grotto
 
-Grotto builds and maintains standardized OCI images for AI applications, agents, and workbenches.
+Grotto publishes ready-to-run container images for AI applications, agents,
+and desktop workbenches you can host on your own infrastructure. Each image
+packages an upstream application with the tools and dependencies it needs.
+The deployment guides show what to mount so your data can survive image
+replacement.
 
-It packages upstream applications with reproducible builds, practical dependencies, documented storage boundaries, and deployment examples. Grotto does not provide workflow orchestration, tenant policy, approvals, or a shared agent protocol.
+## Choose an image
 
-## Published images
+Pick the application you want to run and follow its guide for setup,
+configuration, and storage.
 
-| Image | Purpose |
-| --- | --- |
-| `ghcr.io/pelagians/grotto-openclaw:latest` | OpenClaw gateway with a broad baseline toolset and persistent user-installed tools |
-| `ghcr.io/pelagians/grotto-chatgpt-desktop:latest` | Selkies-streamed ChatGPT and Codex desktop workbench |
-| `ghcr.io/pelagians/grotto-openadapt-teach:latest` | UI-only OpenAdapt Teach worker that attaches to a caller-owned browser |
-| `ghcr.io/pelagians/grotto-hermes:latest` | Official Hermes Agent with persistent Grotto tool environments |
-| `ghcr.io/pelagians/grotto-hermes-desktop:latest` | Official Hermes Desktop client streamed through Pelagian Shell |
-
-See [`docs/image-matrix.md`](docs/image-matrix.md) for the runtime boundaries of both images.
-
-## Grotto conventions
-
-Grotto images keep the upstream application image-managed while separating writable state:
-
-| Path | Purpose | Persistence |
+| Image | Use it for | Guide |
 | --- | --- | --- |
-| `/config` | Credentials, sessions, and application configuration | Required |
-| `/workspace` | User projects and working files | Required |
-| `/tools` | User and agent-installed tools | Recommended |
-| `/cache` | Package and model caches | Optional |
+| `ghcr.io/pelagians/grotto-openclaw:latest` | An OpenClaw gateway with baseline tools and persistent user-installed tools | [First launch with Podman](docs/openclaw.md#first-launch-with-podman) |
+| `ghcr.io/pelagians/grotto-chatgpt-desktop:latest` | A browser-streamed ChatGPT and Codex desktop workbench | [ChatGPT Desktop](docs/chatgpt-desktop.md#run-with-intel-or-amd-graphics) |
+| `ghcr.io/pelagians/grotto-hermes:latest` | A Hermes Agent backend with persistent tools and agent state | [Hermes deployment and storage](docs/hermes.md) |
+| `ghcr.io/pelagians/grotto-hermes-desktop:latest` | A streamed Hermes Desktop client for an existing Hermes backend | [Hermes Desktop setup](docs/hermes-desktop.md) |
+| `ghcr.io/pelagians/grotto-openadapt-teach:latest` | An experimental OpenAdapt Teach worker that attaches to a browser you provide | [Teach worker setup](docs/openadapt-teach.md) |
 
-The application and baseline dependencies are replaced by pulling a new image. Runtime-installed tools remain in `/tools` and can be reset independently.
+The [image matrix](docs/image-matrix.md) lists ports and persistent paths for
+each image. For example, OpenClaw stores configuration under `/config`, the
+Hermes backend uses `/opt/data`, and the Teach worker uses temporary storage.
+Mount the paths documented for your image before you run it.
 
-## OpenClaw
+## Build an image
 
-Build locally:
+Use a supported container engine and the targets in the [Makefile](Makefile).
+For example, `make image-openclaw` builds the OpenClaw image locally.
+[GitHub Actions](.github/workflows/build.yml) checks builds on pull requests
+and publishes images from release and rebuild workflows.
 
-```bash
-podman build \
-  --file Containerfile \
-  --tag localhost/grotto-openclaw:dev \
-  .
-```
+When adding an image, preserve the upstream interface where practical.
+Document the required ports, storage, authentication, and upgrade steps.
+Supply credentials at runtime.
 
-Launch instructions, onboarding, persistent volumes, tool installation, and update modes are documented in [`docs/openclaw.md`](docs/openclaw.md).
+## Maintained by Pelagian
 
-## ChatGPT Desktop
-
-Build locally:
-
-```bash
-podman build \
-  --file Containerfile.chatgpt-desktop \
-  --tag localhost/grotto-chatgpt-desktop:dev \
-  .
-```
-
-See [`docs/chatgpt-desktop.md`](docs/chatgpt-desktop.md) for authentication, Selkies, storage, GPU, and security details.
-
-## OpenAdapt Teach worker
-
-Research spike. The bounded Teach worker packages upstream `openadapt-flow` and
-a thin caller-owned-browser attachment adapter. It does not provide workflow
-orchestration, policy, replay authority, promotion, or business-effect
-verification. See [`docs/openadapt-teach.md`](docs/openadapt-teach.md).
-
-## Release process
-
-GitHub Actions builds all published images on:
-
-- pull requests targeting `main`
-- pushes to `main`
-- version tags
-- scheduled rebuilds
-- manual workflow runs
-
-Pull requests validate images without publishing. Other events publish branch, tag, commit-SHA, and `latest` tags according to the workflow metadata rules.
-
-## Adding an image
-
-A Grotto image should:
-
-- package one identifiable upstream application
-- preserve the upstream interface where practical
-- define configuration, workspace, tool, and cache boundaries
-- run without baked credentials
-- document ports, volumes, authentication, and upgrade behavior
-- avoid embedding Pelagian workflow or policy logic
-
-## Relationship to Pelagian
-
-- **Current** provides container-focused operating-system images.
-- **Grotto** packages AI applications and workbenches.
-- **Cage** packages Windows applications through Wine-compatible runtimes.
-- Pelagian products may deploy these images, but Grotto remains independently usable.
+Grotto images run independently of the Pelagian platform. For other layers
+of the stack, see [Current](https://github.com/Pelagians/Current) for Linux
+system images and [Cage](https://github.com/Pelagians/Cage) for Windows
+applications on Linux.
 
 ## License
 
 See [LICENSE](LICENSE) for Grotto source licensing. Packaged upstream applications retain their own licenses and distribution terms.
-
-## Hermes
-
-See [`docs/hermes.md`](docs/hermes.md) for the official-Hermes image, persistent storage contract, and qualification path.
-
-## Hermes Desktop
-
-See [`docs/hermes-desktop.md`](docs/hermes-desktop.md) for the official desktop client, remote-backend boundary, keyring, storage, and window qualification path.
